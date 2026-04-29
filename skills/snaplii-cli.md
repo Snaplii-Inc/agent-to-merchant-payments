@@ -1,6 +1,6 @@
 ---
 name: snaplii-cli
-description: "Use this skill when the user wants to search for gift cards, browse gift card brands, look up gift card availability, buy/purchase a gift card, or perform any Snaplii platform operation (registration, authentication, gift cards). Trigger on phrases like: 'find me a gift card', 'buy a Starbucks card', 'what gift cards are available', 'look up gift cards', 'purchase gift card'."
+description: "Agent-to-Merchant (A2M) payments — AI agents complete transactions without checkout. Snaplii uses pre-funded gift cards as a payment rail, enabling instant, merchant-ready execution across 500+ brands. Trigger on phrases like: 'find me a gift card', 'buy a Starbucks card', 'what gift cards are available', 'purchase gift card', 'pay for this'."
 ---
 
 # Snaplii CLI — Agent Skill

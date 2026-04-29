@@ -1,8 +1,6 @@
-# AI Passport by Snaplii
+# Agent-to-Merchant Payments by Snaplii
 
-> Safe, limited-authorization payments for AI agents.
-
-AI Passport lets AI agents browse, purchase, and manage gift cards through Snaplii with spending limits and scoped permissions. Agents pay with **Snaplii Cash** prepaid balance, so exposure is capped and controllable.
+> This is a demo of Agent-to-Merchant (A2M) payments — where AI agents complete transactions without checkout. Snaplii uses pre-funded gift cards as a payment rail, enabling instant, merchant-ready execution across 500+ brands.
 
 ---
 
