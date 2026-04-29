@@ -1,0 +1,11 @@
+{
+  "mcp": {
+    "servers": {
+      "snaplii": {
+        "command": "snaplii-mcp",
+        "args": [],
+        "env": {}
+      }
+    }
+  }
+}
