@@ -1,6 +1,6 @@
 ---
 name: snaplii-cli
-description: "Agent-to-Merchant (A2M) payments — AI agents complete transactions without checkout. Snaplii uses pre-funded gift cards as a payment rail, enabling instant, merchant-ready execution across 500+ brands. Trigger on phrases like: 'find me a gift card', 'buy a Starbucks card', 'what gift cards are available', 'purchase gift card', 'pay for this'."
+description: "This is a skill of Agent-to-Merchant (A2M) payments — where AI agents complete transactions without checkout. Snaplii uses pre-funded gift cards as a payment rail, enabling instant, merchant-ready execution across 500+ brands."
 ---
 
 # Snaplii — Agent-to-Merchant Payments
