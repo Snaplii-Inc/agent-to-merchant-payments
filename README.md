@@ -56,7 +56,7 @@ Then use `python3.12` and `pip3.12` instead of `python3` / `pip3` in the steps b
 
 Before using the CLI or configuring your AI agent, generate a secure API key from the Snaplii mobile app:
 
-1. Download the Snaplii app for iOS or Android.
+1. Download the Snaplii app for [iOS](https://apps.apple.com/app/snaplii/id1596924498) or [Android](https://play.google.com/store/apps/details?id=com.snaplii.app).
 2. Register an account and bind a payment method to load your Snaplii Cash balance.
 3. In the app, go to **More → Payment Methods → AI Payment Management**.
 4. Tap **+ New API Key**.
@@ -69,8 +69,8 @@ Before using the CLI or configuring your AI agent, generate a secure API key fro
 ### 2. Get the Code
 
 ```bash
-git clone https://github.com/SnapPayInc/ai-passport.git
-cd ai-passport
+git clone https://github.com/Snaplii-Inc/agent-to-merchant-payments.git
+cd agent-to-merchant-payments
 ```
 
 ### 3. Install the CLI
@@ -116,32 +116,36 @@ snaplii --help
 
 Link your local CLI to your Snaplii account using the API key generated in Step 1:
 
-`agent-id` is any name you choose to identify this agent session (e.g. `"my-laptop"`, `"claude-desktop"`). It is not provided by Snaplii — you make it up.
-
 ```bash
-snaplii init --api-key "snp_sk_live_..."
+snaplii init
 ```
+
+The CLI will prompt for your API key via hidden input (like a password prompt). The key is used only to obtain a session token and is **never stored on disk**. Agent ID is auto-derived from the key.
 
 ### 5. Use the CLI
 
 ```bash
-snaplii browse tags                                  # Browse gift card categories
+snaplii browse tags --prov CA                        # Browse gift card categories (CA or US)
 snaplii browse brand --id CB...                      # See denominations and cashback
 snaplii giftcard list                                # View owned cards
-snaplii purchase --item-id CB...-CT... --price 50    # Buy a card
+snaplii purchase --item-id CB...-CT... --price 50 --prov ON   # Buy a card
 ```
 
 > `--item-id` is formatted as `{cardBrandId}-{cardTemplateId}`. Both IDs are available from `snaplii browse brand`.
+>
+> **Note on `--prov`:** For `browse tags`, use country code (`CA` for Canada, `US` for United States). For `purchase`, use province/state code (`ON`, `QC`, `BC`, `NY`, `CA`, `TX`, etc.).
 
 ---
 
 ## Components
 
 ```text
-ai-passport/
-├── snaplii-cli/     # Python CLI — pip-installable
-├── mcp-server/      # MCP server for Claude Desktop
-└── skills/          # Claude Code skill definition
+agent-to-merchant-payments/
+├── snaplii-cli/       # Python CLI — pip-installable
+├── mcp-server/        # MCP server for Claude Desktop
+├── skills/            # Claude Code skill definition
+├── clawhub-publish/   # ClawHub skill artifact
+└── clawhub-plugin/    # ClawHub MCP bundle plugin
 ```
 
 ---
@@ -156,7 +160,7 @@ ai-passport/
 | `snaplii browse brand --id ID` | View brand details, denominations, and cashback |
 | `snaplii giftcard list` | List owned gift cards |
 | `snaplii giftcard detail --card-no NO` | View card redemption code and PIN |
-| `snaplii purchase --item-id ID --price P` | Purchase a gift card |
+| `snaplii purchase --item-id ID --price P --prov PROV` | Purchase a gift card (prov = province/state) |
 | `snaplii smart cashback --brand-id ID --amount A` | Calculate cashback savings |
 | `snaplii smart dashboard` | View card inventory summary |
 
@@ -187,8 +191,10 @@ pip3 install "mcp[cli]" --break-system-packages
 The MCP server reads credentials from `~/.snaplii/config.json`. If you have not authenticated yet, run:
 
 ```bash
-snaplii init --api-key "snp_sk_live_..."
+snaplii init
 ```
+
+Enter your API key when prompted.
 
 ### Step 3: Configure Claude Desktop
 
@@ -207,7 +213,7 @@ Add the `mcpServers` section. Create the file if it does not exist. Use absolute
   "mcpServers": {
     "snaplii": {
       "command": "/absolute/path/to/python",
-      "args": ["/absolute/path/to/ai-passport/mcp-server/server.py"]
+      "args": ["/absolute/path/to/agent-to-merchant-payments/mcp-server/server.py"]
     }
   }
 }
