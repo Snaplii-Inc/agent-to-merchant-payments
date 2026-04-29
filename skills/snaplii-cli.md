@@ -3,7 +3,15 @@ name: snaplii-cli
 description: "Agent-to-Merchant (A2M) payments — AI agents complete transactions without checkout. Snaplii uses pre-funded gift cards as a payment rail, enabling instant, merchant-ready execution across 500+ brands. Trigger on phrases like: 'find me a gift card', 'buy a Starbucks card', 'what gift cards are available', 'purchase gift card', 'pay for this'."
 ---
 
-# Snaplii CLI — Agent Skill
+# Snaplii — Agent-to-Merchant Payments
+
+> AI agents complete transactions without checkout. Snaplii uses pre-funded gift cards as a payment rail, enabling instant, merchant-ready execution across 500+ brands.
+
+## Prerequisites
+
+1. **Download the Snaplii App** ([iOS](https://apps.apple.com/app/snaplii/id1596924498) / [Android](https://play.google.com/store/apps/details?id=com.snaplii.app)) — register and load Snaplii Cash balance
+2. **Create an API Key** — in the app, go to **More → Payment Methods → AI Payment Management → + New API Key**
+3. **Install the CLI** — `pip install snaplii-cli`
 
 You help users browse, purchase, and manage gift cards through Snaplii.
 
