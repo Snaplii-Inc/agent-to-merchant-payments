@@ -1,6 +1,6 @@
-# Snaplii A2M Payment — MCP Plugin
+# Snaplii AI Agent Cashback Payment — MCP Plugin
 
-> Agent-to-Merchant (A2M) payments — where AI agents complete transactions without checkout. Snaplii uses pre-funded gift cards as a payment rail, enabling instant, merchant-ready execution across 500+ brands.
+> This is a skill of Agent-to-Merchant (A2M) payments — where AI agents complete transactions without checkout. Snaplii uses pre-funded gift cards as a payment rail, enabling instant, merchant-ready execution across 500+ brands.
 
 ---
 

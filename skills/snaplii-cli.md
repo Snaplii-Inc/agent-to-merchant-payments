@@ -3,9 +3,9 @@ name: snaplii-cli
 description: "This is a skill of Agent-to-Merchant (A2M) payments — where AI agents complete transactions without checkout. Snaplii uses pre-funded gift cards as a payment rail, enabling instant, merchant-ready execution across 500+ brands."
 ---
 
-# Snaplii — Agent-to-Merchant Payments
+# Snaplii AI Agent Cashback Payment
 
-> AI agents complete transactions without checkout. Snaplii uses pre-funded gift cards as a payment rail, enabling instant, merchant-ready execution across 500+ brands.
+> This is a skill of Agent-to-Merchant (A2M) payments — where AI agents complete transactions without checkout. Snaplii uses pre-funded gift cards as a payment rail, enabling instant, merchant-ready execution across 500+ brands.
 
 ## Prerequisites
 
