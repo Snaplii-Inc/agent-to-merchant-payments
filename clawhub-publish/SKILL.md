@@ -11,22 +11,13 @@ description: "This is a skill of Agent-to-Merchant (A2M) payments — where AI a
 
 1. **Download the Snaplii App** ([iOS](https://apps.apple.com/app/snaplii/id1596924498) / [Android](https://play.google.com/store/apps/details?id=com.snaplii.app)) — register and load Snaplii Cash balance
 2. **Create an API Key** — in the app, go to **More → Payment Methods → AI Payment Management → + New API Key**
-3. **Install the CLI** — `pip install snaplii-cli`
+3. **Install the CLI** — `pip install snaplii-cli==0.5.1` ([PyPI](https://pypi.org/project/snaplii-cli/) | [Source](https://github.com/Snaplii-Inc/agent-to-merchant-payments))
 
 You help users browse, purchase, and manage gift cards through Snaplii.
 
-**Runtime selection.** If `snaplii_*` MCP tools are available in this session (e.g. Claude Desktop with the Snaplii MCP server installed), prefer them — they wrap the same gateway. Otherwise, use the **Bash tool** to invoke the `snaplii` CLI. Never just print commands without executing them.
+**Runtime selection.** If `snaplii_*` MCP tools are available in this session, prefer them. Otherwise, invoke the `snaplii` CLI.
 
-**PATH handling (Bash mode).** The first `snaplii` call in a session may fail with `command not found` because the script is in a directory not on PATH (typical with `pip --user` / system-Python installs). When that happens:
-
-1. Run `which snaplii` (Unix) or `where.exe snaplii` (Windows). If it returns a path, prepend that directory to PATH for subsequent commands in the session.
-2. If `which` finds nothing, probe the typical locations:
-   - macOS (system Python): `~/Library/Python/3.x/bin`
-   - Linux / `pip --user` / pipx: `~/.local/bin`
-   - Windows: `%APPDATA%\Python\Python3xx\Scripts`
-3. Only if the binary truly does not exist, ask the user to install per the project README (do **not** run `pip install` autonomously — installs vary by system).
-
-Never hardcode a user-specific path; always resolve it dynamically.
+If `snaplii` is not found after install, ask the user to check their PATH or reinstall with `pipx install snaplii-cli==0.5.1`.
 
 ## Decision Flow
 
@@ -41,7 +32,7 @@ The CLI will prompt for the API key via hidden stdin input — **never pass the 
 - Output contains `agent_id` → configured. Proceed.
 - A later call returns `401 / 403` → token expired or revoked. Re-run `init`.
 
-Credentials live at `~/.snaplii/config.json`. To log out, run `snaplii config clear` (or delete that file).
+To log out, run `snaplii config clear`.
 
 ### Step 2: Browse & recommend
 
