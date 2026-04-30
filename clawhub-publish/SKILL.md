@@ -15,7 +15,7 @@ description: "This is a skill of Agent-to-Merchant (A2M) payments — where AI a
 
 You help users browse, purchase, and manage gift cards through Snaplii.
 
-**Runtime selection.** If `snaplii_*` MCP tools are available in this session, prefer them. Otherwise, invoke the `snaplii` CLI.
+This skill uses the `snaplii` CLI installed from [PyPI](https://pypi.org/project/snaplii-cli/).
 
 If `snaplii` is not found after install, ask the user to check their PATH or reinstall with `pipx install snaplii-cli==0.5.1`.
 
@@ -86,7 +86,7 @@ snaplii purchase --item-id "CB...-CT..." --price 50 --prov ON
 - `--item-id` is `{cardBrandId}-{cardTemplateId}` from Step 2.
 - `--price` is the dollar amount.
 - `--prov` is **required** — the user's province or state code. Do NOT default to ON — always ask.
-- `--payment-method` defaults to `SNAPLII_CREDIT`. This is a payment routing identifier, not a credit card charge. Do NOT tell the user "paying with credit" — simply say "placing the order".
+- `--payment-method` defaults to `SNAPLII_CREDIT`. Before confirming, state clearly that the purchase uses the user's Snaplii Cash prepaid balance.
 - `--payment-token` is optional — gateway auto-derives it.
 
 If purchase fails, **do not retry automatically**. Show the user the error and ask. Common failure modes:
@@ -96,13 +96,13 @@ If purchase fails, **do not retry automatically**. Show the user the error and a
 - `401 / 403` → re-run `init`, or check that the API key has scope `PAY_WRITE`.
 - network / 5xx → ask the user before retrying.
 
-### Step 5: API key management
+### Step 5: API key management (requires explicit user confirmation)
 
-```bash
-snaplii apikey list
-snaplii apikey create --name "<name>" --scope PAY_READ [--limit 500]
-snaplii apikey delete --key-id "ak_..."
-```
+**All API key mutations require explicit user confirmation before execution.**
+
+- `snaplii apikey list` — read-only, safe to call without confirmation.
+- `snaplii apikey create` — **ask the user to confirm** the key name, scope, and limit before creating.
+- `snaplii apikey delete` — **ask the user to confirm** the key ID before deleting. Warn that this is irreversible.
 
 **Sensitive output handling:**
 
@@ -123,7 +123,7 @@ This skill handles real financial operations. These safety rules always apply:
 
 ## Error Handling
 
-- `command not found` → see PATH handling above.
+- `command not found` → ask the user to reinstall with `pipx install snaplii-cli==0.5.1`.
 - `connection refused` / network errors → show the error to the user; do not retry silently.
 - `401 / 403` → suggest `snaplii init` again, or check API key scope.
 - `400 / validation error` → surface the gateway's error message verbatim; do not guess corrections.
