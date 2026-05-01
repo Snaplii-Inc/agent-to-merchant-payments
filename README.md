@@ -1,7 +1,31 @@
 # Agent-to-Merchant Payments by Snaplii
 
 > Payments are broken for AI agents.
-Snaplii unlocks real-world commerce with a safe, tokenized payment layer — powered by 500+ merchant gift cards — and is the only one that actually saves you money (up to 33% on your first transaction).
+
+Snaplii unlocks real-world commerce with a safe, tokenized payment layer — powered by 500+ merchant gift cards — and is the only one that actually saves you money (up to 10% per transaction), on top of any existing deals or promotions.
+
+---
+## The Problem
+AI agents can already:
+- decide what to buy  
+- compare options  
+- navigate merchant platforms  
+
+But they still can’t safely pay.
+Payments require trust, compliance, and risk control —  things AI agents are not designed to handle.
+
+Giving agents access to cards is not a solution.  It’s a risk.
+
+---
+
+## The Solution
+Snaplii introduces a new model:
+**User → Agent → Snaplii → Merchant**
+- Users fund Snaplii  
+- Agents operate within a controlled boundary  
+- Each transaction is **pre-funded, isolated, and non-reusable**  
+
+No shared credentials. No persistent risk.
 
 ---
 
