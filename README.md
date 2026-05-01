@@ -1,6 +1,7 @@
 # Agent-to-Merchant Payments by Snaplii
 
-> This is a skill of Agent-to-Merchant (A2M) payments — where AI agents complete transactions without checkout. Snaplii uses pre-funded gift cards as a payment rail, enabling instant, merchant-ready execution across 500+ brands.
+> Payments are broken for AI agents.
+Snaplii unlocks real-world commerce with a safe, tokenized payment layer — powered by 500+ merchant gift cards — and is the only one that actually saves you money (up to 33% on your first transaction).
 
 ---
 
