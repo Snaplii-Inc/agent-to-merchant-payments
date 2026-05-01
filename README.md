@@ -27,6 +27,8 @@ Snaplii introduces a new model:
 
 No shared credentials. No persistent risk.
 
+In addition, Snaplii embeds **value directly into the payment layer** —  
+transactions can **save up to 10% and stack seamlessly with existing merchant deals and promotions**.
 ---
 
 ## Table of Contents
