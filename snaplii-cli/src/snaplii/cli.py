@@ -1,4 +1,5 @@
 import sys
+from importlib.metadata import version as pkg_version
 
 import click
 
@@ -14,7 +15,7 @@ from snaplii.config_store import ConfigStore
 from snaplii.exceptions import SnapliiCliError
 from snaplii.output import print_error
 
-_VERSION = "0.4.0"
+_VERSION = pkg_version("snaplii-cli")
 _DEFAULT_BASE_URL = "https://aipayment.snaplii.com"
 
 
