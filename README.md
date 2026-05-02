@@ -118,12 +118,29 @@ python3 -m pip install --user pipx
 python3 -m pipx ensurepath
 ```
 
-#### Windows PowerShell
+#### Windows
+
+**Option A — Scoop** (recommended):
+
+```powershell
+scoop install pipx
+pipx ensurepath
+```
+
+**Option B — pip**:
 
 ```powershell
 py -m pip install --user pipx
-py -m pipx ensurepath
 ```
+
+> If you see a warning that `pipx.exe` is not on PATH, run the following from the displayed path:
+> ```powershell
+> .\pipx.exe ensurepath
+> ```
+
+Restart your terminal after running `ensurepath`.
+
+> **Note:** If you installed Python from the Microsoft Store, use `python3` instead of `py`.
 
 #### All platforms
 
