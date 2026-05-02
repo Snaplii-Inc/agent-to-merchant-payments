@@ -1,0 +1,171 @@
+openapi: 3.1.0
+info:
+  title: Snaplii Gift Card API
+  description: Browse and purchase gift cards across 500+ brands with cashback savings.
+  version: 1.0.0
+servers:
+  - url: https://aipayment.snaplii.com
+paths:
+  /v2/auth/token:
+    post:
+      operationId: login
+      summary: Exchange API key for a session token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_id, api_key]
+              properties:
+                agent_id:
+                  type: string
+                  description: Any name for this session (use "chatgpt")
+                api_key:
+                  type: string
+                  description: User's Snaplii API key
+      responses:
+        "200":
+          description: JWT token returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  token_type:
+                    type: string
+                  expires_in:
+                    type: integer
+
+  /v2/card-brands:
+    get:
+      operationId: browseGiftCards
+      summary: Browse gift card categories and brands
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: channel
+          in: query
+          schema: { type: string, default: HOME_PAGE }
+        - name: locationProv
+          in: query
+          required: true
+          schema: { type: string }
+          description: "CA for Canada, US for United States"
+      responses:
+        "200":
+          description: Gift card categories with brands
+          content:
+            application/json:
+              schema: { type: object }
+
+  /v2/card-brands/{brandId}:
+    get:
+      operationId: getBrandDetail
+      summary: Get brand denominations, cashback rates, and template IDs
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: brandId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: showDetail
+          in: query
+          schema: { type: string, default: "true" }
+      responses:
+        "200":
+          description: Brand details
+          content:
+            application/json:
+              schema: { type: object }
+
+  /v2/cards:
+    get:
+      operationId: listMyCards
+      summary: List user's owned gift cards
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, default: ACTIVE }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        "200":
+          description: Owned gift cards
+          content:
+            application/json:
+              schema: { type: object }
+
+  /v2/cards/{cardNo}:
+    get:
+      operationId: getCardDetail
+      summary: Get card redemption code and PIN (sensitive — only when user asks)
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: cardNo
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Card details with redemption code
+          content:
+            application/json:
+              schema: { type: object }
+
+  /v2/purchase:
+    post:
+      operationId: purchaseCard
+      summary: Buy a gift card (requires explicit user confirmation first)
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                orderInfo:
+                  type: object
+                  properties:
+                    orderType: { type: string, default: GIFT_CARD }
+                    item:
+                      type: object
+                      properties:
+                        itemId: { type: string, description: "{brandId}-{templateId}" }
+                        price: { type: string }
+                    orderContext:
+                      type: object
+                      properties:
+                        giftOrder: { type: string, default: "false" }
+                    businessChannel: { type: string, default: APP }
+                paymentContext:
+                  type: object
+                  properties:
+                    specifiedPrimaryPaymentMethod: { type: string, default: SNAPLII_CREDIT }
+                    voucherOption: { type: string, default: BEST_FIT }
+                    cashbackOption: { type: string, default: USE }
+                delivery:
+                  type: object
+                  properties:
+                    type: { type: string, default: WALLET }
+                    immediateSend: { type: string, default: "true" }
+                locationProv: { type: string, description: "Province/state code: ON, QC, BC, NY, TX" }
+      responses:
+        "200":
+          description: Purchase result
+          content:
+            application/json:
+              schema: { type: object }
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
