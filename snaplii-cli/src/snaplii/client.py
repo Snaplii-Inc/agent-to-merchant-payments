@@ -89,6 +89,37 @@ class GatewayClient:
             "locationProv": location_prov,
         })
 
+    # ── Quote ─────────────────────────────────────────────────────
+
+    def quote_order(
+        self,
+        item_id: str,
+        price: str,
+        payment_method: str = "SNAPLII_CREDIT",
+        payment_token: str | None = None,
+        voucher_option: str = "BEST_FIT",
+        cashback_option: str = "USE",
+        specified_voucher: str | None = None,
+    ) -> dict:
+        payment_ctx = {
+            "specifiedPrimaryPaymentMethod": payment_method,
+            "voucherOption": voucher_option,
+            "cashbackOption": cashback_option,
+        }
+        if payment_token:
+            payment_ctx["specifiedPrimaryPaymentToken"] = payment_token
+        if specified_voucher:
+            payment_ctx["specifiedVoucher"] = specified_voucher
+        return self._post("/v2/quote", json={
+            "orderInfo": {
+                "orderType": "GIFT_CARD",
+                "item": {"itemId": item_id, "price": price},
+                "orderContext": {"giftOrder": "false"},
+                "businessChannel": "APP",
+            },
+            "paymentContext": payment_ctx,
+        })
+
     # ── API key management ────────────────────────────────────────
 
     def create_api_key(self, name: str, scope: str, consumption_limit: float | None = None) -> dict:
