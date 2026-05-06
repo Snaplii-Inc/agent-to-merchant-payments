@@ -96,7 +96,7 @@ This returns the price breakdown:
 - `order_amount` — original price
 - `you_pay` — actual amount after discounts
 - `voucher` — voucher name and discount (if any)
-- `cashback_applied` — cashback used (if any)
+- `snaplii_cash_applied` — Snaplii Cash balance used (if any)
 
 You can also control voucher behavior:
 - `--voucher BEST_FIT` (default) — auto-apply the best available voucher
@@ -110,12 +110,14 @@ Show the quote clearly, for example:
 > **Uber $30 Gift Card**
 > - Original price: $30.00
 > - Voucher: $5 Off Gift Card (-$5.00)
-> - Cashback applied: -$0.30
+> - Snaplii Cash: -$0.30
 > - **You pay: $24.70**
 >
 > Funds come from your Snaplii Cash balance. Confirm? (yes/no)
 
 If no voucher applies, still show the breakdown so the user knows.
+
+**Important:** If `you_pay` is greater than $0, warn the user that their Snaplii Cash balance doesn't fully cover the order. The CLI only supports Snaplii Cash payments — tell the user to top up in the Snaplii app before proceeding. Do NOT call purchase if `you_pay` > 0.
 
 #### 4c. Wait for explicit confirmation
 

@@ -248,9 +248,19 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                     "discount": f"-${result['voucherAmount']}",
                 }
             if result.get("cashbackUseAmount"):
-                summary["cashback_applied"] = f"-${result['cashbackUseAmount']}"
+                summary["snaplii_cash_applied"] = f"-${result['cashbackUseAmount']}"
             if result.get("subsidyAmount"):
                 summary["subsidy"] = f"-${result['subsidyAmount']}"
+            try:
+                you_pay = float(result.get("primaryPayAmount", "0"))
+                if you_pay > 0:
+                    summary["warning"] = (
+                        f"Snaplii Cash does not fully cover this order. "
+                        f"${you_pay:.2f} remaining. Please ask the user to top up "
+                        f"Snaplii Cash in the app before purchasing."
+                    )
+            except (ValueError, TypeError):
+                pass
             return _text(summary)
 
         elif name == "snaplii_purchase":

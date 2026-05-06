@@ -45,7 +45,7 @@ def quote_cmd(ctx, item_id, price, payment_method, voucher, cashback, voucher_id
 
     cashback_amount = resp.get("cashbackUseAmount")
     if cashback_amount:
-        summary["cashback_applied"] = f"-${cashback_amount}"
+        summary["snaplii_cash_applied"] = f"-${cashback_amount}"
 
     subsidy_amount = resp.get("subsidyAmount")
     if subsidy_amount:
@@ -54,5 +54,18 @@ def quote_cmd(ctx, item_id, price, payment_method, voucher, cashback, voucher_id
     commission = resp.get("commissionAmount")
     if commission:
         summary["commission"] = f"${commission}"
+
+    # Warn if Snaplii Cash doesn't fully cover the order
+    try:
+        you_pay = float(resp.get("primaryPayAmount", "0"))
+        if you_pay > 0:
+            summary["warning"] = (
+                f"Snaplii Cash does not fully cover this order. "
+                f"${you_pay:.2f} remaining requires another payment method, "
+                f"which is not supported via CLI. Please top up your Snaplii Cash "
+                f"in the app before purchasing."
+            )
+    except (ValueError, TypeError):
+        pass
 
     print_json(summary)
