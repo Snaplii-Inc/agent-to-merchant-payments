@@ -3,6 +3,7 @@
 > Payments are broken for AI agents.
 
 Snaplii unlocks real-world commerce with a safe, tokenized payment layer — powered by 500+ merchant gift cards — and is the only one that actually saves you money (up to 10% per transaction), on top of any existing deals or promotions.
+New users can unlock an exclusive welcome offer: **$10 off your first $30 transaction.**
 
 ---
 ## The Problem
