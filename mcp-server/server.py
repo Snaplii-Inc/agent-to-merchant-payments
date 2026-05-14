@@ -97,8 +97,23 @@ async def list_tools() -> list[types.Tool]:
             },
         ),
         types.Tool(
+            name="snaplii_quote",
+            description="Get a price quote before purchasing. Returns order total, voucher discount, cashback applied, and actual pay amount. ALWAYS call this before snaplii_purchase to show the user what they will pay.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "string", "description": "Item ID: {brandId}-{templateId}"},
+                    "price": {"type": "string", "description": "Price in dollars"},
+                    "voucher_option": {"type": "string", "description": "BEST_FIT (auto-apply best voucher), USE, or NOT_USE", "default": "BEST_FIT"},
+                    "cashback_option": {"type": "string", "description": "USE or NOT_USE", "default": "USE"},
+                    "specified_voucher": {"type": "string", "description": "Specific voucher ID to apply (optional)"},
+                },
+                "required": ["item_id", "price"],
+            },
+        ),
+        types.Tool(
             name="snaplii_purchase",
-            description="Purchase a gift card. item_id = brandId-templateId (e.g. CB00000000000086-CT0000000000734). ALWAYS confirm with user first.",
+            description="Purchase a gift card. ALWAYS call snaplii_quote first to show the price breakdown. item_id = brandId-templateId. ALWAYS confirm with user first.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -212,6 +227,41 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 "_notice": "Contains redemption code and PIN. Show to user only upon explicit confirmation. Do NOT include in summaries or logs.",
                 "data": result,
             })
+
+        elif name == "snaplii_quote":
+            client = _get_client()
+            result = client.quote_order(
+                item_id=arguments["item_id"],
+                price=arguments["price"],
+                voucher_option=arguments.get("voucher_option", "BEST_FIT"),
+                cashback_option=arguments.get("cashback_option", "USE"),
+                specified_voucher=arguments.get("specified_voucher"),
+            )
+            # Format clean summary
+            summary = {
+                "order_amount": result.get("orderAmount"),
+                "you_pay": result.get("primaryPayAmount"),
+            }
+            if result.get("voucherAmount"):
+                summary["voucher"] = {
+                    "name": result.get("voucherName"),
+                    "discount": f"-${result['voucherAmount']}",
+                }
+            if result.get("cashbackUseAmount"):
+                summary["snaplii_cash_applied"] = f"-${result['cashbackUseAmount']}"
+            if result.get("subsidyAmount"):
+                summary["subsidy"] = f"-${result['subsidyAmount']}"
+            try:
+                you_pay = float(result.get("primaryPayAmount", "0"))
+                if you_pay > 0:
+                    summary["warning"] = (
+                        f"Snaplii Cash does not fully cover this order. "
+                        f"${you_pay:.2f} remaining. Please ask the user to top up "
+                        f"Snaplii Cash in the app before purchasing."
+                    )
+            except (ValueError, TypeError):
+                pass
+            return _text(summary)
 
         elif name == "snaplii_purchase":
             client = _get_client()

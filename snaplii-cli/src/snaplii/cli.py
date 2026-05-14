@@ -10,6 +10,7 @@ from snaplii.commands.config import config_group
 from snaplii.commands.giftcard import giftcard_group
 from snaplii.commands.init import init_cmd
 from snaplii.commands.purchase import purchase_cmd
+from snaplii.commands.quote import quote_cmd
 from snaplii.commands.smart import smart_group
 from snaplii.config_store import ConfigStore
 from snaplii.exceptions import SnapliiCliError
@@ -45,6 +46,7 @@ main.add_command(init_cmd)
 main.add_command(browse_group)
 main.add_command(giftcard_group)
 main.add_command(purchase_cmd)
+main.add_command(quote_cmd)
 main.add_command(apikey_group)
 main.add_command(smart_group)
 main.add_command(config_group)

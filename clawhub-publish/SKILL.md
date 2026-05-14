@@ -71,13 +71,48 @@ snaplii giftcard detail --card-no CARD_NO
 
 This deferral matters: showing sensitive data early increases the risk of accidental exposure if later tool responses contain unexpected content.
 
-### Step 4: Purchase
+### Step 4: Purchase (quote → confirm → buy)
 
-Three-step confirm before calling `purchase`:
+When the user wants to purchase, follow this flow:
 
-1. **Ask the user's region** if not already known — need their province (CA: ON, QC, BC) or state (US: NY, CA, TX). This is **required** for the `--prov` flag.
-2. Show **brand name, face value, exact dollar amount** in plain text.
-3. Wait for explicit user confirmation ("yes", "confirm", "buy"). Treat anything else as cancellation.
+#### 4a. Get a price quote first
+
+Before confirming, **always call `snaplii quote`** to check if vouchers or cashback apply:
+
+```bash
+snaplii quote --item-id "CB...-CT..." --price 50
+```
+
+This returns the price breakdown:
+- `order_amount` — original price
+- `you_pay` — actual amount after discounts
+- `voucher` — voucher name and discount (if any)
+- `cashback_applied` — cashback used (if any)
+
+You can also control voucher behavior:
+- `--voucher BEST_FIT` (default) — auto-apply the best available voucher
+- `--voucher NOT_USE` — skip vouchers
+- `--voucher-id VOUCHER_ID` — apply a specific voucher
+
+#### 4b. Present the quote to the user
+
+Show the quote clearly, for example:
+
+> **Uber $30 Gift Card**
+> - Original price: $30.00
+> - Voucher: $5 Off Gift Card (-$5.00)
+> - Cashback applied: -$0.30
+> - **You pay: $24.70**
+>
+> Funds come from your Snaplii Cash balance. Confirm? (yes/no)
+
+If no voucher applies, still show the breakdown so the user knows.
+
+#### 4c. Wait for explicit confirmation
+
+Wait for "yes", "confirm", or "buy". Anything else means cancel.
+
+#### 4d. Execute the purchase
 
 ```bash
 snaplii purchase --item-id "CB...-CT..." --price 50 --prov ON
@@ -86,7 +121,6 @@ snaplii purchase --item-id "CB...-CT..." --price 50 --prov ON
 - `--item-id` is `{cardBrandId}-{cardTemplateId}` from Step 2.
 - `--price` is the dollar amount.
 - `--prov` is **required** — the user's province or state code. Do NOT default to ON — always ask.
-- `--payment-method` defaults to `SNAPLII_CREDIT`. Before confirming, state clearly that the purchase uses the user's Snaplii Cash prepaid balance.
 - `--payment-token` is optional — gateway auto-derives it.
 
 If purchase fails, **do not retry automatically**. Show the user the error and ask. Common failure modes:
@@ -141,7 +175,8 @@ This skill handles real financial operations. These safety rules always apply:
 | `snaplii browse brand --id BRAND_ID` | Get brand details (denominations, discounts) |
 | `snaplii giftcard list [--status STATUS]` | List owned gift cards |
 | `snaplii giftcard detail --card-no CARD_NO` | Card details (code, PIN) — sensitive |
-| `snaplii purchase --item-id ID --price PRICE` | Buy a gift card |
+| `snaplii quote --item-id ID --price PRICE` | Preview price with voucher/cashback before buying |
+| `snaplii purchase --item-id ID --price PRICE --prov PROV` | Buy a gift card |
 | `snaplii smart cashback --brand-id ID --amount A` | Calculate cashback savings |
 | `snaplii smart dashboard` | Owned-card inventory summary |
 | `snaplii apikey list` | List API keys (masked) |
