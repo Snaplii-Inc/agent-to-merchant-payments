@@ -8,3 +8,4 @@ build/
 .DS_Store
 .clawhub/
 skills/snaplii-ai-agent-cashback-payment/
+.agents/
