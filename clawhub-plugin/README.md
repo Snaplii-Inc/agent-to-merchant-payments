@@ -41,10 +41,11 @@
 | `snaplii_giftcard_detail` | `card_no` (required) | Get full card details including redemption code and PIN. **Only use when user explicitly asks** — sensitive data. |
 | `snaplii_dashboard` | — | Summary of all owned cards: total count, total face value, breakdown by brand. |
 
-### Purchase
+### Quote & Purchase
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
+| `snaplii_quote` | `item_id` (required), `price` (required), `voucher_option` (BEST_FIT/USE/NOT_USE), `cashback_option` (USE/NOT_USE), `specified_voucher` (optional) | **Always call before purchase.** Returns price breakdown: order total, voucher discount, Snaplii Cash applied, and actual pay amount. Warns if balance insufficient. |
 | `snaplii_purchase` | `item_id` (required), `price` (required), `payment_method` (default: SNAPLII_CREDIT) | Purchase a gift card. `item_id` = `{brandId}-{templateId}` from `browse_brand`. **Requires explicit user confirmation before every call.** |
 
 > **Note on `payment_method`:** `SNAPLII_CREDIT` is a payment routing identifier, not a credit card charge. Actual funds come from prepaid Snaplii Cash balance. Do not tell the user "paying with credit" — simply say "placing the order".

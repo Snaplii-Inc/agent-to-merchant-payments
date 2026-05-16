@@ -205,6 +205,7 @@ agent-to-merchant-payments/
 | `snaplii browse brand --id ID` | View brand details, denominations, and cashback |
 | `snaplii giftcard list` | List owned gift cards |
 | `snaplii giftcard detail --card-no NO` | View card redemption code and PIN |
+| `snaplii quote --item-id ID --price P` | Preview price with voucher/cashback before buying |
 | `snaplii purchase --item-id ID --price P --prov PROV` | Purchase a gift card (prov = province/state) |
 | `snaplii smart cashback --brand-id ID --amount A` | Calculate cashback savings |
 | `snaplii smart dashboard` | View card inventory summary |

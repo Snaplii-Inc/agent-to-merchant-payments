@@ -25,7 +25,15 @@ def init_cmd(ctx, agent_id):
     client: GatewayClient = ctx.obj["client"]
     store = ctx.obj["config_store"]
 
-    api_key = click.prompt("API key", hide_input=True)
+    try:
+        api_key = click.prompt("API key", hide_input=True)
+    except (click.Abort, EOFError):
+        # Fallback for terminals that don't support hidden input
+        api_key = click.prompt("API key (input will be visible)")
+
+    api_key = api_key.strip()
+    if not api_key:
+        raise click.ClickException("API key cannot be empty.")
 
     if not agent_id:
         agent_id = _derive_agent_id(api_key)
