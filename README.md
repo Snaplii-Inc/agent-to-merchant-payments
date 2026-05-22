@@ -12,10 +12,10 @@ AI agents can already:
 - compare options  
 - navigate merchant platforms  
 
-But they still can’t safely pay.
+But they still can't safely pay.
 Payments require trust, compliance, and risk control —  things AI agents are not designed to handle.
 
-Giving agents access to cards is not a solution.  It’s a risk.
+Giving agents access to cards is not a solution.  It's a risk.
 
 ---
 
@@ -30,21 +30,37 @@ No shared credentials. No persistent risk.
 
 In addition, Snaplii embeds **value directly into the payment layer** —  
 transactions can **save up to 10% and stack seamlessly with existing merchant deals and promotions**.
+
+---
+
+## Works With Any LLM
+
+Snaplii is **model-agnostic**. It works with any AI agent or LLM platform:
+
+| Integration | How | Best for |
+|---|---|---|
+| **REST API** | Direct HTTP calls to `aipayment.snaplii.com/v2/*` | Any language, any framework |
+| **Python CLI** | `pip install snaplii-cli` | Terminal agents, scripts, automation |
+| **MCP Server** | Model Context Protocol (stdio) | Claude Desktop, OpenClaw, Cursor, VS Code |
+| **OpenClaw Skill** | `clawhub install snaplii-a2m-payment` | OpenClaw agents |
+| **ChatGPT Actions** | OpenAPI spec in `chatgpt-action/` | ChatGPT custom GPTs |
+
+Whether you're building with **Claude, ChatGPT, GPT-4, Gemini, LLaMA, Mistral, OpenClaw**, or any other model — if it can make HTTP calls or run a CLI, it can use Snaplii.
+
 ---
 
 ## Table of Contents
 
 - [Requirements](#requirements)
 - [Quick Start](#quick-start)
-  - [1. Get Your API Key via Snaplii App](#1-get-your-api-key-via-snaplii-app)
-  - [2. Get the Code](#2-get-the-code)
-  - [3. Install the CLI](#3-install-the-cli)
-  - [4. Authenticate](#4-authenticate)
-  - [5. Use the CLI](#5-use-the-cli)
-- [Components](#components)
 - [CLI Commands](#cli-commands)
-- [Claude Desktop Setup MCP Server](#claude-desktop-setup-mcp-server)
-- [Claude Code Skill](#claude-code-skill)
+- [Integration Guides](#integration-guides)
+  - [REST API (Any LLM)](#rest-api-any-llm)
+  - [MCP Server (Claude, OpenClaw, Cursor)](#mcp-server-claude-openclaw-cursor)
+  - [ChatGPT Custom GPT](#chatgpt-custom-gpt)
+  - [Claude Code Skill](#claude-code-skill)
+  - [OpenClaw Skill](#openclaw-skill)
+- [Components](#components)
 - [Troubleshooting](#troubleshooting)
 - [Security](#security)
 - [License](#license)
@@ -159,8 +175,6 @@ snaplii --help
 
 ### 4. Authenticate
 
-Link your local CLI to your Snaplii account using the API key generated in Step 1:
-
 ```bash
 snaplii init
 ```
@@ -172,6 +186,7 @@ The CLI will prompt for your API key via hidden input (like a password prompt). 
 ```bash
 snaplii browse tags --prov CA                        # Browse gift card categories (CA or US)
 snaplii browse brand --id CB...                      # See denominations and cashback
+snaplii quote --item-id CB...-CT... --price 50       # Preview price with voucher/cashback
 snaplii giftcard list                                # View owned cards
 snaplii purchase --item-id CB...-CT... --price 50 --prov ON   # Buy a card
 ```
@@ -179,19 +194,6 @@ snaplii purchase --item-id CB...-CT... --price 50 --prov ON   # Buy a card
 > `--item-id` is formatted as `{cardBrandId}-{cardTemplateId}`. Both IDs are available from `snaplii browse brand`.
 >
 > **Note on `--prov`:** For `browse tags`, use country code (`CA` for Canada, `US` for United States). For `purchase`, use province/state code (`ON`, `QC`, `BC`, `NY`, `CA`, `TX`, etc.).
-
----
-
-## Components
-
-```text
-agent-to-merchant-payments/
-├── snaplii-cli/       # Python CLI — pip-installable
-├── mcp-server/        # MCP server for Claude Desktop
-├── skills/            # Claude Code skill definition
-├── clawhub-publish/   # ClawHub skill artifact
-└── clawhub-plugin/    # ClawHub MCP bundle plugin
-```
 
 ---
 
@@ -212,29 +214,77 @@ agent-to-merchant-payments/
 
 ---
 
-## Claude Desktop Setup MCP Server
+## Integration Guides
 
-Claude Desktop cannot run CLI commands directly. It requires an MCP server to bridge the gap. The Snaplii MCP server exposes tools that let Claude browse gift cards and make purchases through natural conversation.
+### REST API (Any LLM)
 
-### Step 1: Install dependencies
+The simplest integration — works with **any language, any LLM, any framework**. Just make HTTP calls.
 
-The MCP server requires Python 3.10+ and the `mcp` package. Install both the CLI and server dependencies:
+**Base URL:** `https://aipayment.snaplii.com`
+
+#### Step 1: Authenticate
+
+```bash
+curl -X POST https://aipayment.snaplii.com/v2/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{"agent_id": "my-agent", "api_key": "snp_sk_live_..."}'
+```
+
+Returns a JWT token. Use it as `Authorization: Bearer <token>` for all subsequent calls.
+
+#### Step 2: Browse gift cards
+
+```bash
+curl https://aipayment.snaplii.com/v2/card-brands?channel=HOME_PAGE&locationProv=CA \
+  -H "Authorization: Bearer <token>"
+```
+
+#### Step 3: Get a price quote
+
+```bash
+curl -X POST https://aipayment.snaplii.com/v2/quote \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "orderInfo": {"orderType": "GIFT_CARD", "item": {"itemId": "CB...-CT...", "price": "50"}, "orderContext": {"giftOrder": "false"}, "businessChannel": "APP"},
+    "paymentContext": {"specifiedPrimaryPaymentMethod": "SNAPLII_CREDIT", "voucherOption": "BEST_FIT", "cashbackOption": "USE"}
+  }'
+```
+
+#### Step 4: Purchase
+
+```bash
+curl -X POST https://aipayment.snaplii.com/v2/purchase \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "orderInfo": {"orderType": "GIFT_CARD", "item": {"itemId": "CB...-CT...", "price": "50"}, "orderContext": {"giftOrder": "false"}, "businessChannel": "APP"},
+    "paymentContext": {"specifiedPrimaryPaymentMethod": "SNAPLII_CREDIT", "voucherOption": "BEST_FIT", "cashbackOption": "USE"},
+    "delivery": {"type": "WALLET", "immediateSend": "true"},
+    "locationProv": "ON"
+  }'
+```
+
+#### Full API Reference
+
+See [`chatgpt-action/openapi.yaml`](chatgpt-action/openapi.yaml) for the complete OpenAPI 3.1 spec with all endpoints.
+
+---
+
+### MCP Server (Claude, OpenClaw, Cursor)
+
+The MCP server exposes 13 tools via the [Model Context Protocol](https://modelcontextprotocol.io/). Works with any MCP-compatible client.
+
+#### Step 1: Install dependencies
 
 ```bash
 pip3 install -e ./snaplii-cli
 pip3 install "mcp[cli]"
 ```
 
-If you get an `externally-managed-environment` error, add `--break-system-packages`:
+If you get an `externally-managed-environment` error, add `--break-system-packages`.
 
-```bash
-pip3 install -e ./snaplii-cli --break-system-packages
-pip3 install "mcp[cli]" --break-system-packages
-```
-
-### Step 2: Authenticate one time
-
-The MCP server reads credentials from `~/.snaplii/config.json`. If you have not authenticated yet, run:
+#### Step 2: Authenticate
 
 ```bash
 snaplii init
@@ -242,17 +292,18 @@ snaplii init
 
 Enter your API key when prompted.
 
-### Step 3: Configure Claude Desktop
+#### Step 3: Configure your MCP client
 
-Edit your Claude Desktop config file:
+<details>
+<summary><strong>Claude Desktop</strong></summary>
+
+Edit your config file:
 
 | OS | Config file location |
 |---|---|
 | macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
 | Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
 | Linux | `~/.config/Claude/claude_desktop_config.json` |
-
-Add the `mcpServers` section. Create the file if it does not exist. Use absolute paths:
 
 ```json
 {
@@ -265,60 +316,122 @@ Add the `mcpServers` section. Create the file if it does not exist. Use absolute
 }
 ```
 
-> [!IMPORTANT]
-> - `command` must point to the Python interpreter where `mcp` is installed. Find it with `which python3` or `echo ~/.venvs/snaplii/bin/python`.
-> - `args` must be the exact path to `server.py` inside your cloned repo.
+Restart Claude Desktop after saving.
 
-### Step 4: Restart Claude Desktop
+</details>
 
-Fully quit Claude Desktop, for example with `Cmd+Q` on macOS, then reopen it. You should now see the Snaplii tools available.
+<details>
+<summary><strong>Claude Code</strong></summary>
 
-### Step 5: Verify
-
-In a new Claude Desktop conversation, ask:
-
-```text
-What gift cards are available on Snaplii?
+```bash
+claude mcp add snaplii -- python3 /path/to/agent-to-merchant-payments/mcp-server/server.py
 ```
 
-Claude should automatically call `snaplii_browse_tags` and display the categories.
+</details>
+
+<details>
+<summary><strong>OpenClaw</strong></summary>
+
+```bash
+clawhub install snaplii-a2m-payment
+```
+
+Or add to your OpenClaw MCP config:
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "snaplii": {
+        "command": "python3",
+        "args": ["/path/to/agent-to-merchant-payments/mcp-server/server.py"]
+      }
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><strong>Cursor / VS Code / Other MCP clients</strong></summary>
+
+Any MCP-compatible client can connect to the Snaplii MCP server. The server runs via stdio:
+
+```bash
+python3 /path/to/agent-to-merchant-payments/mcp-server/server.py
+```
+
+Configure your client to launch this command as an MCP stdio server.
+
+</details>
+
+#### Available MCP Tools
+
+| Tool | Description |
+|---|---|
+| `snaplii_init` | Authenticate with API key (not stored) |
+| `snaplii_config_show` | Show auth status |
+| `snaplii_browse_tags` | Browse gift card categories (CA/US) |
+| `snaplii_browse_brand` | Brand details and denominations |
+| `snaplii_giftcard_list` | List owned gift cards |
+| `snaplii_giftcard_detail` | Card redemption code (sensitive) |
+| `snaplii_quote` | Preview price with voucher/cashback |
+| `snaplii_purchase` | Buy a gift card (requires confirmation) |
+| `snaplii_apikey_list` | List API keys |
+| `snaplii_apikey_create` | Create API key |
+| `snaplii_apikey_delete` | Delete API key |
+| `snaplii_cashback_calc` | Calculate cashback savings |
+| `snaplii_dashboard` | Owned card inventory summary |
 
 ---
 
-## Claude Code Skill
+### ChatGPT Custom GPT
 
-Claude Code expects each skill in its own directory containing a `SKILL.md` file:
+Create a Custom GPT that uses Snaplii as an Action:
+
+1. Go to [chatgpt.com](https://chatgpt.com) → Explore GPTs → Create
+2. **Instructions:** Copy from [`custom-gpt/instructions.txt`](custom-gpt/instructions.txt)
+3. **Add Action:** Paste the OpenAPI spec from [`custom-gpt/openapi.yaml`](custom-gpt/openapi.yaml)
+4. **Authentication:** Select None (auth is handled in-conversation via `/v2/auth/token`)
+5. **Save** → Share with anyone
+
+See [`custom-gpt/`](custom-gpt/) for the complete setup guide.
+
+---
+
+### Claude Code Skill
 
 ```bash
 mkdir -p ~/.claude/skills/snaplii-cli
 cp skills/snaplii-cli.md ~/.claude/skills/snaplii-cli/SKILL.md
 ```
 
-Then open:
+---
 
-```text
-~/.claude/skills/snaplii-cli/SKILL.md
-```
+### OpenClaw Skill
 
-If the file contains a line like this:
-
-```text
-Always prepend `export PATH="$PATH:/Users/.../bin" &&` before any snaplii command.
-```
-
-Replace the path with the directory that holds your `snaplii` binary. You can find it with:
+Install from ClawHub:
 
 ```bash
-which snaplii
+clawhub install snaplii-a2m-payment
 ```
 
-On Windows, use:
+Or browse on ClawHub: [snapliiai/snaplii-a2m-payment](https://clawhub.ai/snapliiai/snaplii-a2m-payment)
 
-```powershell
-where.exe snaplii
+---
+
+## Components
+
+```text
+agent-to-merchant-payments/
+├── snaplii-cli/       # Python CLI — pip-installable, works with any agent
+├── mcp-server/        # MCP server — Claude, OpenClaw, Cursor, VS Code
+├── skills/            # Claude Code skill definition
+├── custom-gpt/        # ChatGPT Custom GPT (OpenAPI spec + instructions)
+├── clawhub-publish/   # ClawHub skill artifact
+└── clawhub-plugin/    # ClawHub MCP bundle plugin
 ```
-
-If `snaplii` is already on your default `PATH`, you can delete the `export PATH=...` prefix entirely.
 
 ---
 
@@ -338,9 +451,9 @@ Look for an entry ending in `bin/snaplii` or `Scripts\snaplii.exe` on Windows. T
 
 Your system Python forbids global package installs. Use `pipx`, which is recommended, or a virtual environment. As a last resort, append `--break-system-packages` to the pip command.
 
-### Claude Desktop logs `ModuleNotFoundError: No module named 'mcp'` or `'snaplii'`
+### MCP server: `ModuleNotFoundError: No module named 'mcp'` or `'snaplii'`
 
-The Python interpreter referenced by `command` in `claude_desktop_config.json` does not have the required dependencies. Confirm with:
+The Python interpreter your MCP client is using does not have the required dependencies. Confirm with:
 
 ```bash
 /absolute/path/to/python -c "import mcp, snaplii; print('ok')"
@@ -353,6 +466,10 @@ pip install -e ./snaplii-cli
 pip install "mcp[cli]"
 ```
 
+### REST API returns `401` or `403`
+
+Your JWT token has expired. Call `/v2/auth/token` again with your API key to get a new token.
+
 ---
 
 ## Security
@@ -360,6 +477,7 @@ pip install "mcp[cli]"
 - **Limited authorization:** agents can only spend from Snaplii Cash, your prepaid balance.
 - **Scoped API keys:** keys can be restricted to `PAY_READ` view-only or `PAY_WRITE` view + purchase.
 - **Spending limits:** strict per-key consumption caps are set via the mobile app.
+- **No credential storage:** API keys are used once to obtain a token and are never saved to disk.
 - **Data protection:** card redemption codes and PINs are strictly masked and never exposed without explicit user consent.
 
 ---
