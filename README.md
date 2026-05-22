@@ -13,9 +13,9 @@ AI agents can already:
 - navigate merchant platforms  
 
 But they still can't safely pay.
-Payments require trust, compliance, and risk control —  things AI agents are not designed to handle.
+Payments require trust, compliance, and risk control — things AI agents are not designed to handle.
 
-Giving agents access to cards is not a solution.  It's a risk.
+Giving agents access to cards is not a solution. It's a risk.
 
 ---
 
@@ -29,7 +29,7 @@ Snaplii introduces a new model:
 No shared credentials. No persistent risk.
 
 In addition, Snaplii embeds **value directly into the payment layer** —  
-transactions can **save up to 10% and stack seamlessly with existing merchant deals and promotions**.
+transactions can **save up to 10%** and stack seamlessly with existing merchant deals and promotions.
 
 ---
 
@@ -43,7 +43,6 @@ Snaplii is **model-agnostic**. It works with any AI agent or LLM platform:
 | **Python CLI** | `pip install snaplii-cli` | Terminal agents, scripts, automation |
 | **MCP Server** | Model Context Protocol (stdio) | Claude Desktop, OpenClaw, Cursor, VS Code |
 | **OpenClaw Skill** | `clawhub install snaplii-a2m-payment` | OpenClaw agents |
-| **ChatGPT Actions** | OpenAPI spec in `chatgpt-action/` | ChatGPT custom GPTs |
 
 Whether you're building with **Claude, ChatGPT, GPT-4, Gemini, LLaMA, Mistral, OpenClaw**, or any other model — if it can make HTTP calls or run a CLI, it can use Snaplii.
 
@@ -57,7 +56,6 @@ Whether you're building with **Claude, ChatGPT, GPT-4, Gemini, LLaMA, Mistral, O
 - [Integration Guides](#integration-guides)
   - [REST API (Any LLM)](#rest-api-any-llm)
   - [MCP Server (Claude, OpenClaw, Cursor)](#mcp-server-claude-openclaw-cursor)
-  - [ChatGPT Custom GPT](#chatgpt-custom-gpt)
   - [Claude Code Skill](#claude-code-skill)
   - [OpenClaw Skill](#openclaw-skill)
 - [Components](#components)
@@ -265,10 +263,6 @@ curl -X POST https://aipayment.snaplii.com/v2/purchase \
   }'
 ```
 
-#### Full API Reference
-
-See [`chatgpt-action/openapi.yaml`](chatgpt-action/openapi.yaml) for the complete OpenAPI 3.1 spec with all endpoints.
-
 ---
 
 ### MCP Server (Claude, OpenClaw, Cursor)
@@ -386,20 +380,6 @@ Configure your client to launch this command as an MCP stdio server.
 
 ---
 
-### ChatGPT Custom GPT
-
-Create a Custom GPT that uses Snaplii as an Action:
-
-1. Go to [chatgpt.com](https://chatgpt.com) → Explore GPTs → Create
-2. **Instructions:** Copy from [`custom-gpt/instructions.txt`](custom-gpt/instructions.txt)
-3. **Add Action:** Paste the OpenAPI spec from [`custom-gpt/openapi.yaml`](custom-gpt/openapi.yaml)
-4. **Authentication:** Select None (auth is handled in-conversation via `/v2/auth/token`)
-5. **Save** → Share with anyone
-
-See [`custom-gpt/`](custom-gpt/) for the complete setup guide.
-
----
-
 ### Claude Code Skill
 
 ```bash
@@ -428,7 +408,6 @@ agent-to-merchant-payments/
 ├── snaplii-cli/       # Python CLI — pip-installable, works with any agent
 ├── mcp-server/        # MCP server — Claude, OpenClaw, Cursor, VS Code
 ├── skills/            # Claude Code skill definition
-├── custom-gpt/        # ChatGPT Custom GPT (OpenAPI spec + instructions)
 ├── clawhub-publish/   # ClawHub skill artifact
 └── clawhub-plugin/    # ClawHub MCP bundle plugin
 ```
