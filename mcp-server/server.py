@@ -8,9 +8,13 @@ import json
 import sys
 from pathlib import Path
 
-_CLI_SRC = Path(__file__).parent.parent / "snaplii-cli" / "src"
-if str(_CLI_SRC) not in sys.path:
-    sys.path.insert(0, str(_CLI_SRC))
+# Try importing from installed snaplii-cli package first, fall back to local source
+try:
+    import snaplii  # noqa: F401
+except ImportError:
+    _CLI_SRC = Path(__file__).parent.parent / "snaplii-cli" / "src"
+    if str(_CLI_SRC) not in sys.path:
+        sys.path.insert(0, str(_CLI_SRC))
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server

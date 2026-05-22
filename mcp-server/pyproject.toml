@@ -4,13 +4,20 @@ build-backend = "hatchling.build"
 
 [project]
 name = "snaplii-mcp"
-version = "0.1.0"
-description = "MCP server for the Snaplii Agent Gateway"
+version = "0.6.1"
+description = "MCP server for Snaplii A2M payments — browse, quote, and purchase gift cards"
 requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+authors = [{name = "Snaplii Inc", email = "charles.zhang@snaplii.com"}]
+keywords = ["snaplii", "mcp", "gift-cards", "ai-agent", "payments"]
 dependencies = [
     "mcp>=1.0",
-    "httpx>=0.27,<1",
+    "snaplii-cli>=0.6.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Snaplii-Inc/agent-to-merchant-payments"
+Repository = "https://github.com/Snaplii-Inc/agent-to-merchant-payments"
 
 [project.scripts]
 snaplii-mcp = "server:main_sync"

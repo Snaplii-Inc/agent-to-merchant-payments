@@ -2,9 +2,8 @@
   "mcp": {
     "servers": {
       "snaplii": {
-        "command": "snaplii-mcp",
-        "args": [],
-        "env": {}
+        "command": "uvx",
+        "args": ["snaplii-mcp"]
       }
     }
   }
