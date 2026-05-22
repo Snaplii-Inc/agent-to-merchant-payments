@@ -1,10 +1,8 @@
 {
-  "mcp": {
-    "servers": {
-      "snaplii": {
-        "command": "uvx",
-        "args": ["snaplii-mcp"]
-      }
+  "mcpServers": {
+    "snaplii": {
+      "command": "uvx",
+      "args": ["snaplii-mcp"]
     }
   }
 }
