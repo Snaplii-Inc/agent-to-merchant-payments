@@ -5,6 +5,7 @@ import click
 
 from snaplii.client import GatewayClient
 from snaplii.commands.apikey import apikey_group
+from snaplii.commands.billpay import billpay_group
 from snaplii.commands.browse import browse_group
 from snaplii.commands.config import config_group
 from snaplii.commands.giftcard import giftcard_group
@@ -49,6 +50,7 @@ main.add_command(purchase_cmd)
 main.add_command(quote_cmd)
 main.add_command(apikey_group)
 main.add_command(smart_group)
+main.add_command(billpay_group)
 main.add_command(config_group)
 
 

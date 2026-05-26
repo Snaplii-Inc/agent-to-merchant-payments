@@ -120,6 +120,98 @@ class GatewayClient:
             "paymentContext": payment_ctx,
         })
 
+    # ── Bill Pay ──────────────────────────────────────────────────
+
+    def billpay_payee_list(self) -> dict:
+        return self._get("/v2/billpay/payees")
+
+    def billpay_payee_detail(self, payee_code: str) -> dict:
+        return self._get(f"/v2/billpay/payees/{payee_code}")
+
+    def billpay_history(self, payee_code: str) -> dict:
+        return self._get(f"/v2/billpay/payees/{payee_code}/history")
+
+    def billpay_save(self, payee_code: str, first_name: str, last_name: str,
+                     amount: str, account: str, phone: str | None = None,
+                     email: str | None = None, remark: str | None = None) -> dict:
+        body: dict = {
+            "payeeCode": payee_code,
+            "userFirstName": first_name,
+            "userLastName": last_name,
+            "payAmount": amount,
+            "userAccount": account,
+            "picUrlList": [],
+        }
+        if phone:
+            body["userPhone"] = phone
+        if email:
+            body["userEmail"] = email
+        if remark:
+            body["remark"] = remark
+        return self._post("/v2/billpay/save", json=body)
+
+    def billpay_vouchers(self, pay_code: str, price: str) -> dict:
+        return self._post("/v2/billpay/vouchers", json={
+            "orderInfo": {
+                "orderType": "BILL_PAY",
+                "businessChannel": "APP",
+                "item": {"itemId": pay_code, "price": price},
+                "orderContext": {"giftOrder": "false"},
+            }
+        })
+
+    def billpay_quote(self, pay_code: str, price: str,
+                      voucher_option: str = "BEST_FIT",
+                      cashback_option: str = "USE",
+                      specified_voucher: str | None = None) -> dict:
+        payment_ctx: dict = {
+            "specifiedPrimaryPaymentMethod": "PAYPAL",
+            "specifiedPrimaryPaymentToken": "PAYPAL",
+            "voucherOption": voucher_option,
+            "cashbackOption": cashback_option,
+        }
+        if specified_voucher:
+            payment_ctx["specifiedVoucher"] = specified_voucher
+            payment_ctx["voucherOption"] = "USE"
+        return self._post("/v2/quote", json={
+            "orderInfo": {
+                "orderType": "BILL_PAY",
+                "businessChannel": "APP",
+                "item": {"itemId": pay_code, "price": price},
+                "orderContext": {"giftOrder": "false"},
+            },
+            "paymentContext": payment_ctx,
+        })
+
+    def billpay_create_and_pay(self, pay_code: str, price: str,
+                               location_prov: str = "ON",
+                               voucher_option: str = "BEST_FIT",
+                               cashback_option: str = "USE",
+                               specified_voucher: str | None = None) -> dict:
+        payment_ctx: dict = {
+            "specifiedPrimaryPaymentMethod": "PAYPAL",
+            "specifiedPrimaryPaymentToken": "PAYPAL",
+            "voucherOption": voucher_option,
+            "cashbackOption": cashback_option,
+        }
+        if specified_voucher:
+            payment_ctx["specifiedVoucher"] = specified_voucher
+            payment_ctx["voucherOption"] = "USE"
+        return self._post("/v2/purchase", json={
+            "orderInfo": {
+                "orderType": "BILL_PAY",
+                "businessChannel": "APP",
+                "item": {"itemId": pay_code, "price": price},
+                "orderContext": {"giftOrder": "false"},
+            },
+            "paymentContext": payment_ctx,
+            "delivery": {"type": "WALLET", "immediateSend": "false"},
+            "locationProv": location_prov,
+        })
+
+    def billpay_pay_result(self, payment_no: str) -> dict:
+        return self._post("/v2/billpay/pay-result", json={"paymentNo": payment_no})
+
     # ── API key management ────────────────────────────────────────
 
     def create_api_key(self, name: str, scope: str, consumption_limit: float | None = None) -> dict:

@@ -174,6 +174,102 @@ async def list_tools() -> list[types.Tool]:
             description="Show a summary dashboard of all owned gift cards: total count, total face value, breakdown by brand.",
             inputSchema={"type": "object", "properties": {}, "required": []},
         ),
+        # ── Bill Pay ──────────────────────────────────────────────
+        types.Tool(
+            name="snaplii_billpay_payees",
+            description="List available bill pay payees/billers (utility companies, telecoms, etc.).",
+            inputSchema={"type": "object", "properties": {}, "required": []},
+        ),
+        types.Tool(
+            name="snaplii_billpay_detail",
+            description="Get payee details including account validation rules. Use payeeCode from billpay_payees.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "payee_code": {"type": "string", "description": "Payee code (e.g. ROGERS, HYDRO_ONE)"},
+                },
+                "required": ["payee_code"],
+            },
+        ),
+        types.Tool(
+            name="snaplii_billpay_history",
+            description="Get user's previous bill pay info for a payee (autofill account, name, etc.).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "payee_code": {"type": "string", "description": "Payee code"},
+                },
+                "required": ["payee_code"],
+            },
+        ),
+        types.Tool(
+            name="snaplii_billpay_save",
+            description="Save bill pay instruction. Returns payCode needed for quote and payment. Requires explicit user confirmation.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "payee_code": {"type": "string", "description": "Payee code"},
+                    "first_name": {"type": "string", "description": "Payer first name"},
+                    "last_name": {"type": "string", "description": "Payer last name"},
+                    "amount": {"type": "string", "description": "Payment amount"},
+                    "account": {"type": "string", "description": "Account number at the biller"},
+                    "phone": {"type": "string", "description": "Payer phone (optional)"},
+                    "email": {"type": "string", "description": "Payer email (optional)"},
+                    "remark": {"type": "string", "description": "Memo (optional)"},
+                },
+                "required": ["payee_code", "first_name", "last_name", "amount", "account"],
+            },
+        ),
+        types.Tool(
+            name="snaplii_billpay_vouchers",
+            description="List available vouchers for a bill payment order.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "pay_code": {"type": "string", "description": "payCode from billpay_save"},
+                    "price": {"type": "string", "description": "Bill amount"},
+                },
+                "required": ["pay_code", "price"],
+            },
+        ),
+        types.Tool(
+            name="snaplii_billpay_quote",
+            description="Get a price quote for bill payment. Shows order total, voucher discount, and actual pay amount.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "pay_code": {"type": "string", "description": "payCode from billpay_save"},
+                    "price": {"type": "string", "description": "Bill amount"},
+                    "voucher_id": {"type": "string", "description": "Specific voucher ID (optional)"},
+                },
+                "required": ["pay_code", "price"],
+            },
+        ),
+        types.Tool(
+            name="snaplii_billpay_pay",
+            description="Create bill pay order and start PayPal payment. Returns h5PayUrl for PayPal approval and paymentNo for polling. Requires explicit user confirmation.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "pay_code": {"type": "string", "description": "payCode from billpay_save"},
+                    "price": {"type": "string", "description": "Bill amount"},
+                    "prov": {"type": "string", "description": "Province/state code (ON, QC, BC, NY)"},
+                    "voucher_id": {"type": "string", "description": "Specific voucher ID (optional)"},
+                },
+                "required": ["pay_code", "price", "prov"],
+            },
+        ),
+        types.Tool(
+            name="snaplii_billpay_result",
+            description="Poll bill pay payment result. Returns status: SUCCESS (0), FAILED (1), or PROCESSING (3). If processing, wait and poll again.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "payment_no": {"type": "string", "description": "paymentNo from billpay_pay"},
+                },
+                "required": ["payment_no"],
+            },
+        ),
     ]
 
 
@@ -354,6 +450,91 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                     for v in sorted(by_brand.values(), key=lambda x: x["total"], reverse=True)
                 ],
             })
+
+        # ── Bill Pay ──────────────────────────────────────────────
+        elif name == "snaplii_billpay_payees":
+            client = _get_client()
+            result = client.billpay_payee_list()
+            data = result.get("data", [])
+            summary = [{"payeeCode": p.get("payeeCode"), "name": p.get("payeeNameEn") or p.get("payeeNameBillPay"), "category": p.get("payeeMcc")} for p in data]
+            return _text({"total": len(summary), "payees": summary})
+
+        elif name == "snaplii_billpay_detail":
+            client = _get_client()
+            result = client.billpay_payee_detail(arguments["payee_code"])
+            return _text({
+                "payeeCode": result.get("payeeCode"),
+                "name": result.get("payeeNameBillPay") or result.get("payeeNameEn"),
+                "accountLabel": result.get("accountTypeEn"),
+                "accountRegex": result.get("accountRegex"),
+                "tips": result.get("payeeTipsEn"),
+            })
+
+        elif name == "snaplii_billpay_history":
+            client = _get_client()
+            result = client.billpay_history(arguments["payee_code"])
+            return _text(result)
+
+        elif name == "snaplii_billpay_save":
+            client = _get_client()
+            result = client.billpay_save(
+                payee_code=arguments["payee_code"],
+                first_name=arguments["first_name"],
+                last_name=arguments["last_name"],
+                amount=arguments["amount"],
+                account=arguments["account"],
+                phone=arguments.get("phone"),
+                email=arguments.get("email"),
+                remark=arguments.get("remark"),
+            )
+            return _text({"payCode": result.get("payCode"), "fee": result.get("payFeeAmount"), "status": "saved"})
+
+        elif name == "snaplii_billpay_vouchers":
+            client = _get_client()
+            result = client.billpay_vouchers(arguments["pay_code"], arguments["price"])
+            vouchers = result.get("rec", [])
+            summary = [{"voucherId": v.get("voucherId"), "name": v.get("voucherName"), "value": v.get("voucherPrice"), "expires": v.get("expiredTime")} for v in vouchers]
+            return _text({"vouchers": summary})
+
+        elif name == "snaplii_billpay_quote":
+            client = _get_client()
+            result = client.billpay_quote(
+                pay_code=arguments["pay_code"],
+                price=arguments["price"],
+                specified_voucher=arguments.get("voucher_id"),
+            )
+            summary = {"order_amount": result.get("orderAmount"), "you_pay": result.get("primaryPayAmount"), "commission": result.get("commissionAmount")}
+            if result.get("voucherAmount"):
+                summary["voucher"] = {"name": result.get("voucherName"), "discount": f"-${result['voucherAmount']}"}
+            if result.get("cashbackUseAmount"):
+                summary["snaplii_cash_applied"] = f"-${result['cashbackUseAmount']}"
+            return _text(summary)
+
+        elif name == "snaplii_billpay_pay":
+            client = _get_client()
+            result = client.billpay_create_and_pay(
+                pay_code=arguments["pay_code"],
+                price=arguments["price"],
+                location_prov=arguments["prov"],
+                specified_voucher=arguments.get("voucher_id"),
+            )
+            summary = {"orderNo": result.get("orderNo"), "paymentNo": result.get("paymentNo"), "orderStatus": result.get("orderStatus")}
+            if result.get("h5PayUrl"):
+                summary["paypal_approval_url"] = result["h5PayUrl"]
+                summary["next_step"] = "Open the PayPal URL to approve payment, then call snaplii_billpay_result to check status."
+            return _text(summary)
+
+        elif name == "snaplii_billpay_result":
+            client = _get_client()
+            result = client.billpay_pay_result(arguments["payment_no"])
+            pay_sts = result.get("paySts", "")
+            status_map = {"0": "SUCCESS", "1": "FAILED", "3": "PROCESSING"}
+            summary = {"status": status_map.get(pay_sts, pay_sts)}
+            if pay_sts == "1":
+                summary["error"] = result.get("payErrMsg", result.get("payErrTitle", "Payment failed"))
+            if pay_sts == "3":
+                summary["next_step"] = "Payment still processing. Wait a moment and call this tool again."
+            return _text(summary)
 
         else:
             return _text(f"Unknown tool: {name}")
