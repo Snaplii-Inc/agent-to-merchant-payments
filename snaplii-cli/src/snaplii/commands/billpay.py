@@ -130,6 +130,16 @@ def quote_cmd(ctx, pay_code, price, voucher_id):
         }
     if resp.get("cashbackUseAmount"):
         summary["snaplii_cash_applied"] = f"-${resp['cashbackUseAmount']}"
+    try:
+        you_pay = float(resp.get("primaryPayAmount", "0"))
+        if you_pay > 0:
+            summary["warning"] = (
+                f"Snaplii Cash does not fully cover this bill. ${you_pay:.2f} remaining "
+                f"requires another payment method, which is not supported via CLI. "
+                f"Please top up your Snaplii Cash in the app before paying."
+            )
+    except (ValueError, TypeError):
+        pass
     print_json(summary)
 
 
@@ -140,7 +150,7 @@ def quote_cmd(ctx, pay_code, price, voucher_id):
 @click.option("--voucher-id", default=None, help="Specific voucher ID to apply")
 @click.pass_context
 def pay_cmd(ctx, pay_code, price, prov, voucher_id):
-    """Create bill pay order and start payment via PayPal."""
+    """Pay the bill from Snaplii Cash balance."""
     client: GatewayClient = ctx.obj["client"]
     resp = client.billpay_create_and_pay(
         pay_code=pay_code,
@@ -148,15 +158,18 @@ def pay_cmd(ctx, pay_code, price, prov, voucher_id):
         location_prov=prov,
         specified_voucher=voucher_id,
     )
+    status = resp.get("orderStatus", "")
     summary = {
         "orderNo": resp.get("orderNo"),
         "paymentNo": resp.get("paymentNo"),
-        "orderStatus": resp.get("orderStatus"),
+        "orderStatus": status,
     }
-    h5_url = resp.get("h5PayUrl")
-    if h5_url:
-        summary["paypal_approval_url"] = h5_url
-        summary["next_step"] = "Open the PayPal URL to approve payment, then run 'snaplii billpay result --payment-no ...' to check status."
+    if status in ("SUCCESS", "WAIT_DELIVER"):
+        summary["result"] = "Bill paid successfully from Snaplii Cash."
+    elif resp.get("h5PayUrl"):
+        # Fallback: Snaplii Cash insufficient, balance must be topped up externally
+        summary["warning"] = "Snaplii Cash did not fully cover the bill. Top up in the Snaplii app and retry."
+        summary["paypal_approval_url"] = resp["h5PayUrl"]
     print_json(summary)
 
 

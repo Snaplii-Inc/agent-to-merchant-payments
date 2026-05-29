@@ -164,9 +164,9 @@ class GatewayClient:
                       voucher_option: str = "BEST_FIT",
                       cashback_option: str = "USE",
                       specified_voucher: str | None = None) -> dict:
+        # Pay from Snaplii Cash (SNAPLII_CREDIT) — same as gift cards, agent-autonomous
         payment_ctx: dict = {
-            "specifiedPrimaryPaymentMethod": "PAYPAL",
-            "specifiedPrimaryPaymentToken": "PAYPAL",
+            "specifiedPrimaryPaymentMethod": "SNAPLII_CREDIT",
             "voucherOption": voucher_option,
             "cashbackOption": cashback_option,
         }
@@ -188,9 +188,9 @@ class GatewayClient:
                                voucher_option: str = "BEST_FIT",
                                cashback_option: str = "USE",
                                specified_voucher: str | None = None) -> dict:
+        # Pay from Snaplii Cash (SNAPLII_CREDIT) — same as gift cards, agent-autonomous
         payment_ctx: dict = {
-            "specifiedPrimaryPaymentMethod": "PAYPAL",
-            "specifiedPrimaryPaymentToken": "PAYPAL",
+            "specifiedPrimaryPaymentMethod": "SNAPLII_CREDIT",
             "voucherOption": voucher_option,
             "cashbackOption": cashback_option,
         }

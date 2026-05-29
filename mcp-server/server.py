@@ -247,7 +247,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_billpay_pay",
-            description="Create bill pay order and start PayPal payment. Returns h5PayUrl for PayPal approval and paymentNo for polling. Requires explicit user confirmation.",
+            description="Pay the bill from Snaplii Cash balance (same as gift cards — no PayPal redirect needed). Completes directly when balance covers the bill. Requires explicit user confirmation.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -518,10 +518,13 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 location_prov=arguments["prov"],
                 specified_voucher=arguments.get("voucher_id"),
             )
-            summary = {"orderNo": result.get("orderNo"), "paymentNo": result.get("paymentNo"), "orderStatus": result.get("orderStatus")}
-            if result.get("h5PayUrl"):
+            status = result.get("orderStatus", "")
+            summary = {"orderNo": result.get("orderNo"), "paymentNo": result.get("paymentNo"), "orderStatus": status}
+            if status in ("SUCCESS", "WAIT_DELIVER"):
+                summary["result"] = "Bill paid successfully from Snaplii Cash."
+            elif result.get("h5PayUrl"):
+                summary["warning"] = "Snaplii Cash did not fully cover the bill. Ask the user to top up in the Snaplii app and retry."
                 summary["paypal_approval_url"] = result["h5PayUrl"]
-                summary["next_step"] = "Open the PayPal URL to approve payment, then call snaplii_billpay_result to check status."
             return _text(summary)
 
         elif name == "snaplii_billpay_result":
