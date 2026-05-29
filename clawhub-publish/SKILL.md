@@ -11,13 +11,13 @@ description: "This is a skill of Agent-to-Merchant (A2M) payments — where AI a
 
 1. **Download the Snaplii App** ([iOS](https://apps.apple.com/app/snaplii/id1596924498) / [Android](https://play.google.com/store/apps/details?id=com.snaplii.app)) — register and load Snaplii Cash balance
 2. **Create an API Key** — in the app, go to **More → Payment Methods → AI Payment Management → + New API Key**
-3. **Install the CLI** — `pip install snaplii-cli==0.6.1` ([PyPI](https://pypi.org/project/snaplii-cli/) | [Source](https://github.com/Snaplii-Inc/agent-to-merchant-payments))
+3. **Install the CLI** — `pip install snaplii-cli==0.7.0` ([PyPI](https://pypi.org/project/snaplii-cli/) | [Source](https://github.com/Snaplii-Inc/agent-to-merchant-payments))
 
 You help users browse, purchase, and manage gift cards through Snaplii.
 
 This skill uses the `snaplii` CLI installed from [PyPI](https://pypi.org/project/snaplii-cli/).
 
-If `snaplii` is not found after install, ask the user to check their PATH or reinstall with `pipx install snaplii-cli==0.6.1`.
+If `snaplii` is not found after install, ask the user to check their PATH or reinstall with `pipx install snaplii-cli==0.7.0`.
 
 ## Decision Flow
 
@@ -148,6 +148,26 @@ If purchase fails, **do not retry automatically**. Show the user the error and a
   2. Warn the user: *"This secret will be shown once only. Have a secure place to paste it (password manager, env file)? Reply 'show' to print it."*
   3. Only after explicit confirmation, print the full key, then advise the user to clear the chat / not log it.
 
+### Step 6: Bill Pay (pay utility bills, telecoms, etc.)
+
+Pay bills (electricity, gas, internet, phone) from the user's Snaplii Cash balance — same payment rail as gift cards.
+
+```bash
+snaplii billpay payees                                          # list available billers
+snaplii billpay detail --payee-code PE01015                     # account validation rules
+snaplii billpay save --payee-code PE01015 --first-name Alex --last-name Chen --amount 75.25 --account 1234567890
+snaplii billpay quote --pay-code PC... --price 75.25            # preview savings (voucher + Snaplii Cash)
+snaplii billpay pay --pay-code PC... --price 75.25 --prov ON    # pay from Snaplii Cash
+snaplii billpay result --payment-no PSP...                      # check status
+```
+
+Flow: **payees → detail → save (get payCode) → quote → confirm → pay → result**.
+
+- Validate the account number against `accountRegex` from `detail` before saving.
+- `quote` shows voucher + Snaplii Cash applied and the actual `you_pay`. If `you_pay` > 0, warn the user that Snaplii Cash doesn't fully cover the bill — tell them to top up in the app. Do NOT pay if `you_pay` > 0.
+- **Always confirm the biller, account, and amount with the user before calling `pay`.**
+- Payment is from Snaplii Cash — no PayPal redirect when balance covers the bill.
+
 ## Sensitive Data Handling
 
 This skill handles real financial operations. These safety rules always apply:
@@ -159,7 +179,7 @@ This skill handles real financial operations. These safety rules always apply:
 
 ## Error Handling
 
-- `command not found` → ask the user to reinstall with `pipx install snaplii-cli==0.6.1`.
+- `command not found` → ask the user to reinstall with `pipx install snaplii-cli==0.7.0`.
 - `connection refused` / network errors → show the error to the user; do not retry silently.
 - `401 / 403` → suggest `snaplii init` again, or check API key scope.
 - `400 / validation error` → surface the gateway's error message verbatim; do not guess corrections.

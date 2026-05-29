@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "snaplii-cli"
-version = "0.6.1"
-description = "Browse, purchase, and manage gift cards through Snaplii — safe payments for AI agents"
+version = "0.7.0"
+description = "Browse, purchase gift cards, and pay bills through Snaplii — safe payments for AI agents"
 readme = {file = "../README.md", content-type = "text/markdown"}
 requires-python = ">=3.9"
 license = {text = "Apache-2.0"}

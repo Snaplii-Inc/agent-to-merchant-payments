@@ -10,7 +10,7 @@
 2. **Create an API Key** — in the app, go to **More → Payment Methods → AI Payment Management → + New API Key**. Set a name, scope (`PAY_READ` or `PAY_WRITE`), and spending limit. Copy the key — it is shown only once.
 3. **Install the MCP server**:
    ```bash
-   pip install snaplii-cli==0.6.1 "mcp[cli]"
+   pip install snaplii-cli==0.7.0 "mcp[cli]"
    ```
    [PyPI package](https://pypi.org/project/snaplii-cli/) | [Source code](https://github.com/Snaplii-Inc/agent-to-merchant-payments)
 
@@ -49,6 +49,21 @@
 | `snaplii_purchase` | `item_id` (required), `price` (required), `payment_method` (default: SNAPLII_CREDIT) | Purchase a gift card. `item_id` = `{brandId}-{templateId}` from `browse_brand`. **Requires explicit user confirmation before every call.** |
 
 > **Note on `payment_method`:** `SNAPLII_CREDIT` is a payment routing identifier, not a credit card charge. Actual funds come from prepaid Snaplii Cash balance. Do not tell the user "paying with credit" — simply say "placing the order".
+
+### Bill Pay
+
+Pay utility bills, telecoms, etc. from Snaplii Cash — same payment rail as gift cards.
+
+| Tool | Parameters | Description |
+|------|-----------|-------------|
+| `snaplii_billpay_payees` | — | List available billers (electricity, gas, telecom, etc.). |
+| `snaplii_billpay_detail` | `payee_code` (required) | Get account validation rules for a biller. |
+| `snaplii_billpay_history` | `payee_code` (required) | Get previous bill pay info for autofill. |
+| `snaplii_billpay_save` | `payee_code`, `first_name`, `last_name`, `amount`, `account` (required); `phone`, `email` (optional) | Save bill pay instruction, returns payCode. **Requires user confirmation.** |
+| `snaplii_billpay_vouchers` | `pay_code`, `price` (required) | List available vouchers for the bill. |
+| `snaplii_billpay_quote` | `pay_code`, `price` (required); `voucher_id` (optional) | Preview price: voucher + Snaplii Cash applied, actual pay amount. |
+| `snaplii_billpay_pay` | `pay_code`, `price`, `prov` (required); `voucher_id` (optional) | Pay the bill from Snaplii Cash. **Requires user confirmation.** |
+| `snaplii_billpay_result` | `payment_no` (required) | Check payment status (SUCCESS / FAILED / PROCESSING). |
 
 ### API Key Management
 

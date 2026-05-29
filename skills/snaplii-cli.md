@@ -11,7 +11,7 @@ description: "This is a skill of Agent-to-Merchant (A2M) payments — where AI a
 
 1. **Download the Snaplii App** ([iOS](https://apps.apple.com/app/snaplii/id1596924498) / [Android](https://play.google.com/store/apps/details?id=com.snaplii.app)) — register and load Snaplii Cash balance
 2. **Create an API Key** — in the app, go to **More → Payment Methods → AI Payment Management → + New API Key**
-3. **Install the CLI** — `pip install snaplii-cli==0.6.1`
+3. **Install the CLI** — `pip install snaplii-cli==0.7.0`
 
 You help users browse, purchase, and manage gift cards through Snaplii.
 
@@ -156,6 +156,27 @@ snaplii apikey delete --key-id "ak_..."
   1. Confirm the key was created and show only the key ID + a masked preview.
   2. Warn the user: *"This secret will be shown once only. Have a secure place to paste it (password manager, env file)? Reply 'show' to print it."*
   3. Only after explicit confirmation, print the full key, then advise the user to clear the chat / not log it.
+
+### Step 6: Bill Pay (pay utility bills, telecoms, etc.)
+
+Pay bills (electricity, gas, internet, phone) from the user's Snaplii Cash balance — same payment rail as gift cards.
+
+```bash
+snaplii billpay payees                                          # list available billers
+snaplii billpay detail --payee-code PE01015                     # account validation rules
+snaplii billpay save --payee-code PE01015 --first-name Alex --last-name Chen --amount 75.25 --account 1234567890
+snaplii billpay quote --pay-code PC... --price 75.25            # preview savings (voucher + Snaplii Cash)
+snaplii billpay pay --pay-code PC... --price 75.25 --prov ON    # pay from Snaplii Cash
+snaplii billpay result --payment-no PSP...                      # check status
+```
+
+Flow: **payees → detail → save (returns payCode) → quote → confirm → pay → result**.
+
+- The `save` step returns a `payCode` used by `quote` and `pay`.
+- Validate the account number against the `accountRegex` from `detail` before saving.
+- `quote` shows voucher + Snaplii Cash applied and the actual `you_pay`. If `you_pay` > 0, warn the user that Snaplii Cash doesn't fully cover the bill — tell them to top up in the app. Do NOT call `pay` if `you_pay` > 0.
+- **Always confirm the biller, account, and amount with the user before calling `pay`.**
+- Payment is from Snaplii Cash — no PayPal redirect when balance covers the bill.
 
 ## Sensitive Data Handling
 
