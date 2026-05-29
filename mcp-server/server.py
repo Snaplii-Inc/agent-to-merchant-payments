@@ -129,35 +129,6 @@ async def list_tools() -> list[types.Tool]:
             },
         ),
         types.Tool(
-            name="snaplii_apikey_list",
-            description="List all API keys for the current user.",
-            inputSchema={"type": "object", "properties": {}, "required": []},
-        ),
-        types.Tool(
-            name="snaplii_apikey_create",
-            description="Create a new API key. The full key is only returned once — display it clearly.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string", "description": "Key name"},
-                    "scope": {"type": "string", "description": "PAY_READ (view cards only) or PAY_WRITE (view + purchase)", "default": "PAY_READ"},
-                    "limit": {"type": "number", "description": "Consumption limit in dollars"},
-                },
-                "required": ["name"],
-            },
-        ),
-        types.Tool(
-            name="snaplii_apikey_delete",
-            description="Delete an API key by its ID.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "key_id": {"type": "string", "description": "API key ID"},
-                },
-                "required": ["key_id"],
-            },
-        ),
-        types.Tool(
             name="snaplii_cashback_calc",
             description="Calculate exact cashback savings for a brand and amount. Shows how much user saves and effective cost.",
             inputSchema={
@@ -370,33 +341,6 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 price=arguments["price"],
                 payment_method=arguments.get("payment_method", "SNAPLII_CREDIT"),
             )
-            return _text(result)
-
-        elif name == "snaplii_apikey_list":
-            client = _get_client()
-            result = client.list_api_keys()
-            if isinstance(result, dict):
-                for key in result.get("keys", []):
-                    if "apiKey" in key:
-                        key["apiKey"] = key["apiKey"][:12] + "..." if len(key.get("apiKey", "")) > 12 else "***"
-            return _text(result)
-
-        elif name == "snaplii_apikey_create":
-            client = _get_client()
-            result = client.create_api_key(
-                name=arguments["name"],
-                scope=arguments.get("scope", "PAY_READ"),
-                consumption_limit=arguments.get("limit"),
-            )
-            # Never return full API key in MCP context — it would leak into conversation
-            if isinstance(result, dict) and "apiKey" in result:
-                result["apiKey"] = result["apiKey"][:12] + "..." if len(result.get("apiKey", "")) > 12 else "***"
-                result["_notice"] = "Key created but masked for security. User must run 'snaplii apikey create --reveal' via CLI to see the full key."
-            return _text(result)
-
-        elif name == "snaplii_apikey_delete":
-            client = _get_client()
-            result = client.delete_api_key(arguments["key_id"])
             return _text(result)
 
         elif name == "snaplii_cashback_calc":

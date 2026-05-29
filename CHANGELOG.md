@@ -1,8 +1,58 @@
 # Changelog
 
-All notable changes to AI Passport will be documented in this file.
+All notable changes to **Agent-to-Merchant Payments by Snaplii** will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow [Semantic Versioning](https://semver.org/).
+
+---
+
+## [0.8.0] — 2026-05-29
+
+### Removed
+- **API key management removed from CLI and MCP** — `snaplii apikey list/create/delete` and the `snaplii_apikey_*` MCP tools are gone. API keys are created, viewed, and revoked **only in the Snaplii app**. This is intentional: agents should never manage their own keys. (Breaking change for any scripts using `snaplii apikey`.)
+
+### Fixed
+- **Spending-limit and business errors now show the real cause.** Previously a daily-spend-limit hit surfaced as a generic "Gateway temporarily unavailable" (HTTP 502). The gateway now returns business rejections as HTTP 422 with the full upstream body (error code + message), and the CLI surfaces the actual message (e.g. "you may have reached a spending limit").
+- Gateway logs the upstream error body on failure (was logging only the status code), making issues like spend-limit rejections debuggable.
+
+### Changed
+- CHANGELOG renamed from "AI Passport" to "Agent-to-Merchant Payments by Snaplii"
+
+---
+
+## [0.7.0] — 2026-05-26
+
+### Added
+- **Bill Pay** — pay utility bills, telecom, and more from Snaplii Cash, with the same vouchers and cashback as gift cards. New `snaplii billpay` commands: `payees`, `detail`, `history`, `save`, `vouchers`, `quote`, `pay`, `result`. 8 matching `snaplii_billpay_*` MCP tools.
+- `snaplii-mcp` published to PyPI (depends on `snaplii-cli`), so the MCP server runs via `uvx snaplii-mcp` — no manual path setup.
+
+### Changed
+- Bill pay draws from prepaid Snaplii Cash (`SNAPLII_CREDIT`), not PayPal — keeps the agent-autonomous flow with no PayPal redirect when the balance covers the bill.
+
+---
+
+## [0.6.1] — 2026-05-19
+
+### Fixed
+- `snaplii init` reads the API key silently from a pipe (`echo key | snaplii init`) without a stray prompt in non-TTY environments
+- CLI version now read from package metadata (was hardcoded, drifted out of sync)
+
+---
+
+## [0.6.0] — 2026-05-05
+
+### Added
+- **`snaplii quote`** — preview an order before buying: shows voucher discount, Snaplii Cash applied, and the actual amount you pay
+- Auto-apply the best available voucher (`--voucher BEST_FIT`)
+- Warning when Snaplii Cash doesn't fully cover an order (purchase blocked until topped up)
+
+---
+
+## [0.5.0] — 2026-04-29
+
+### Security
+- **API key is never stored.** It's read from hidden stdin input (never a CLI argument), used once to obtain a token, then discarded. Token expiry requires re-running `snaplii init`.
+- `agent_id` auto-derived from the API key — no longer required on `init`
 
 ---
 
@@ -91,6 +141,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.8.0 | 2026-05-29 | Remove CLI/MCP API-key management, clearer spend-limit errors |
+| 0.7.0 | 2026-05-26 | Bill Pay (utilities, telecom); snaplii-mcp on PyPI |
+| 0.6.1 | 2026-05-19 | init pipe fix, version from package metadata |
+| 0.6.0 | 2026-05-05 | `snaplii quote` — voucher/cashback preview |
+| 0.5.0 | 2026-04-29 | API key never stored, agent-id auto-derived |
 | 0.4.0 | 2026-04-28 | System keychain for secrets, user feedback fixes |
 | 0.3.0 | 2026-04-26 | Security hardening, MCP fixes, user feedback |
 | 0.2.0 | 2026-04-24 | Full purchase chain, smart features, MCP 12 tools |

@@ -212,19 +212,7 @@ class GatewayClient:
     def billpay_pay_result(self, payment_no: str) -> dict:
         return self._post("/v2/billpay/pay-result", json={"paymentNo": payment_no})
 
-    # ── API key management ────────────────────────────────────────
-
-    def create_api_key(self, name: str, scope: str, consumption_limit: float | None = None) -> dict:
-        params = {"name": name, "scope": scope}
-        if consumption_limit is not None:
-            params["consumptionLimit"] = str(consumption_limit)
-        return self._post("/v2/apikeys", params=params)
-
-    def list_api_keys(self) -> dict:
-        return self._get("/v2/apikeys")
-
-    def delete_api_key(self, key_id: str) -> dict:
-        return self._delete(f"/v2/apikeys/{key_id}")
+    # API keys are created and managed only in the Snaplii app, never via the CLI.
 
     # ── Internal ──────────────────────────────────────────────────
 
@@ -296,11 +284,25 @@ class GatewayClient:
             if isinstance(body, dict):
                 rsp_code = body.get("rspMsgCd", "")
                 if rsp_code and not rsp_code.endswith("00000"):
-                    friendly = cls._ERROR_MESSAGES.get(rsp_code)
-                    if friendly:
-                        body["friendly_message"] = friendly
+                    cls._attach_friendly_message(body, rsp_code)
                     raise GatewayApiError(resp.status_code, body, path)
             return body
+        # Non-success HTTP. If the body carries a business error code (e.g. a 422
+        # business rejection like a spending-limit hit), surface its real message
+        # instead of a generic status-based fallback.
         if not isinstance(body, dict):
             body = {"raw": body}
+        rsp_code = body.get("rspMsgCd", "")
+        if rsp_code:
+            cls._attach_friendly_message(body, rsp_code)
         raise GatewayApiError(resp.status_code, body, path)
+
+    @classmethod
+    def _attach_friendly_message(cls, body: dict, rsp_code: str) -> None:
+        """Set body['friendly_message'] from the error-code map, or fall back to the
+        upstream message text (rspMsgInf / rspMsgInfo)."""
+        friendly = cls._ERROR_MESSAGES.get(rsp_code)
+        if not friendly:
+            friendly = body.get("rspMsgInf") or body.get("rspMsgInfo")
+        if friendly:
+            body["friendly_message"] = friendly

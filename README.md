@@ -393,11 +393,11 @@ Configure your client to launch this command as an MCP stdio server.
 | `snaplii_giftcard_detail` | Card redemption code (sensitive) |
 | `snaplii_quote` | Preview price with voucher/cashback |
 | `snaplii_purchase` | Buy a gift card (requires confirmation) |
-| `snaplii_apikey_list` | List API keys |
-| `snaplii_apikey_create` | Create API key |
-| `snaplii_apikey_delete` | Delete API key |
 | `snaplii_cashback_calc` | Calculate cashback savings |
 | `snaplii_dashboard` | Owned card inventory summary |
+| `snaplii_billpay_*` | Bill pay: payees, detail, save, quote, pay, result |
+
+> API keys are created and managed **only in the Snaplii app** — there are no CLI/MCP tools to list, create, or delete them.
 
 ---
 
