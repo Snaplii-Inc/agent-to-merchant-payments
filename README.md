@@ -2,7 +2,7 @@
 
 > Payments are broken for AI agents.
 
-Snaplii unlocks real-world commerce with a safe, tokenized payment layer — powered by 500+ merchant gift cards — and is the only one that actually saves you money (up to 10% per transaction), on top of any existing deals or promotions.
+Snaplii unlocks real-world commerce with a safe, tokenized payment layer — powered by 500+ merchant gift cards **and bill pay** (utilities, telecom, and more) — and is the only one that actually saves you money (up to 10% per transaction), on top of any existing deals or promotions.
 New users can unlock an exclusive welcome offer: **$10 off your first $30 transaction.**
 
 ---
@@ -193,6 +193,21 @@ snaplii purchase --item-id CB...-CT... --price 50 --prov ON   # Buy a card
 >
 > **Note on `--prov`:** For `browse tags`, use country code (`CA` for Canada, `US` for United States). For `purchase`, use province/state code (`ON`, `QC`, `BC`, `NY`, `CA`, `TX`, etc.).
 
+### 6. Pay a Bill
+
+Pay utility bills, telecom, and more — from your Snaplii Cash balance, with the same cashback and vouchers as gift cards.
+
+```bash
+snaplii billpay payees                                                       # Find your biller
+snaplii billpay detail --payee-code PE01015                                  # Check account rules
+snaplii billpay save --payee-code PE01015 --first-name Alex --last-name Chen --amount 75.25 --account 1234567890
+snaplii billpay quote --pay-code PC... --price 75.25                         # Preview savings
+snaplii billpay pay --pay-code PC... --price 75.25 --prov ON                 # Pay from Snaplii Cash
+snaplii billpay result --payment-no PSP...                                   # Check status
+```
+
+> Bill pay flow: **payees → detail → save (returns payCode) → quote → pay → result**. Payment draws from your prepaid Snaplii Cash balance — no checkout, no card sharing.
+
 ---
 
 ## CLI Commands
@@ -209,6 +224,12 @@ snaplii purchase --item-id CB...-CT... --price 50 --prov ON   # Buy a card
 | `snaplii purchase --item-id ID --price P --prov PROV` | Purchase a gift card (prov = province/state) |
 | `snaplii smart cashback --brand-id ID --amount A` | Calculate cashback savings |
 | `snaplii smart dashboard` | View card inventory summary |
+| `snaplii billpay payees` | List available billers (electricity, gas, telecom) |
+| `snaplii billpay detail --payee-code CODE` | View biller account validation rules |
+| `snaplii billpay save --payee-code CODE --first-name F --last-name L --amount A --account NO` | Save a bill pay instruction |
+| `snaplii billpay quote --pay-code PC --price P` | Preview bill price with voucher/cashback |
+| `snaplii billpay pay --pay-code PC --price P --prov PROV` | Pay the bill from Snaplii Cash |
+| `snaplii billpay result --payment-no NO` | Check bill payment status |
 
 ---
 
