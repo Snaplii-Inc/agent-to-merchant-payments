@@ -6,6 +6,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
+## [0.9.0] — 2026-06-01
+
+### Added
+- **Auto-update mechanism.** The CLI checks PyPI for a newer release (cached once per day, 2s timeout, fails silently) and prints an update notice to **stderr** — never polluting the JSON on stdout. New `snaplii update` command self-installs the latest version via pip. The skill instructs agents to run `snaplii update` when they see the notice.
+
+### Fixed
+- Agents must never state or guess the user's Snaplii Cash balance (there is no balance query) — skill + plugin now forbid reporting a balance and direct users to the app. A real balance endpoint is planned.
+
+### Changed
+- `config show` hides internal bookkeeping fields (e.g. the version-check cache)
+
+---
+
 ## [0.8.0] — 2026-05-29
 
 ### Removed
@@ -141,6 +154,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.9.0 | 2026-06-01 | CLI auto-update mechanism, never-guess-balance rule |
 | 0.8.0 | 2026-05-29 | Remove CLI/MCP API-key management, clearer spend-limit errors |
 | 0.7.0 | 2026-05-26 | Bill Pay (utilities, telecom); snaplii-mcp on PyPI |
 | 0.6.1 | 2026-05-19 | init pipe fix, version from package metadata |

@@ -27,6 +27,8 @@ def config_show(ctx):
     """Display current configuration."""
     store: ConfigStore = ctx.obj["config_store"]
     data = store.load()
+    # Hide internal bookkeeping fields (e.g. _version_check cache)
+    data = {k: v for k, v in data.items() if not k.startswith("_")}
     if "api_key" in data and data["api_key"]:
         key = data["api_key"]
         data["api_key"] = key[:8] + "..." if len(key) > 8 else "***"

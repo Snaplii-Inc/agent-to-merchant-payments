@@ -1,3 +1,4 @@
+import subprocess
 import sys
 from importlib.metadata import version as pkg_version
 
@@ -14,7 +15,8 @@ from snaplii.commands.quote import quote_cmd
 from snaplii.commands.smart import smart_group
 from snaplii.config_store import ConfigStore
 from snaplii.exceptions import SnapliiCliError
-from snaplii.output import print_error
+from snaplii.output import print_error, print_json
+from snaplii.version_check import check_for_update
 
 _VERSION = pkg_version("snaplii-cli")
 _DEFAULT_BASE_URL = "https://aipayment.snaplii.com"
@@ -32,14 +34,25 @@ _DEFAULT_BASE_URL = "https://aipayment.snaplii.com"
 def main(ctx, base_url):
     """Snaplii Agent Gateway CLI.
 
-    Browse gift card brands, manage your cards, purchase new ones,
-    and manage API keys.
+    Browse gift card brands, purchase cards, pay bills, and preview
+    savings — all from your Snaplii Cash balance.
     """
     ctx.ensure_object(dict)
     store = ConfigStore()
     resolved_url = base_url or store.get("base_url", _DEFAULT_BASE_URL)
     ctx.obj["config_store"] = store
     ctx.obj["client"] = GatewayClient(resolved_url, store)
+
+    # Daily, fail-silent check for a newer release. Notice goes to stderr so it
+    # never pollutes the JSON on stdout that agents parse.
+    if ctx.invoked_subcommand != "update":
+        update = check_for_update(store)
+        if update:
+            click.echo(
+                f"[snaplii] Update available: {update['current']} -> {update['latest']}. "
+                f"Run 'snaplii update' or 'pip install -U snaplii-cli'.",
+                err=True,
+            )
 
 
 main.add_command(init_cmd)
@@ -50,6 +63,31 @@ main.add_command(quote_cmd)
 main.add_command(smart_group)
 main.add_command(billpay_group)
 main.add_command(config_group)
+
+
+@main.command("update")
+@click.pass_context
+def update_cmd(ctx):
+    """Check for and install the latest snaplii-cli from PyPI."""
+    store = ctx.obj["config_store"]
+    # Force a fresh check by clearing the daily cache.
+    store.set("_version_check", {})
+    update = check_for_update(store)
+    if not update:
+        print_json({"status": "up-to-date", "version": _VERSION})
+        return
+    result = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "-U", "snaplii-cli"],
+        capture_output=True, text=True,
+    )
+    if result.returncode == 0:
+        print_json({"status": "updated", "from": update["current"], "to": update["latest"]})
+    else:
+        print_error({
+            "error": "Update failed. Try manually: pip install -U snaplii-cli (or pipx upgrade snaplii-cli)",
+            "detail": (result.stderr or "").strip()[-300:],
+        })
+        sys.exit(1)
 
 
 @main.command("help")

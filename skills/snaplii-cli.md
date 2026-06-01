@@ -11,7 +11,7 @@ description: "This is a skill of Agent-to-Merchant (A2M) payments — where AI a
 
 1. **Download the Snaplii App** ([iOS](https://apps.apple.com/app/snaplii/id1596924498) / [Android](https://play.google.com/store/apps/details?id=com.snaplii.app)) — register and load Snaplii Cash balance
 2. **Create an API Key** — in the app, go to **More → Payment Methods → AI Payment Management → + New API Key**
-3. **Install the CLI** — `pip install snaplii-cli==0.8.0`
+3. **Install the CLI** — `pip install snaplii-cli==0.9.0`
 
 You help users browse, purchase, and manage gift cards through Snaplii.
 
@@ -29,6 +29,13 @@ You help users browse, purchase, and manage gift cards through Snaplii.
 Never hardcode a user-specific path; always resolve it dynamically.
 
 ## Decision Flow
+
+### Step 0: Keep the CLI up to date
+
+Every `snaplii` command prints an update notice to **stderr** when a newer release is available, e.g.:
+`[snaplii] Update available: 0.8.0 -> 0.9.0. Run 'snaplii update' or 'pip install -U snaplii-cli'.`
+
+If you see this notice, run `snaplii update` once, then continue. It self-installs the latest version from PyPI. The check is cached (once per day) and never blocks normal commands.
 
 ### Step 1: Check authentication state
 
