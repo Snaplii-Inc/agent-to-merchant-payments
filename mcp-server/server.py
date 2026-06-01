@@ -254,8 +254,22 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         if name == "snaplii_config_show":
             store = ConfigStore()
             data = store.load()
-            safe = {k: v for k, v in data.items() if k not in ("access_token", "token_expires_at")}
+            safe = {k: v for k, v in data.items()
+                    if k not in ("access_token", "token_expires_at") and not k.startswith("_")}
             safe["has_valid_token"] = bool(store.get_cached_token())
+            # Surface a newer snaplii-mcp release so the agent can prompt the user
+            # to update + restart (a running MCP server can't update itself).
+            try:
+                from snaplii.version_check import check_for_update
+                update = check_for_update(store, "snaplii-mcp")
+                if update:
+                    safe["update_available"] = (
+                        f"snaplii-mcp {update['current']} -> {update['latest']}. "
+                        f"Tell the user to run 'pip install -U snaplii-mcp' (or update the "
+                        f"ClawHub plugin) and restart the MCP server / Claude Desktop."
+                    )
+            except Exception:
+                pass
             return _text(safe)
 
         elif name == "snaplii_init":

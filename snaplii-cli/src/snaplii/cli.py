@@ -71,7 +71,7 @@ def update_cmd(ctx):
     """Check for and install the latest snaplii-cli from PyPI."""
     store = ctx.obj["config_store"]
     # Force a fresh check by clearing the daily cache.
-    store.set("_version_check", {})
+    store.set("_version_check_snaplii_cli", {})
     update = check_for_update(store)
     if not update:
         print_json({"status": "up-to-date", "version": _VERSION})

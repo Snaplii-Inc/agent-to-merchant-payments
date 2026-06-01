@@ -6,6 +6,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
+## [0.9.1] — 2026-06-01
+
+### Added
+- **MCP update check.** `snaplii_config_show` now includes an `update_available` field when a newer `snaplii-mcp` is on PyPI, so the agent can prompt the user to update and restart (a long-running MCP server can't update itself). Same cached, fail-silent check as the CLI.
+
+### Changed
+- `version_check.check_for_update(store, package=...)` is now package-parameterized (one daily cache per package); MCP `config_show` hides internal `_`-prefixed fields
+
+---
+
 ## [0.9.0] — 2026-06-01
 
 ### Added
@@ -154,6 +164,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.9.1 | 2026-06-01 | MCP update check in config_show |
 | 0.9.0 | 2026-06-01 | CLI auto-update mechanism, never-guess-balance rule |
 | 0.8.0 | 2026-05-29 | Remove CLI/MCP API-key management, clearer spend-limit errors |
 | 0.7.0 | 2026-05-26 | Bill Pay (utilities, telecom); snaplii-mcp on PyPI |

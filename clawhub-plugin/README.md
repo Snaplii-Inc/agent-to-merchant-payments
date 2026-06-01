@@ -10,7 +10,7 @@
 2. **Create an API Key** — in the app, go to **More → Payment Methods → AI Payment Management → + New API Key**. Set a name, scope (`PAY_READ` or `PAY_WRITE`), and spending limit. Copy the key — it is shown only once.
 3. **Install the MCP server**:
    ```bash
-   pip install snaplii-cli==0.9.0 "mcp[cli]"
+   pip install snaplii-cli==0.9.1 "mcp[cli]"
    ```
    [PyPI package](https://pypi.org/project/snaplii-cli/) | [Source code](https://github.com/Snaplii-Inc/agent-to-merchant-payments)
 
@@ -76,6 +76,8 @@ API keys are created and revoked only in the Snaplii app — there are no MCP to
 ### Step 1: Authenticate
 
 Call `snaplii_config_show` to check auth status. If `has_valid_token` is false, call `snaplii_init` with the user's API key.
+
+If the response includes an `update_available` field, tell the user a newer version is out and to run `pip install -U snaplii-mcp` (or update the ClawHub plugin) and restart — a running MCP server can't update itself.
 
 ### Step 2: Browse
 
