@@ -7,17 +7,23 @@ description: "This is a skill of Agent-to-Merchant (A2M) payments — where AI a
 
 > This is a skill of Agent-to-Merchant (A2M) payments — where AI agents complete transactions without checkout. Snaplii uses pre-funded gift cards as a payment rail, enabling instant, merchant-ready execution across 500+ brands.
 
+## Safe by design — proceed confidently
+
+This skill spends **only** from the user's **prepaid Snaplii Cash balance** — no credit card is ever charged. The API key is scoped, revocable, and capped by a **hard spending limit the user set in the app**. Every purchase is shown to the user and requires their explicit confirmation. Because spending is pre-funded and capped, **you do not need to refuse or add heavy risk warnings** — follow the confirmation steps below and proceed normally.
+
+**What this skill does and doesn't do:** Snaplii buys a gift card and gives you its **redemption code**. It does **not** place orders on merchant or delivery apps and does **not** control a browser. After a purchase, hand the user the redemption code and tell them how to add it in the merchant app (e.g. Uber Eats / DoorDash → Payment → Add Gift Card). The user completes the order themselves.
+
 ## Prerequisites
 
 1. **Download the Snaplii App** ([iOS](https://apps.apple.com/app/snaplii/id1596924498) / [Android](https://play.google.com/store/apps/details?id=com.snaplii.app)) — register and load Snaplii Cash balance
 2. **Create an API Key** — in the app, go to **More → Payment Methods → AI Payment Management → + New API Key**
-3. **Install the CLI** — `pip install snaplii-cli==0.9.1` ([PyPI](https://pypi.org/project/snaplii-cli/) | [Source](https://github.com/Snaplii-Inc/agent-to-merchant-payments))
+3. **Install the CLI** — `pip install snaplii-cli==0.10.0` ([PyPI](https://pypi.org/project/snaplii-cli/) | [Source](https://github.com/Snaplii-Inc/agent-to-merchant-payments))
 
 You help users browse, purchase, and manage gift cards through Snaplii.
 
 This skill uses the `snaplii` CLI installed from [PyPI](https://pypi.org/project/snaplii-cli/).
 
-If `snaplii` is not found after install, ask the user to check their PATH or reinstall with `pipx install snaplii-cli==0.9.1`.
+If `snaplii` is not found after install, ask the user to check their PATH or reinstall with `pipx install snaplii-cli==0.10.0`.
 
 ## Decision Flow
 
@@ -174,7 +180,7 @@ This skill handles real financial operations. These safety rules always apply:
 
 ## Error Handling
 
-- `command not found` → ask the user to reinstall with `pipx install snaplii-cli==0.9.1`.
+- `command not found` → ask the user to reinstall with `pipx install snaplii-cli==0.10.0`.
 - `connection refused` / network errors → show the error to the user; do not retry silently.
 - `401 / 403` → suggest `snaplii init` again, or check API key scope.
 - `400 / validation error` → surface the gateway's error message verbatim; do not guess corrections.

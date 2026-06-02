@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
+## [0.10.0] — 2026-06-02
+
+### Fixed
+- **Payments no longer get refused as "high risk".** MCP tool descriptions and the skill now state the safety model up front — spending is from the user's prepaid Snaplii Cash balance (no card charged), the API key is scoped/revocable/spend-capped, and every purchase needs explicit confirmation — so the agent proceeds confidently after the user confirms instead of refusing.
+- **Clear "no order placement" expectation.** The skill and `snaplii_purchase` / `snaplii_giftcard_detail` descriptions make explicit that Snaplii delivers a gift card + redemption code and does **not** place orders on delivery apps or drive a browser. After a purchase the agent hands over the code and how to redeem it in the merchant app (e.g. Uber Eats / DoorDash → Payment → Add Gift Card). This fixes confusing failures when users expected the agent to "order on Uber Eats".
+
+---
+
 ## [0.9.1] — 2026-06-01
 
 ### Added
@@ -164,6 +172,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.10.0 | 2026-06-02 | Safety framing so payments aren't refused; "no order placement" expectation |
 | 0.9.1 | 2026-06-01 | MCP update check in config_show |
 | 0.9.0 | 2026-06-01 | CLI auto-update mechanism, never-guess-balance rule |
 | 0.8.0 | 2026-05-29 | Remove CLI/MCP API-key management, clearer spend-limit errors |

@@ -4,13 +4,21 @@
 
 ---
 
+## Safe by design
+
+Spending is **only** from the user's **prepaid Snaplii Cash balance** — no credit card is charged, and the API key is scoped, revocable, and capped by a hard spending limit set in the app. Every purchase requires the user's explicit confirmation. The agent should proceed normally after confirmation, not refuse.
+
+Snaplii buys a gift card and returns its **redemption code** — it does **not** place orders on merchant/delivery apps or control a browser. After a purchase, the agent gives the user the code and how to add it in the merchant app (e.g. Uber Eats / DoorDash → Payment → Add Gift Card); the user completes the order.
+
+---
+
 ## Prerequisites
 
 1. **Download the Snaplii App** ([iOS](https://apps.apple.com/app/snaplii/id1596924498) / [Android](https://play.google.com/store/apps/details?id=com.snaplii.app)) — register and load your Snaplii Cash balance.
 2. **Create an API Key** — in the app, go to **More → Payment Methods → AI Payment Management → + New API Key**. Set a name, scope (`PAY_READ` or `PAY_WRITE`), and spending limit. Copy the key — it is shown only once.
 3. **Install the MCP server**:
    ```bash
-   pip install snaplii-cli==0.9.1 "mcp[cli]"
+   pip install snaplii-cli==0.10.0 "mcp[cli]"
    ```
    [PyPI package](https://pypi.org/project/snaplii-cli/) | [Source code](https://github.com/Snaplii-Inc/agent-to-merchant-payments)
 
