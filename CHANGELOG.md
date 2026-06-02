@@ -6,6 +6,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
+## [0.11.0] — 2026-06-02
+
+### Added
+- **Full-chain autopilot for Claude Desktop (and any browser-capable host).** New MCP `snaplii_autopilot` prompt (shows in the prompt/“+” menu) runs the end-to-end flow: buy a gift card → redeem the code → place the order on the merchant/delivery site, pausing for explicit confirmation before the final "Place Order". Falls back to handing over the code if no browser tool is present.
+- Standalone **Snaplii Autopilot** ClawHub skill (`snaplii-autopilot`) for Claude Code / OpenClaw users with a browser tool.
+
+### Changed
+- MCP `snaplii_purchase` / `snaplii_giftcard_detail` descriptions now enable **conditional** browser chaining — if the host can control a browser, the agent may redeem + order (with confirmation); otherwise it hands over the code. (Replaces the blanket "never place orders" wording from 0.10.0, which was blocking Claude Desktop's built-in browser flow.)
+
+---
+
 ## [0.10.0] — 2026-06-02
 
 ### Fixed
@@ -172,6 +183,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.11.0 | 2026-06-02 | Full-chain autopilot (MCP prompt) for Claude Desktop + browser hosts |
 | 0.10.0 | 2026-06-02 | Safety framing so payments aren't refused; "no order placement" expectation |
 | 0.9.1 | 2026-06-01 | MCP update check in config_show |
 | 0.9.0 | 2026-06-01 | CLI auto-update mechanism, never-guess-balance rule |

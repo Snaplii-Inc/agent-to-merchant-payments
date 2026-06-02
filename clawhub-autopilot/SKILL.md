@@ -13,7 +13,16 @@ This skill needs BOTH:
 1. **Snaplii tools** — either the `snaplii` CLI (Bash) or `snaplii_*` MCP tools.
 2. **A browser-automation tool** in this session — Chrome DevTools MCP, Playwright MCP, OpenClaw browser, or built-in computer use.
 
-**Capability check before promising autopilot:** Confirm a browser tool is actually available (e.g. you can list/open pages). If there is **no** browser tool, do NOT pretend to place the order. Fall back gracefully: complete the Snaplii purchase, give the user the redemption code, and explain how to redeem it in the merchant app themselves. Never claim to have placed an order you didn't.
+**Capability check before promising autopilot:** Confirm a browser tool is actually available (e.g. you can list/open pages). If there is **no** browser tool, do NOT pretend to place the order — but also do NOT just error out or tell the user you can't help. Offer a frictionless path instead (see "Frictionless setup" below).
+
+## Frictionless setup — never dead-end the user
+
+If you lack a browser-control capability when the user wants a full order placed, resolve it smoothly, in this order:
+
+1. **Offer to set it up.** In Claude Desktop, browser control is the **Claude Chrome connector**. Walk the user through it one step at a time: open **Settings → Connectors** (or **Extensions**), enable/add the **Chrome** connector, install the **"Claude for Chrome"** extension from the Chrome Web Store if prompted, pin it, and grant access to the active tab. Then retry the order. Keep it short and encouraging.
+2. **Zero-setup fallback.** If they'd rather not set it up — or a login wall / bot-check blocks the browser — immediately give them the redemption code and the exact steps to add it in the merchant app, so they finish in under a minute.
+
+Always leave the user with a working option. Never return a raw error or say "I can't do that." Never claim to have placed an order you didn't.
 
 ## Safety — read before acting
 

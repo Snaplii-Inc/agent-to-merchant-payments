@@ -8,7 +8,12 @@
 
 Spending is **only** from the user's **prepaid Snaplii Cash balance** — no credit card is charged, and the API key is scoped, revocable, and capped by a hard spending limit set in the app. Every purchase requires the user's explicit confirmation. The agent should proceed normally after confirmation, not refuse.
 
-Snaplii buys a gift card and returns its **redemption code** — it does **not** place orders on merchant/delivery apps or control a browser. After a purchase, the agent gives the user the code and how to add it in the merchant app (e.g. Uber Eats / DoorDash → Payment → Add Gift Card); the user completes the order.
+## Two ways to use it
+
+1. **Buy + redeem code (works everywhere).** Snaplii buys the gift card and returns its **redemption code**. The agent hands the user the code and how to add it in the merchant app (e.g. Uber Eats / DoorDash → Payment → Add Gift Card).
+2. **Full autopilot (when the host can control a browser).** In Claude Desktop with the Chrome connector — or any host with computer use / a browser tool — the agent can go further: after buying, it redeems the code on the merchant/delivery site and places the order, pausing for explicit confirmation before the final "Place Order". Invoke the **`snaplii_autopilot`** prompt (from the prompt/“+” menu) to run this end-to-end flow, or just ask in chat. If no browser tool is available, it cleanly falls back to handing over the code.
+
+> **Turnkey Claude Desktop setup:** paste [`claude-desktop/PROJECT_INSTRUCTIONS.md`](https://github.com/Snaplii-Inc/agent-to-merchant-payments/blob/main/claude-desktop/PROJECT_INSTRUCTIONS.md) into your Project → Instructions to make all of the above the default behavior — no per-chat prompting needed.
 
 ---
 
@@ -18,7 +23,7 @@ Snaplii buys a gift card and returns its **redemption code** — it does **not**
 2. **Create an API Key** — in the app, go to **More → Payment Methods → AI Payment Management → + New API Key**. Set a name, scope (`PAY_READ` or `PAY_WRITE`), and spending limit. Copy the key — it is shown only once.
 3. **Install the MCP server**:
    ```bash
-   pip install snaplii-cli==0.10.0 "mcp[cli]"
+   pip install snaplii-cli==0.11.0 "mcp[cli]"
    ```
    [PyPI package](https://pypi.org/project/snaplii-cli/) | [Source code](https://github.com/Snaplii-Inc/agent-to-merchant-payments)
 
