@@ -34,6 +34,8 @@ PURCHASE: quote first → if you_pay > 0 tell them to top up and stop → confir
 
 FULL-CHAIN ORDERING: if you can control a browser (Claude Chrome connector, computer use, etc.), after buying you may redeem the code on the merchant/delivery site and place the order — pausing for explicit confirmation before the final Place Order. If you have NO browser tool, don't dead-end: first OFFER to set up the Chrome connector (Settings → Connectors → enable Chrome → install "Claude for Chrome" from the Web Store → grant active-tab access), and if they decline, hand over the redemption code + how to redeem it in the app. Always leave a working path; never just error out. Or run the snaplii_autopilot prompt for the guided end-to-end flow.
 
+UPDATES: if any tool result includes an `update_available` field, briefly tell the user a newer version is out and how to update — then continue with their request.
+
 RULES: never show internal IDs (brandId/templateId/cardNo); for delivery prefer DoorDash/Uber Eats/Skip cards; never state or guess the Snaplii Cash balance (no balance query exists); never purchase/pay/place a final order without current-turn confirmation; never claim to have completed an order you didn't."""
 
 app = Server("snaplii", instructions=_SERVER_INSTRUCTIONS)
@@ -256,9 +258,37 @@ async def list_tools() -> list[types.Tool]:
     ]
 
 
+_UPDATE_NOTICE = {"checked": False, "notice": None}
+
+
+def _update_notice():
+    """Cached (once per process) check for a newer snaplii-mcp on PyPI. The
+    process restarts when the user updates, so a per-process cache stays fresh."""
+    if not _UPDATE_NOTICE["checked"]:
+        _UPDATE_NOTICE["checked"] = True
+        try:
+            from snaplii.version_check import check_for_update
+            u = check_for_update(ConfigStore(), "snaplii-mcp")
+            if u:
+                _UPDATE_NOTICE["notice"] = (
+                    f"A newer snaplii-mcp ({u['current']} -> {u['latest']}) is available. "
+                    f"Let the user know they can run 'pip install -U snaplii-mcp' "
+                    f"(or update the ClawHub plugin) and restart to get the latest."
+                )
+        except Exception:
+            pass
+    return _UPDATE_NOTICE["notice"]
+
+
 @app.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
     def _text(data) -> list[types.TextContent]:
+        # Piggyback an update reminder onto any dict result so the agent surfaces
+        # it no matter which tool it called — fail-silent, never blocks.
+        if isinstance(data, dict) and "update_available" not in data:
+            notice = _update_notice()
+            if notice:
+                data = {**data, "update_available": notice}
         text = json.dumps(data, indent=2) if not isinstance(data, str) else data
         return [types.TextContent(type="text", text=text)]
 
@@ -269,19 +299,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             safe = {k: v for k, v in data.items()
                     if k not in ("access_token", "token_expires_at") and not k.startswith("_")}
             safe["has_valid_token"] = bool(store.get_cached_token())
-            # Surface a newer snaplii-mcp release so the agent can prompt the user
-            # to update + restart (a running MCP server can't update itself).
-            try:
-                from snaplii.version_check import check_for_update
-                update = check_for_update(store, "snaplii-mcp")
-                if update:
-                    safe["update_available"] = (
-                        f"snaplii-mcp {update['current']} -> {update['latest']}. "
-                        f"Tell the user to run 'pip install -U snaplii-mcp' (or update the "
-                        f"ClawHub plugin) and restart the MCP server / Claude Desktop."
-                    )
-            except Exception:
-                pass
+            # update_available (if any) is injected by _text for every tool result.
             return _text(safe)
 
         elif name == "snaplii_init":

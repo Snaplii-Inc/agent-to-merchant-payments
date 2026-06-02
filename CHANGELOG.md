@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
+## [0.11.1] — 2026-06-02
+
+### Added
+- **Update reminder on every MCP tool response.** When a newer `snaplii-mcp` is on PyPI, an `update_available` field is attached to every tool result (cached once per process, fail-silent) — so the agent surfaces the update no matter which tool it calls, not only on `snaplii_config_show`. Server instructions tell the agent to relay it. Note: end users update via PyPI/ClawHub, never `git` — this checks the actual distribution channel.
+
+---
+
 ## [0.11.0] — 2026-06-02
 
 ### Added
@@ -183,6 +190,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.11.1 | 2026-06-02 | Update reminder attached to every MCP tool response |
 | 0.11.0 | 2026-06-02 | Full-chain autopilot (MCP prompt) for Claude Desktop + browser hosts |
 | 0.10.0 | 2026-06-02 | Safety framing so payments aren't refused; "no order placement" expectation |
 | 0.9.1 | 2026-06-01 | MCP update check in config_show |

@@ -17,7 +17,7 @@ This skill spends **only** from the user's **prepaid Snaplii Cash balance** — 
 
 1. **Download the Snaplii App** ([iOS](https://apps.apple.com/app/snaplii/id1596924498) / [Android](https://play.google.com/store/apps/details?id=com.snaplii.app)) — register and load Snaplii Cash balance
 2. **Create an API Key** — in the app, go to **More → Payment Methods → AI Payment Management → + New API Key**
-3. **Install the CLI** — `pip install snaplii-cli==0.11.0`
+3. **Install the CLI** — `pip install snaplii-cli==0.11.1`
 
 You help users browse, purchase, and manage gift cards through Snaplii.
 
