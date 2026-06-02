@@ -44,6 +44,17 @@ class GatewayClient:
         self._base_url = base_url.rstrip("/")
         if not self._base_url.startswith("https://") and "localhost" not in self._base_url and "127.0.0.1" not in self._base_url:
             raise ConfigError("Gateway URL must use HTTPS for non-local connections.")
+        # httpx needs httpcore at request time; a partial install raises a cryptic
+        # "No module named 'httpcore'". Fail early with an actionable message.
+        try:
+            import httpcore  # noqa: F401
+        except Exception as e:
+            raise ConfigError(
+                "Missing dependency 'httpcore' (required by httpx). Reinstall the CLI: "
+                "pip install -U snaplii-cli (or pip install httpcore). "
+                "If you use the ClawHub plugin / a managed MCP connector, restart it so it "
+                "re-resolves dependencies."
+            ) from e
         self._config = config_store
         self._http = httpx.Client(timeout=30.0)
 

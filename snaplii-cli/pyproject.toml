@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "snaplii-cli"
-version = "0.12.0"
+version = "0.12.1"
 description = "Browse, purchase gift cards, and pay bills through Snaplii — safe payments for AI agents"
 readme = {file = "../README.md", content-type = "text/markdown"}
 requires-python = ">=3.9"
@@ -22,6 +22,7 @@ classifiers = [
 dependencies = [
     "click>=8.1,<9",
     "httpx>=0.27,<1",
+    "httpcore>=1.0,<2",
     "keyring>=25.0",
 ]
 

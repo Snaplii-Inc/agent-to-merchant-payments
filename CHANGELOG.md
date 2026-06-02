@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
+## [0.12.1] — 2026-06-02
+
+### Fixed
+- **`No module named 'httpcore'` on init.** Some environments installed httpx without its httpcore dependency, crashing the MCP server's login. `httpcore` is now an explicit dependency, and the client fails early with an actionable "reinstall / restart the connector" message instead of a cryptic crash. Existing users: update (`pip install -U snaplii-mcp` or restart the ClawHub plugin so uvx re-resolves).
+
+---
+
 ## [0.12.0] — 2026-06-02
 
 ### Added
@@ -202,6 +209,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.12.1 | 2026-06-02 | Fix `No module named 'httpcore'` — explicit dep + clear error |
 | 0.12.0 | 2026-06-02 | Exact denominations, Claude Desktop setup script, editable-aware updates, address confirmation |
 | 0.11.1 | 2026-06-02 | Update reminder attached to every MCP tool response |
 | 0.11.0 | 2026-06-02 | Full-chain autopilot (MCP prompt) for Claude Desktop + browser hosts |
