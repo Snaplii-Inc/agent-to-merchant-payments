@@ -5,8 +5,9 @@ it must never block or break a normal CLI invocation or MCP tool call.
 """
 from __future__ import annotations
 
+import json
 import time
-from importlib.metadata import version as pkg_version
+from importlib.metadata import distribution, version as pkg_version
 
 import httpx
 
@@ -19,6 +20,27 @@ def _parse_version(v: str) -> tuple:
         digits = "".join(c for c in chunk if c.isdigit())
         parts.append(int(digits) if digits else 0)
     return tuple(parts)
+
+
+def is_editable_install(package: str) -> bool:
+    """True if the package is a git clone / editable (`pip install -e`) install.
+    Such installs can't be updated with `pip install -U` — they update via git pull.
+    Detected via PEP 610 direct_url.json."""
+    try:
+        raw = distribution(package).read_text("direct_url.json")
+        if raw:
+            info = json.loads(raw)
+            return bool(info.get("dir_info", {}).get("editable"))
+    except Exception:
+        pass
+    return False
+
+
+def update_hint(package: str) -> str:
+    """The right upgrade command for how this package was installed."""
+    if is_editable_install(package):
+        return f"git pull in your {package} checkout (it's an editable/clone install)"
+    return f"pip install -U {package}"
 
 
 def check_for_update(store, package: str = "snaplii-cli") -> dict | None:

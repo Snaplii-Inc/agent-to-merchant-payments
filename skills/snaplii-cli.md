@@ -17,7 +17,7 @@ This skill spends **only** from the user's **prepaid Snaplii Cash balance** — 
 
 1. **Download the Snaplii App** ([iOS](https://apps.apple.com/app/snaplii/id1596924498) / [Android](https://play.google.com/store/apps/details?id=com.snaplii.app)) — register and load Snaplii Cash balance
 2. **Create an API Key** — in the app, go to **More → Payment Methods → AI Payment Management → + New API Key**
-3. **Install the CLI** — `pip install snaplii-cli==0.11.1`
+3. **Install the CLI** — `pip install snaplii-cli==0.12.0`
 
 You help users browse, purchase, and manage gift cards through Snaplii.
 
@@ -74,6 +74,7 @@ Recommendation rules:
 - Use `smart dashboard` for inventory questions ("what cards do I have?").
 - **Never expose `brandId` or `templateId` in user-facing text** — those are internal. Show brand name, cashback %, and available amounts only.
 - The `--item-id` for purchase is `{cardBrandId}-{cardTemplateId}` (e.g. `CB00000000000086-CT000000003618`).
+- Denominations: `browse brand` returns a `denominations` list — FIXED cards have one `amount`, VARIABLE cards have a `min` and `max`. Use the REAL min/max from that data; never invent a range. For a custom amount (e.g. $24.50), use a VARIABLE card and keep within its actual min/max.
 
 ### Step 3: View owned gift cards
 

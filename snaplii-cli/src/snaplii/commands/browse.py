@@ -1,6 +1,6 @@
 import click
 
-from snaplii.client import GatewayClient
+from snaplii.client import GatewayClient, summarize_denominations
 from snaplii.output import print_json
 
 
@@ -29,4 +29,7 @@ def browse_brand(ctx, brand_id):
     """Get card brand details including available denominations."""
     client: GatewayClient = ctx.obj["client"]
     resp = client.get_card_brand_by_id(brand_id)
+    denoms = summarize_denominations(resp)
+    if denoms and isinstance(resp, dict):
+        resp = {**resp, "denominations": denoms}
     print_json(resp)

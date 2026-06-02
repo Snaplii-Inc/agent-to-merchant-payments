@@ -32,7 +32,7 @@ WHEN THE USER MENTIONS SPENDING (dining, coffee, travel, shopping, transport, gr
 
 PURCHASE: quote first → if you_pay > 0 tell them to top up and stop → confirm brand+amount → snaplii_purchase → snaplii_giftcard_detail for the redemption code (use cardCode, else pin; fields under "data").
 
-FULL-CHAIN ORDERING: if you can control a browser (Claude Chrome connector, computer use, etc.), after buying you may redeem the code on the merchant/delivery site and place the order — pausing for explicit confirmation before the final Place Order. If you have NO browser tool, don't dead-end: first OFFER to set up the Chrome connector (Settings → Connectors → enable Chrome → install "Claude for Chrome" from the Web Store → grant active-tab access), and if they decline, hand over the redemption code + how to redeem it in the app. Always leave a working path; never just error out. Or run the snaplii_autopilot prompt for the guided end-to-end flow.
+FULL-CHAIN ORDERING: if you can control a browser (Claude Chrome connector, computer use, etc.), after buying you may redeem the code on the merchant/delivery site and place the order. For any delivery/shipping order, EXPLICITLY confirm the delivery address with the user first (read it back; never assume a saved/default address). Pause for explicit confirmation before the final Place Order. If you have NO browser tool, don't dead-end: first OFFER to set up the Chrome connector (Settings → Connectors → enable Chrome → install "Claude for Chrome" from the Web Store → grant active-tab access), and if they decline, hand over the redemption code + how to redeem it in the app. Always leave a working path; never just error out. Or run the snaplii_autopilot prompt for the guided end-to-end flow.
 
 UPDATES: if any tool result includes an `update_available` field, briefly tell the user a newer version is out and how to update — then continue with their request.
 
@@ -83,7 +83,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_browse_brand",
-            description="Get brand details: available denominations, discounts, templateIds. Use brandId from browse_tags.",
+            description="Get brand details and exact denominations. Read the `denominations` array for each card's real type and amount: FIXED cards have a single `amount`; VARIABLE cards have a `min` and `max` (any amount in that range is allowed). NEVER invent or assume a min/max — only use the values returned here. Each entry's `item_id` is what you pass to quote/purchase. Use brandId from browse_tags.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -267,13 +267,13 @@ def _update_notice():
     if not _UPDATE_NOTICE["checked"]:
         _UPDATE_NOTICE["checked"] = True
         try:
-            from snaplii.version_check import check_for_update
+            from snaplii.version_check import check_for_update, update_hint
             u = check_for_update(ConfigStore(), "snaplii-mcp")
             if u:
                 _UPDATE_NOTICE["notice"] = (
                     f"A newer snaplii-mcp ({u['current']} -> {u['latest']}) is available. "
-                    f"Let the user know they can run 'pip install -U snaplii-mcp' "
-                    f"(or update the ClawHub plugin) and restart to get the latest."
+                    f"Let the user know they can update ({update_hint('snaplii-mcp')}, "
+                    f"or update the ClawHub plugin) and restart to get the latest."
                 )
         except Exception:
             pass
@@ -324,8 +324,15 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             return _text(result)
 
         elif name == "snaplii_browse_brand":
+            from snaplii.client import summarize_denominations
             client = _get_client()
             result = client.get_card_brand_by_id(arguments["brand_id"])
+            denoms = summarize_denominations(result)
+            if denoms:
+                # Surface the exact denominations (with real min/max for VARIABLE)
+                # so the agent never invents amounts.
+                if isinstance(result, dict):
+                    result = {**result, "denominations": denoms}
             return _text(result)
 
         elif name == "snaplii_giftcard_list":
@@ -551,8 +558,8 @@ FLOW:
 3. Quote: call snaplii_quote and show the breakdown (voucher + Snaplii Cash + you_pay). If you_pay > 0, tell the user to top up in the app and stop.
 4. CONFIRM #1: show brand, amount, and quoted price; wait for explicit "yes".
 5. Buy: snaplii_purchase. Then snaplii_giftcard_list -> find the new card -> snaplii_giftcard_detail for the redemption code (use cardCode, else pin; fields under 'data'). If status is DELIVERING/PENDING, wait ~10s and re-check.
-6. Redeem + order (if you have a browser-control tool): open the merchant/delivery site, go to Payment -> Add Gift Card, enter the code, build the order (search item, add to cart, set address + tip).
-7. CONFIRM #2: show the full order summary (items, address, tip, total) and STOP. Only click the final Place Order / pay button after the user's explicit "yes".
+6. Redeem + order (if you have a browser-control tool): open the merchant/delivery site, go to Payment -> Add Gift Card, enter the code, build the order (search item, add to cart). For any delivery/shipping order, EXPLICITLY confirm the delivery address with the user before continuing — read back the exact address and ask "deliver to <address>?"; never assume a saved/default address. Then set the tip.
+7. CONFIRM #2: show the full order summary (items, delivery address, tip, total) and STOP. Only click the final Place Order / pay button after the user's explicit "yes".
 
 NO BROWSER TOOL? Don't dead-end the user — offer a frictionless path, in this order:
   a. Offer to set up browser control. In Claude Desktop this is the Claude Chrome connector: guide the user to open Settings -> Connectors (or Extensions), enable/add the Chrome connector, install the "Claude for Chrome" extension from the Chrome Web Store if prompted, pin it, and grant access to the active tab — then retry the order. Keep it short and encouraging; walk them through one step at a time.

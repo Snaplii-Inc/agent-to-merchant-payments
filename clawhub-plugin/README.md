@@ -23,9 +23,16 @@ Spending is **only** from the user's **prepaid Snaplii Cash balance** — no cre
 2. **Create an API Key** — in the app, go to **More → Payment Methods → AI Payment Management → + New API Key**. Set a name, scope (`PAY_READ` or `PAY_WRITE`), and spending limit. Copy the key — it is shown only once.
 3. **Install the MCP server**:
    ```bash
-   pip install snaplii-cli==0.11.1 "mcp[cli]"
+   pip install snaplii-cli==0.12.0 "mcp[cli]"
    ```
    [PyPI package](https://pypi.org/project/snaplii-cli/) | [Source code](https://github.com/Snaplii-Inc/agent-to-merchant-payments)
+
+   **Cloned the repo instead?** Register it in Claude Desktop with one command (no JSON editing):
+   ```bash
+   pip install -e ./snaplii-cli "mcp[cli]"
+   python3 scripts/setup_claude_desktop.py
+   ```
+   Then fully quit and reopen Claude Desktop. (Updates for a cloned install are via `git pull`, not pip.)
 
 ---
 

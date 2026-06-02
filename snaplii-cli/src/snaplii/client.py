@@ -6,6 +6,39 @@ from snaplii.config_store import ConfigStore
 from snaplii.exceptions import ConfigError, GatewayApiError, GatewayConnectionError
 
 
+def summarize_denominations(brand_resp: dict) -> list:
+    """Extract the real, structured denominations from a brand-detail response.
+
+    Returns one entry per card with its exact type and amount(s) taken straight
+    from the gateway's faceValueRules — so the agent uses real min/max values
+    instead of guessing. VARIABLE cards expose {min, max}; FIXED expose {amount}.
+    """
+    brand = brand_resp.get("data", brand_resp) if isinstance(brand_resp, dict) else brand_resp
+    if not isinstance(brand, dict):
+        return []
+    brand_id = brand.get("cardBrandId", "")
+    out = []
+    for c in brand.get("cards", []) or []:
+        if not isinstance(c, dict):
+            continue
+        fv = c.get("faceValueRules", {}) or {}
+        tid = c.get("cardTemplateId", "")
+        entry = {
+            "item_id": f"{brand_id}-{tid}" if brand_id and tid else tid,
+            "type": fv.get("type"),
+        }
+        if fv.get("type") == "VARIABLE":
+            entry["min"] = fv.get("priceStart")
+            entry["max"] = fv.get("priceEnd")
+        else:
+            entry["amount"] = fv.get("priceStart")
+        disc = c.get("discount") or c.get("regularDiscount")
+        if disc:
+            entry["cashback_percent"] = disc
+        out.append(entry)
+    return out
+
+
 class GatewayClient:
     def __init__(self, base_url: str, config_store: ConfigStore):
         self._base_url = base_url.rstrip("/")

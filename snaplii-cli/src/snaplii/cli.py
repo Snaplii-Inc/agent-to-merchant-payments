@@ -48,9 +48,11 @@ def main(ctx, base_url):
     if ctx.invoked_subcommand != "update":
         update = check_for_update(store)
         if update:
+            from snaplii.version_check import is_editable_install
+            how = ("git pull in your checkout" if is_editable_install("snaplii-cli")
+                   else "snaplii update")
             click.echo(
-                f"[snaplii] Update available: {update['current']} -> {update['latest']}. "
-                f"Run 'snaplii update' or 'pip install -U snaplii-cli'.",
+                f"[snaplii] Update available: {update['current']} -> {update['latest']}. Run '{how}'.",
                 err=True,
             )
 
@@ -75,6 +77,16 @@ def update_cmd(ctx):
     update = check_for_update(store)
     if not update:
         print_json({"status": "up-to-date", "version": _VERSION})
+        return
+    from snaplii.version_check import is_editable_install
+    if is_editable_install("snaplii-cli"):
+        # Editable / git-clone install: pip -U would clobber the checkout. Tell the
+        # user to git pull instead.
+        print_json({
+            "status": "manual-update-required",
+            "from": update["current"], "to": update["latest"],
+            "action": "This is an editable/clone install — run 'git pull' in your snaplii repo, then 'pip install -e .' if dependencies changed.",
+        })
         return
     result = subprocess.run(
         [sys.executable, "-m", "pip", "install", "-U", "snaplii-cli"],

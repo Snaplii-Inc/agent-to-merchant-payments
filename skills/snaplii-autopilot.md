@@ -48,9 +48,10 @@ On explicit confirmation, `purchase`. Then retrieve the card you just bought:
 ### 3. Drive the browser to redeem + order
 1. Open the merchant/delivery site (e.g. ubereats.com, doordash.com). If it's a known authenticated site, use the user's logged-in browser session.
 2. Add the gift card: go to **Payment → Add Gift Card / Promo**, enter the redemption code (and PIN if separate).
-3. Build the order the user asked for: search the restaurant/item, add to cart, set delivery address and tip.
-4. Take a screenshot / read the page to verify each step.
-5. **Show the full order summary and STOP** — wait for the user's explicit "place it" before clicking the final order/pay button.
+3. Build the order the user asked for: search the restaurant/item, add to cart.
+4. **Confirm the delivery address.** For anything delivered/shipped, read the exact address back to the user and ask "deliver to <address>?" before continuing. Never assume a saved/default address. Then set the tip.
+5. Take a screenshot / read the page to verify each step.
+6. **Show the full order summary (items, delivery address, tip, total) and STOP** — wait for the user's explicit "place it" before clicking the final order/pay button.
 
 ### 4. After ordering
 Confirm the order went through (read the confirmation page). Report the order number and the cashback the user earned via Snaplii.

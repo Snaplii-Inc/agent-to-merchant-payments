@@ -6,6 +6,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
+## [0.12.0] — 2026-06-02
+
+### Added
+- **Exact denominations (no hallucinated amounts).** `snaplii_browse_brand` / `snaplii browse brand` now return a structured `denominations` list — FIXED cards show `amount`, VARIABLE cards show the real `min`/`max` straight from the gateway. Instructions tell the agent to use these and never invent a range (fixes wrong "minimum amount" claims for custom-value cards).
+- **One-command Claude Desktop setup** for cloned repos: `python3 scripts/setup_claude_desktop.py` merges the Snaplii MCP server into the Claude Desktop config (preserving other entries). Claude Desktop can't auto-discover a folder, so this does the registration.
+- **Editable / git-clone aware updates.** The update reminder and `snaplii update` now detect an editable (`pip install -e` / clone) install via PEP 610 and tell the user to `git pull` instead of `pip install -U` (which would clobber the checkout).
+
+### Changed
+- Autopilot + instructions now require the agent to **explicitly confirm the delivery address** (read it back) before placing any delivery/shipping order — never assume a saved/default address.
+
+---
+
 ## [0.11.1] — 2026-06-02
 
 ### Added
@@ -190,6 +202,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.12.0 | 2026-06-02 | Exact denominations, Claude Desktop setup script, editable-aware updates, address confirmation |
 | 0.11.1 | 2026-06-02 | Update reminder attached to every MCP tool response |
 | 0.11.0 | 2026-06-02 | Full-chain autopilot (MCP prompt) for Claude Desktop + browser hosts |
 | 0.10.0 | 2026-06-02 | Safety framing so payments aren't refused; "no order placement" expectation |
