@@ -5,6 +5,7 @@ from importlib.metadata import version as pkg_version
 import click
 
 from snaplii.client import GatewayClient
+from snaplii.commands.balance import balance_cmd
 from snaplii.commands.billpay import billpay_group
 from snaplii.commands.browse import browse_group
 from snaplii.commands.config import config_group
@@ -58,6 +59,7 @@ def main(ctx, base_url):
 
 
 main.add_command(init_cmd)
+main.add_command(balance_cmd)
 main.add_command(browse_group)
 main.add_command(giftcard_group)
 main.add_command(purchase_cmd)

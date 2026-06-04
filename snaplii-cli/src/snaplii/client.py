@@ -164,6 +164,12 @@ class GatewayClient:
             "paymentContext": payment_ctx,
         })
 
+    # ── Balance ───────────────────────────────────────────────────
+
+    def get_balance(self) -> dict:
+        """Query the user's spendable Snaplii Cash / cashback balance."""
+        return self._get("/v2/balance")
+
     # ── Bill Pay ──────────────────────────────────────────────────
 
     def billpay_payee_list(self) -> dict:
