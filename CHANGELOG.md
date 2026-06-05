@@ -6,6 +6,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
+## [0.13.0] — 2026-06-04
+
+### Added
+- **Balance query (`snaplii balance` / `snaplii_balance`).** Read the user's real, current spendable Snaplii Cash balance — the same pool that pays for gift cards and bills. Reverses the previous "there is no balance query, never state it" rule now that a real endpoint exists. The recommended purchase flow is now **balance → quote → confirm → buy**: check the balance first to tell the user up front whether an order is affordable, with the quote's `you_pay` still the hard safety net for a specific order.
+  - Gateway: new `GET /v2/balance` (proxies `getUserCashBack.do`).
+  - CLI: `snaplii balance`. MCP: `snaplii_balance` tool (19 tools total).
+
+### Changed
+- Server instructions, autopilot prompt, Claude Desktop project instructions, and all skills updated: the agent now **queries** the balance via the tool instead of refusing to report it — but still never guesses or fabricates a number, and says so if the query fails.
+
+> Requires the gateway deploy that ships `GET /v2/balance`. Claude Desktop users: update (`uvx snaplii-mcp` re-resolves on restart, or update the ClawHub plugin) to get the `snaplii_balance` tool.
+
+---
+
 ## [0.12.1] — 2026-06-02
 
 ### Fixed

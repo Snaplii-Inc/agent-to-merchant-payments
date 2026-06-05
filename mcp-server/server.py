@@ -30,13 +30,15 @@ SAFE BY DESIGN — PROCEED CONFIDENTLY: spending is only from the user's prepaid
 
 WHEN THE USER MENTIONS SPENDING (dining, coffee, travel, shopping, transport, groceries, bills): proactively ask their region (CA/US), browse relevant cards, show cashback %, and quote (snaplii_quote) the voucher/cashback breakdown.
 
-PURCHASE: quote first → if you_pay > 0 tell them to top up and stop → confirm brand+amount → snaplii_purchase → snaplii_giftcard_detail for the redemption code (use cardCode, else pin; fields under "data").
+PURCHASE: check balance (snaplii_balance) → quote (snaplii_quote) → if the order isn't covered (you_pay > 0) tell them to top up and stop → confirm brand+amount → snaplii_purchase → snaplii_giftcard_detail for the redemption code (use cardCode, else pin; fields under "data"). Checking balance first lets you tell them up front whether they can afford it; the quote's you_pay is the hard safety net.
+
+FIRST-TIME / TOP-UP (avoid friction): a brand-new user often has a $0 balance — this is normal, not an error. Never dead-end them. Warmly explain they just need to add funds in the Snaplii app (Wallet → Add Cash / Top Up), that there's nothing else to set up, and offer to re-check the balance and continue once they have. If snaplii_balance itself errors, don't block — just say you couldn't read the balance and proceed to quote, which is the real affordability check.
 
 FULL-CHAIN ORDERING: if you can control a browser (Claude Chrome connector, computer use, etc.), after buying you may redeem the code on the merchant/delivery site and place the order. For any delivery/shipping order, EXPLICITLY confirm the delivery address with the user first (read it back; never assume a saved/default address). Pause for explicit confirmation before the final Place Order. If you have NO browser tool, don't dead-end: first OFFER to set up the Chrome connector (Settings → Connectors → enable Chrome → install "Claude for Chrome" from the Web Store → grant active-tab access), and if they decline, hand over the redemption code + how to redeem it in the app. Always leave a working path; never just error out. Or run the snaplii_autopilot prompt for the guided end-to-end flow.
 
 UPDATES: if any tool result includes an `update_available` field, briefly tell the user a newer version is out and how to update — then continue with their request.
 
-RULES: never show internal IDs (brandId/templateId/cardNo); for delivery prefer DoorDash/Uber Eats/Skip cards; never state or guess the Snaplii Cash balance (no balance query exists); never purchase/pay/place a final order without current-turn confirmation; never claim to have completed an order you didn't."""
+RULES: never show internal IDs (brandId/templateId/cardNo); for delivery prefer DoorDash/Uber Eats/Skip cards; to state the Snaplii Cash balance, query it via snaplii_balance — never guess or fabricate a number, and if that tool fails say you couldn't retrieve it rather than making one up; never purchase/pay/place a final order without current-turn confirmation; never claim to have completed an order you didn't."""
 
 app = Server("snaplii", instructions=_SERVER_INSTRUCTIONS)
 
@@ -68,6 +70,11 @@ async def list_tools() -> list[types.Tool]:
                 },
                 "required": ["api_key"],
             },
+        ),
+        types.Tool(
+            name="snaplii_balance",
+            description="Get the user's real, current spendable Snaplii Cash balance (the same pool that pays for gift cards and bills). This is an authoritative query — use it instead of guessing or asking the user. Call it before a quote/purchase so you can tell up front whether the order is covered, and after a purchase if the user asks what's left. Returns {balance, currency}.",
+            inputSchema={"type": "object", "properties": {}, "required": []},
         ),
         types.Tool(
             name="snaplii_browse_tags",
@@ -315,6 +322,26 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             result = client.login(agent_id, api_key)
             return _text({"status": "authenticated", "agent_id": agent_id})
 
+        elif name == "snaplii_balance":
+            client = _get_client()
+            result = client.get_balance()
+            data = result.get("data", {}) if isinstance(result, dict) else {}
+            balance = data.get("balance") if isinstance(data, dict) else None
+            out = {"balance": balance, "currency": "CAD", "spendable": True}
+            # First-time users often sit at $0 until they top up. Give the agent a
+            # warm, actionable next step instead of a bare zero, so it never dead-ends.
+            try:
+                if balance is not None and float(balance) <= 0:
+                    out["note"] = (
+                        "Balance is $0 — normal for a new account. To buy gift cards or "
+                        "pay bills, the user adds funds in the Snaplii app (Wallet -> Add "
+                        "Cash / Top Up), then you re-check. Nothing else to set up; guide "
+                        "them encouragingly, don't dead-end."
+                    )
+            except (ValueError, TypeError):
+                pass
+            return _text(out)
+
         elif name == "snaplii_browse_tags":
             client = _get_client()
             result = client.get_all_card_tags(
@@ -555,11 +582,12 @@ SAFETY: Snaplii spends only from the user's prepaid Snaplii Cash balance — no 
 FLOW:
 1. Auth: call snaplii_config_show; if has_valid_token is false, call snaplii_init with the user's API key.
 2. Pick the card: ask region (CA/US), call snaplii_browse_tags. For delivery (food/coffee), prefer delivery-platform cards (DoorDash, Uber Eats, Skip) over the restaurant's own card. Never show brandId/templateId to the user.
-3. Quote: call snaplii_quote and show the breakdown (voucher + Snaplii Cash + you_pay). If you_pay > 0, tell the user to top up in the app and stop.
-4. CONFIRM #1: show brand, amount, and quoted price; wait for explicit "yes".
-5. Buy: snaplii_purchase. Then snaplii_giftcard_list -> find the new card -> snaplii_giftcard_detail for the redemption code (use cardCode, else pin; fields under 'data'). If status is DELIVERING/PENDING, wait ~10s and re-check.
-6. Redeem + order (if you have a browser-control tool): open the merchant/delivery site, go to Payment -> Add Gift Card, enter the code, build the order (search item, add to cart). For any delivery/shipping order, EXPLICITLY confirm the delivery address with the user before continuing — read back the exact address and ask "deliver to <address>?"; never assume a saved/default address. Then set the tip.
-7. CONFIRM #2: show the full order summary (items, delivery address, tip, total) and STOP. Only click the final Place Order / pay button after the user's explicit "yes".
+3. Check balance: call snaplii_balance so you know up front whether the order is affordable. (Never guess the balance — read it from this tool; if it fails, say so and rely on the quote's you_pay.)
+4. Quote: call snaplii_quote and show the breakdown (voucher + Snaplii Cash + you_pay). If you_pay > 0, tell the user to top up in the app and stop.
+5. CONFIRM #1: show brand, amount, and quoted price; wait for explicit "yes".
+6. Buy: snaplii_purchase. Then snaplii_giftcard_list -> find the new card -> snaplii_giftcard_detail for the redemption code (use cardCode, else pin; fields under 'data'). If status is DELIVERING/PENDING, wait ~10s and re-check.
+7. Redeem + order (if you have a browser-control tool): open the merchant/delivery site, go to Payment -> Add Gift Card, enter the code, build the order (search item, add to cart). For any delivery/shipping order, EXPLICITLY confirm the delivery address with the user before continuing — read back the exact address and ask "deliver to <address>?"; never assume a saved/default address. Then set the tip.
+8. CONFIRM #2: show the full order summary (items, delivery address, tip, total) and STOP. Only click the final Place Order / pay button after the user's explicit "yes".
 
 NO BROWSER TOOL? Don't dead-end the user — offer a frictionless path, in this order:
   a. Offer to set up browser control. In Claude Desktop this is the Claude Chrome connector: guide the user to open Settings -> Connectors (or Extensions), enable/add the Chrome connector, install the "Claude for Chrome" extension from the Chrome Web Store if prompted, pin it, and grant access to the active tab — then retry the order. Keep it short and encouraging; walk them through one step at a time.

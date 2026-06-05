@@ -98,9 +98,16 @@ This deferral matters: showing sensitive data early increases the risk of accide
 
 When the user wants to purchase, follow this flow:
 
-#### 4a. Get a price quote first
+#### 4a. Check the balance, then get a price quote
 
-Before confirming, **always call `snaplii quote`** to check if vouchers or cashback apply:
+First run `snaplii balance` to see the real spendable Snaplii Cash balance so you
+can tell the user up front whether they can afford the order:
+
+```bash
+snaplii balance
+```
+
+Then, before confirming, **always call `snaplii quote`** to check if vouchers or cashback apply:
 
 ```bash
 snaplii quote --item-id "CB...-CT..." --price 50
@@ -209,6 +216,7 @@ This skill handles real financial operations. These safety rules always apply:
 | `snaplii browse brand --id BRAND_ID` | Get brand details (denominations, discounts) |
 | `snaplii giftcard list [--status STATUS]` | List owned gift cards |
 | `snaplii giftcard detail --card-no CARD_NO` | Card details (code, PIN) — sensitive |
+| `snaplii balance` | Show real spendable Snaplii Cash balance (run before quoting to confirm funds) |
 | `snaplii quote --item-id ID --price PRICE` | Preview price with voucher/cashback before buying |
 | `snaplii purchase --item-id ID --price PRICE --prov PROV` | Buy a gift card |
 | `snaplii smart cashback --brand-id ID --amount A` | Calculate cashback savings |
@@ -220,6 +228,7 @@ This skill handles real financial operations. These safety rules always apply:
 - **NEVER show sensitive card information (card code, PIN, barcode URL) without explicit user consent.**
 - **NEVER print a freshly-created API key without explicit user consent and a warning that it's shown only once.**
 - **NEVER call `purchase` or `billpay pay` without explicit current-turn confirmation.**
-- **NEVER state or guess the user's Snaplii Cash balance.** There is no balance command — the CLI cannot read the account balance. If the user asks "what's my balance" or "how much do I have", tell them you can't query the balance directly and they should check the Snaplii app. The only signal available is `snaplii_cash_applied` / `you_pay` from a `quote`, which shows whether a *specific* order is covered — never present it as the total balance, and never report "your balance is $0" from a quote.
+- **To report the user's Snaplii Cash balance, run `snaplii balance`** — it returns the real, current spendable balance (the same pool that pays for gift cards and bills). Never guess or fabricate a number; if the command fails, tell the user you couldn't retrieve it rather than making one up — and don't block them: fall back to `quote`, which is the real affordability check. Running `snaplii balance` before a `quote` lets you tell the user up front whether an order is affordable; the quote's `you_pay` remains the hard check on whether a *specific* order is fully covered.
+- **A $0 balance is normal for a new account — never dead-end first-time users.** When the balance is $0 (or doesn't cover the order), warmly explain they just need to add funds in the Snaplii app (Wallet → Add Cash / Top Up), reassure them there's nothing else to set up, and offer to re-check the balance and continue once they've topped up. Keep it encouraging, not a hard stop.
 - **Token is NOT auto-refreshed.** When any command returns a token-expired or 401 error, immediately run `snaplii init` to re-authenticate. Tell the user: "Your session has expired. Please re-enter your API key." Then pipe the user's API key input into init. Do NOT ask the user to run the command themselves — handle it seamlessly.
 - Parse JSON output and present in human-friendly format. Do not surface internal IDs (brandId / templateId / cardNo / keyId) into user-facing text unless the user specifically asks.
