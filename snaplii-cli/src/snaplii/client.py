@@ -311,6 +311,7 @@ class GatewayClient:
         "MACP6005": "Payment service error. This may be a temporary issue — please wait a moment and retry. If it persists, check your Snaplii Cash balance in the app.",
         "MACP6006": "Service call failed. The downstream gift card service is temporarily unavailable. Please try again later.",
         "MCAP9999": "Session expired. Please run 'snaplii init' to re-authenticate.",
+        "MCA20004": "That payment method isn't enabled on this account. Purchases use the default Snaplii Cash (SNAPLII_CREDIT), which works — retry without specifying a payment method.",
         "MCA20101": "Invalid API key format or request parameters.",
         "MCA20102": "This API key has been deactivated.",
         "MCA20103": "An API key with this name already exists. Please choose a different name.",

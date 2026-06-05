@@ -7,14 +7,13 @@ from snaplii.output import print_json
 @click.command("quote")
 @click.option("--item-id", required=True, help="Item ID: {brandId}-{templateId}")
 @click.option("--price", required=True, help="Price in dollars")
-@click.option("--payment-method", default="SNAPLII_CREDIT", help="Payment method")
 @click.option("--voucher", default="BEST_FIT", type=click.Choice(["BEST_FIT", "USE", "NOT_USE"]),
               help="Voucher option: BEST_FIT (auto-apply best), USE, NOT_USE")
 @click.option("--cashback", default="USE", type=click.Choice(["USE", "NOT_USE"]),
               help="Cashback option: USE or NOT_USE")
 @click.option("--voucher-id", default=None, help="Specify a voucher ID to apply")
 @click.pass_context
-def quote_cmd(ctx, item_id, price, payment_method, voucher, cashback, voucher_id):
+def quote_cmd(ctx, item_id, price, voucher, cashback, voucher_id):
     """Get a price quote before purchasing.
 
     Shows the order total, voucher discount, cashback applied,
@@ -24,7 +23,6 @@ def quote_cmd(ctx, item_id, price, payment_method, voucher, cashback, voucher_id
     resp = client.quote_order(
         item_id=item_id,
         price=price,
-        payment_method=payment_method,
         voucher_option=voucher,
         cashback_option=cashback,
         specified_voucher=voucher_id,

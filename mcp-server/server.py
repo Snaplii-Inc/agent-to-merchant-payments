@@ -144,7 +144,6 @@ async def list_tools() -> list[types.Tool]:
                 "properties": {
                     "item_id": {"type": "string", "description": "Item ID: {brandId}-{templateId}"},
                     "price": {"type": "string", "description": "Price in dollars"},
-                    "payment_method": {"type": "string", "description": "SNAPLII_CREDIT (default), SNAPLII_CASH, or SNAPLII_DEBIT", "default": "SNAPLII_CREDIT"},
                 },
                 "required": ["item_id", "price"],
             },
@@ -414,10 +413,13 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
         elif name == "snaplii_purchase":
             client = _get_client()
+            # Always SNAPLII_CREDIT — it draws from the prepaid Snaplii Cash pool and is
+            # the only provisioned method. Explicit SNAPLII_CASH/SNAPLII_DEBIT returns
+            # "MCA20004 服务未开通", so we don't accept an override here.
             result = client.create_order_and_pay(
                 item_id=arguments["item_id"],
                 price=arguments["price"],
-                payment_method=arguments.get("payment_method", "SNAPLII_CREDIT"),
+                payment_method="SNAPLII_CREDIT",
             )
             return _text(result)
 
