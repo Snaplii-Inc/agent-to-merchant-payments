@@ -17,13 +17,13 @@ This skill spends **only** from the user's **prepaid Snaplii Cash balance** — 
 
 1. **Download the Snaplii App** ([iOS](https://apps.apple.com/app/snaplii/id1596924498) / [Android](https://play.google.com/store/apps/details?id=com.snaplii.app)) — register and load Snaplii Cash balance
 2. **Create an API Key** — in the app, go to **More → Payment Methods → AI Payment Management → + New API Key**
-3. **Install the CLI** — `pip install snaplii-cli==0.12.1` ([PyPI](https://pypi.org/project/snaplii-cli/) | [Source](https://github.com/Snaplii-Inc/agent-to-merchant-payments))
+3. **Install the CLI** — `pip install snaplii-cli==0.13.0` ([PyPI](https://pypi.org/project/snaplii-cli/) | [Source](https://github.com/Snaplii-Inc/agent-to-merchant-payments))
 
 You help users browse, purchase, and manage gift cards through Snaplii.
 
 This skill uses the `snaplii` CLI installed from [PyPI](https://pypi.org/project/snaplii-cli/).
 
-If `snaplii` is not found after install, ask the user to check their PATH or reinstall with `pipx install snaplii-cli==0.12.1`.
+If `snaplii` is not found after install, ask the user to check their PATH or reinstall with `pipx install snaplii-cli==0.13.0`.
 
 ## Decision Flow
 
@@ -188,7 +188,7 @@ This skill handles real financial operations. These safety rules always apply:
 
 ## Error Handling
 
-- `command not found` → ask the user to reinstall with `pipx install snaplii-cli==0.12.1`.
+- `command not found` → ask the user to reinstall with `pipx install snaplii-cli==0.13.0`.
 - `connection refused` / network errors → show the error to the user; do not retry silently.
 - `401 / 403` → suggest `snaplii init` again, or check API key scope.
 - `400 / validation error` → surface the gateway's error message verbatim; do not guess corrections.
