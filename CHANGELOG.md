@@ -6,6 +6,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
+## [0.13.1] — 2026-06-05
+
+### Fixed
+- **Purchase no longer fails when a non-default payment method is sent.** Explicit `SNAPLII_CASH` / `SNAPLII_DEBIT` is rejected by the backend as `MCA20004 服务未开通`, while the default `SNAPLII_CREDIT` (which draws from the same prepaid Snaplii Cash pool) works. Reported from the field: an agent that passed an explicit method hit MCA20004, then succeeded on retry without one.
+  - **MCP:** removed the `payment_method` parameter from `snaplii_purchase`; the handler now always uses `SNAPLII_CREDIT` (ignores any stray arg).
+  - **CLI:** removed `--payment-method` / `--payment-token` from `purchase` and `--payment-method` from `quote`; both always use `SNAPLII_CREDIT`.
+  - **Errors:** `MCA20004` now maps to a friendly "that method isn't enabled — retry without specifying one" message.
+  - Skill + plugin docs updated to stop presenting a payment-method knob.
+
+---
+
 ## [0.13.0] — 2026-06-04
 
 ### Added

@@ -23,7 +23,7 @@ Spending is **only** from the user's **prepaid Snaplii Cash balance** — no cre
 2. **Create an API Key** — in the app, go to **More → Payment Methods → AI Payment Management → + New API Key**. Set a name, scope (`PAY_READ` or `PAY_WRITE`), and spending limit. Copy the key — it is shown only once.
 3. **Install the MCP server**:
    ```bash
-   pip install snaplii-cli==0.12.1 "mcp[cli]"
+   pip install snaplii-cli==0.13.0 "mcp[cli]"
    ```
    [PyPI package](https://pypi.org/project/snaplii-cli/) | [Source code](https://github.com/Snaplii-Inc/agent-to-merchant-payments)
 
@@ -67,9 +67,9 @@ Spending is **only** from the user's **prepaid Snaplii Cash balance** — no cre
 | Tool | Parameters | Description |
 |------|-----------|-------------|
 | `snaplii_quote` | `item_id` (required), `price` (required), `voucher_option` (BEST_FIT/USE/NOT_USE), `cashback_option` (USE/NOT_USE), `specified_voucher` (optional) | **Always call before purchase.** Returns price breakdown: order total, voucher discount, Snaplii Cash applied, and actual pay amount. Warns if balance insufficient. |
-| `snaplii_purchase` | `item_id` (required), `price` (required), `payment_method` (default: SNAPLII_CREDIT) | Purchase a gift card. `item_id` = `{brandId}-{templateId}` from `browse_brand`. **Requires explicit user confirmation before every call.** |
+| `snaplii_purchase` | `item_id` (required), `price` (required) | Purchase a gift card. `item_id` = `{brandId}-{templateId}` from `browse_brand`. **Requires explicit user confirmation before every call.** |
 
-> **Note on `payment_method`:** `SNAPLII_CREDIT` is a payment routing identifier, not a credit card charge. Actual funds come from prepaid Snaplii Cash balance. Do not tell the user "paying with credit" — simply say "placing the order".
+> **Note on payment:** purchases always draw from the prepaid Snaplii Cash balance via `SNAPLII_CREDIT` — there is no payment-method parameter, and you should not try to set one. It's a routing identifier, not a credit card charge: don't tell the user "paying with credit" — simply say "placing the order". (Explicit `SNAPLII_CASH`/`SNAPLII_DEBIT` is rejected by the backend as `MCA20004 服务未开通`, which is why it isn't exposed.)
 
 ### Bill Pay
 
