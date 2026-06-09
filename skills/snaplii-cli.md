@@ -17,7 +17,7 @@ This skill spends **only** from the user's **prepaid Snaplii Cash balance** — 
 
 1. **Download the Snaplii App** ([iOS](https://apps.apple.com/app/snaplii/id1596924498) / [Android](https://play.google.com/store/apps/details?id=com.snaplii.app)) — register and load Snaplii Cash balance
 2. **Create an API Key** — in the app, go to **More → Payment Methods → AI Payment Management → + New API Key**
-3. **Install the CLI** — `pip install snaplii-cli==0.13.1`
+3. **Install the CLI** — `pip install snaplii-cli==0.13.2`
 
 You help users browse, purchase, and manage gift cards through Snaplii.
 
@@ -153,7 +153,7 @@ snaplii purchase --item-id "CB...-CT..." --price 50 --prov ON
 - `--item-id` is `{cardBrandId}-{cardTemplateId}` from Step 2.
 - `--price` is the dollar amount.
 - `--prov` is **required** — the user's province or state code. Do NOT default to ON — always ask.
-- `--payment-token` is optional — gateway auto-derives it.
+- Payment is always Snaplii Cash (`SNAPLII_CREDIT`) — there's no payment-method/token to pass.
 
 If purchase fails, **do not retry automatically**. Show the user the error and ask. Common failure modes:
 

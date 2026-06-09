@@ -17,13 +17,13 @@ This skill spends **only** from the user's **prepaid Snaplii Cash balance** — 
 
 1. **Download the Snaplii App** ([iOS](https://apps.apple.com/app/snaplii/id1596924498) / [Android](https://play.google.com/store/apps/details?id=com.snaplii.app)) — register and load Snaplii Cash balance
 2. **Create an API Key** — in the app, go to **More → Payment Methods → AI Payment Management → + New API Key**
-3. **Install the CLI** — `pip install snaplii-cli==0.13.1` ([PyPI](https://pypi.org/project/snaplii-cli/) | [Source](https://github.com/Snaplii-Inc/agent-to-merchant-payments))
+3. **Install the CLI** — `pip install snaplii-cli==0.13.2` ([PyPI](https://pypi.org/project/snaplii-cli/) | [Source](https://github.com/Snaplii-Inc/agent-to-merchant-payments))
 
 You help users browse, purchase, and manage gift cards through Snaplii.
 
 This skill uses the `snaplii` CLI installed from [PyPI](https://pypi.org/project/snaplii-cli/).
 
-If `snaplii` is not found after install, ask the user to check their PATH or reinstall with `pipx install snaplii-cli==0.13.1`.
+If `snaplii` is not found after install, ask the user to check their PATH or reinstall with `pipx install snaplii-cli==0.13.2`.
 
 ## Decision Flow
 
@@ -144,7 +144,7 @@ snaplii purchase --item-id "CB...-CT..." --price 50 --prov ON
 - `--item-id` is `{cardBrandId}-{cardTemplateId}` from Step 2.
 - `--price` is the dollar amount.
 - `--prov` is **required** — the user's province or state code. Do NOT default to ON — always ask.
-- `--payment-token` is optional — gateway auto-derives it.
+- Payment is always Snaplii Cash (`SNAPLII_CREDIT`) — there's no payment-method/token to pass.
 
 If purchase fails, **do not retry automatically**. Show the user the error and ask. Common failure modes:
 
@@ -188,7 +188,7 @@ This skill handles real financial operations. These safety rules always apply:
 
 ## Error Handling
 
-- `command not found` → ask the user to reinstall with `pipx install snaplii-cli==0.13.1`.
+- `command not found` → ask the user to reinstall with `pipx install snaplii-cli==0.13.2`.
 - `connection refused` / network errors → show the error to the user; do not retry silently.
 - `401 / 403` → suggest `snaplii init` again, or check API key scope.
 - `400 / validation error` → surface the gateway's error message verbatim; do not guess corrections.
