@@ -59,11 +59,21 @@ def _get_client() -> GatewayClient:
     return GatewayClient(base_url, store)
 
 
+def _caps_support_form(caps) -> bool:
+    """True only if the client advertises FORM elicitation (what elicit_form needs).
+    url-only elicitation does not count."""
+    return bool(
+        caps is not None
+        and caps.elicitation is not None
+        and caps.elicitation.form is not None
+    )
+
+
 def _elicitation_supported() -> bool:
     try:
         params = app.request_context.session.client_params
         caps = params.capabilities if params else None
-        return bool(caps is not None and caps.elicitation is not None)
+        return _caps_support_form(caps)
     except Exception:
         return False
 
