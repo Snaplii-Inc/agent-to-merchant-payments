@@ -61,7 +61,7 @@ class ConfigStore:
 
     def _insecure_persist_ok(self) -> bool:
         """True only when the user opted into insecure on-disk secret storage."""
-        if str(os.environ.get("SNAPLII_ALLOW_INSECURE", "")).strip().lower() in (
+        if os.environ.get("SNAPLII_ALLOW_INSECURE", "").strip().lower() in (
             "1", "true", "yes", "on"
         ):
             return True
@@ -144,6 +144,8 @@ class ConfigStore:
                 _keyring_delete(key)
         if self._path.exists():
             self._path.unlink()
+        for key in _SECRET_KEYS:
+            ConfigStore._MEM_SECRETS.pop(key, None)
 
     def get_cached_token(self) -> str | None:
         token = self.get("access_token")
