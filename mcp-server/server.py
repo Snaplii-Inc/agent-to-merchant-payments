@@ -38,7 +38,7 @@ SAFE BY DESIGN — PROCEED CONFIDENTLY: spending is only from the user's prepaid
 
 WHEN THE USER MENTIONS SPENDING (dining, coffee, travel, shopping, transport, groceries, bills): proactively ask their region (CA/US), browse relevant cards, show cashback %, and quote (snaplii_quote) the voucher/cashback breakdown.
 
-PURCHASE: check balance (snaplii_balance) → quote (snaplii_quote) → if the order isn't covered (you_pay > 0) tell them to top up and stop → confirm brand+amount → snaplii_purchase → snaplii_giftcard_detail for the redemption code (use cardCode, else pin; fields under "data"). Checking balance first lets you tell them up front whether they can afford it; the quote's you_pay is the hard safety net.
+PURCHASE: check balance (snaplii_balance) → quote (snaplii_quote) → if the order isn't covered (you_pay > 0) tell them to top up and stop → snaplii_purchase WITH the quote's confirmation_token (the server shows the user the exact amount and only charges after they approve — you cannot skip or reword this) → snaplii_giftcard_detail for the redemption code (use cardCode, else pin; fields under "data"). Checking balance first lets you tell them up front whether they can afford it; the quote's you_pay is the hard safety net.
 
 FIRST-TIME / TOP-UP (avoid friction): a brand-new user often has a $0 balance — this is normal, not an error. Never dead-end them. Warmly explain they just need to add funds in the Snaplii app (Wallet → Add Cash / Top Up), that there's nothing else to set up, and offer to re-check the balance and continue once they have. If snaplii_balance itself errors, don't block — just say you couldn't read the balance and proceed to quote, which is the real affordability check.
 
@@ -46,7 +46,7 @@ FULL-CHAIN ORDERING: if you can control a browser (Claude Chrome connector, comp
 
 UPDATES: if any tool result includes an `update_available` field, briefly tell the user a newer version is out and how to update — then continue with their request.
 
-RULES: never show internal IDs (brandId/templateId/cardNo); for delivery prefer DoorDash/Uber Eats/Skip cards; to state the Snaplii Cash balance, query it via snaplii_balance — never guess or fabricate a number, and if that tool fails say you couldn't retrieve it rather than making one up; never purchase/pay/place a final order without current-turn confirmation; never claim to have completed an order you didn't."""
+RULES: never show internal IDs (brandId/templateId/cardNo); for delivery prefer DoorDash/Uber Eats/Skip cards; to state the Snaplii Cash balance, query it via snaplii_balance — never guess or fabricate a number, and if that tool fails say you couldn't retrieve it rather than making one up; never purchase/pay/place a final order without current-turn confirmation; never claim to have completed an order you didn't; the API key is collected by a secure prompt on capable clients — never ask the user to paste it into chat."""
 
 app = Server("snaplii", instructions=_SERVER_INSTRUCTIONS)
 
@@ -761,7 +761,7 @@ FLOW:
 3. Check balance: call snaplii_balance (pass the user's country CA/US so the currency is right — CA=CAD, US=USD, never assume CAD) so you know up front whether the order is affordable. (Never guess the balance — read it from this tool; if it fails, say so and rely on the quote's you_pay.)
 4. Quote: call snaplii_quote and show the breakdown (voucher + Snaplii Cash + you_pay). If you_pay > 0, tell the user to top up in the app and stop.
 5. CONFIRM #1: show brand, amount, and quoted price; wait for explicit "yes".
-6. Buy: snaplii_purchase. Then snaplii_giftcard_list -> find the new card -> snaplii_giftcard_detail for the redemption code (use cardCode, else pin; fields under 'data'). If status is DELIVERING/PENDING, wait ~10s and re-check.
+6. Buy: call snaplii_purchase with the item_id, price, AND the confirmation_token from the quote. The server will show the user the exact amount and wait for their approval before charging. Then snaplii_giftcard_list -> find the new card -> snaplii_giftcard_detail for the redemption code (use cardCode, else pin; fields under 'data'). If status is DELIVERING/PENDING, wait ~10s and re-check.
 7. Redeem + order (if you have a browser-control tool): open the merchant/delivery site, go to Payment -> Add Gift Card, enter the code, build the order (search item, add to cart). For any delivery/shipping order, EXPLICITLY confirm the delivery address with the user before continuing — read back the exact address and ask "deliver to <address>?"; never assume a saved/default address. Then set the tip.
 8. CONFIRM #2: show the full order summary (items, delivery address, tip, total) and STOP. Only click the final Place Order / pay button after the user's explicit "yes".
 

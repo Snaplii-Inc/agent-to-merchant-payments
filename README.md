@@ -479,6 +479,7 @@ Your JWT token has expired. Call `/v2/auth/token` again with your API key to get
 - **Limited authorization:** agents can only spend from Snaplii Cash, your prepaid balance.
 - **Scoped API keys:** keys can be restricted to `PAY_READ` view-only or `PAY_WRITE` view + purchase.
 - **Spending limits:** strict per-key consumption caps are set via the mobile app.
+- **Confirmation is server-enforced.** Purchases require a quote-issued confirmation token, and capable clients show the user the exact amount via a secure prompt before any charge — the agent cannot fabricate or skip it. The API key is entered through a masked prompt, never pasted into chat.
 - **No credential storage:** API keys are used once to obtain a token and are never saved to disk.
 - **Data protection:** card redemption codes and PINs are strictly masked and never exposed without explicit user consent.
 
