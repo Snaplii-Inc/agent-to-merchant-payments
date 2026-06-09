@@ -175,3 +175,16 @@ def test_purchase_decline_does_not_consume_and_can_retry(monkeypatch):
     out2 = _purchase(token)
     assert out2["orderNo"] == "ORD-1"
     assert len(client.charges) == 1
+
+
+def test_elicit_api_key_returns_value_on_accept():
+    session = FakeSession(FakeElicitResult("accept", {"api_key": "snp_sk_live_xyz"}))
+    key = asyncio.run(server._elicit_api_key(session))
+    assert key == "snp_sk_live_xyz"
+    assert "never shown to the assistant" in session.last_message
+
+
+def test_elicit_api_key_returns_none_on_cancel():
+    session = FakeSession(FakeElicitResult("cancel"))
+    key = asyncio.run(server._elicit_api_key(session))
+    assert key is None
