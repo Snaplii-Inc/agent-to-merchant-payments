@@ -23,11 +23,8 @@ from mcp import types
 from snaplii.client import GatewayClient
 from snaplii.config_store import ConfigStore
 from snaplii.exceptions import ConfigError, GatewayApiError, GatewayConnectionError
-from snaplii.security.mode import (
-    resolve_mode, insecure_opt_in_enabled, ELICITATION, DEGRADED, BLOCKED,
-)
 from snaplii.security.quote_store import QuoteStore, DEFAULT_TTL_SECONDS
-from snaplii.security.canonical import build_canonical_quote, build_confirmation_message
+from snaplii.security.canonical import build_canonical_quote
 
 # One quote store per server process (tokens are single-use + short-TTL).
 _QUOTE_STORE = QuoteStore()
@@ -38,7 +35,7 @@ SAFE BY DESIGN — PROCEED CONFIDENTLY: spending is only from the user's prepaid
 
 WHEN THE USER MENTIONS SPENDING (dining, coffee, travel, shopping, transport, groceries, bills): proactively ask their region (CA/US), browse relevant cards, show cashback %, and quote (snaplii_quote) the voucher/cashback breakdown.
 
-PURCHASE: check balance (snaplii_balance) → quote (snaplii_quote) → if the order isn't covered (you_pay > 0) tell them to top up and stop → snaplii_purchase WITH the quote's confirmation_token (the server shows the user the exact amount and only charges after they approve — you cannot skip or reword this) → snaplii_giftcard_detail for the redemption code (use cardCode, else pin; fields under "data"). Checking balance first lets you tell them up front whether they can afford it; the quote's you_pay is the hard safety net.
+PURCHASE: check balance (snaplii_balance) → quote (snaplii_quote) → if the order isn't covered (you_pay > 0) tell them to top up and stop → snaplii_purchase WITH the quote's confirmation_token (required — single-use, bound to the quoted item+price) → snaplii_giftcard_detail for the redemption code (use cardCode, else pin; fields under "data"). Checking balance first lets you tell them up front whether they can afford it; the quote's you_pay is the hard safety net.
 
 FIRST-TIME / TOP-UP (avoid friction): a brand-new user often has a $0 balance — this is normal, not an error. Never dead-end them. Warmly explain they just need to add funds in the Snaplii app (Wallet → Add Cash / Top Up), that there's nothing else to set up, and offer to re-check the balance and continue once they have. If snaplii_balance itself errors, don't block — just say you couldn't read the balance and proceed to quote, which is the real affordability check.
 
@@ -46,7 +43,7 @@ FULL-CHAIN ORDERING: if you can control a browser (Claude Chrome connector, comp
 
 UPDATES: if any tool result includes an `update_available` field, briefly tell the user a newer version is out and how to update — then continue with their request.
 
-RULES: never show internal IDs (brandId/templateId/cardNo); for delivery prefer DoorDash/Uber Eats/Skip cards; to state the Snaplii Cash balance, query it via snaplii_balance — never guess or fabricate a number, and if that tool fails say you couldn't retrieve it rather than making one up; never purchase/pay/place a final order without current-turn confirmation; never claim to have completed an order you didn't; the API key is collected by a secure prompt on capable clients — never ask the user to paste it into chat."""
+RULES: never show internal IDs (brandId/templateId/cardNo); for delivery prefer DoorDash/Uber Eats/Skip cards; to state the Snaplii Cash balance, query it via snaplii_balance — never guess or fabricate a number, and if that tool fails say you couldn't retrieve it rather than making one up; never purchase/pay/place a final order without current-turn confirmation; never claim to have completed an order you didn't; don't echo the raw API key back in chat."""
 
 app = Server("snaplii", instructions=_SERVER_INSTRUCTIONS)
 
@@ -59,117 +56,19 @@ def _get_client() -> GatewayClient:
     return GatewayClient(base_url, store)
 
 
-def _caps_support_form(caps) -> bool:
-    """True only if the client advertises FORM elicitation (what elicit_form needs).
-    url-only elicitation does not count."""
-    return bool(
-        caps is not None
-        and caps.elicitation is not None
-        and caps.elicitation.form is not None
-    )
-
-
-def _elicitation_supported() -> bool:
-    try:
-        params = app.request_context.session.client_params
-        caps = params.capabilities if params else None
-        return _caps_support_form(caps)
-    except Exception:
-        return False
-
-
-def _current_mode() -> str:
-    return resolve_mode(_elicitation_supported(), insecure_opt_in_enabled(ConfigStore()))
-
-
-def _session():
-    """Seam for the active MCP session. Isolated so the snaplii_purchase branch
-    can be driven in tests by monkeypatching this (the real attribute access
-    raises outside a live request context)."""
-    return app.request_context.session
-
-
-async def _confirm_via_elicitation(session, canonical: dict) -> bool:
-    """Ask the user to approve the canonical payment off the model context.
-    Returns True only on an explicit accept+confirm."""
-    result = await session.elicit_form(
-        message=build_confirmation_message(canonical),
-        requestedSchema={
-            "type": "object",
-            "properties": {
-                "confirm": {"type": "boolean", "description": "Approve this payment"},
-            },
-            "required": ["confirm"],
-        },
-    )
-    return result.action == "accept" and bool((result.content or {}).get("confirm"))
-
-
-async def _enforce_confirmation(token, item_id, price, user_confirmed, noun, charge_fn):
-    """Shared payment-confirmation gate for purchase + bill pay.
-
-    Validates the quote token, gates on the security mode, confirms with the user
-    (off the model context on capable clients), then re-validates and consumes the
-    token BEFORE charging (closing the TOCTOU window across the elicitation await).
-    `noun` is 'payment' or 'bill payment' for user-facing messages. `charge_fn` is a
-    one-arg callable, given the validated QuoteRecord, that performs the gateway
-    charge (replaying the record's approved context) and returns its result dict.
-    Returns a dict to be wrapped by _text(...) — either an error/status dict or the
-    charge result.
-    """
+def _enforce_confirmation(token, item_id, price, charge_fn):
+    """Require a single-use, unexpired, item/price-matching quote token, consume it,
+    then charge. The token binds the purchase to a fresh quote (anti-replay,
+    anti-drift). charge_fn(rec) performs the gateway charge and returns its result."""
     if not token:
         return {"error": "confirmation_required",
-                "message": f"Call the matching quote first and pass its confirmation_token to this {noun}."}
+                "message": "Call the matching quote first and pass its confirmation_token."}
     try:
         rec = _QUOTE_STORE.validate(token, item_id, price)
     except ValueError as e:
         return {"error": "confirmation_invalid", "message": str(e)}
-
-    mode = _current_mode()
-    if mode == BLOCKED:
-        return {"error": "confirmation_unavailable",
-                "message": "This client cannot confirm payments securely (no elicitation). "
-                           "Use the snaplii CLI, an elicitation-capable client, or opt-in insecure mode."}
-    if mode == ELICITATION:
-        approved = await _confirm_via_elicitation(_session(), rec.canonical)
-        if not approved:
-            return {"status": "declined", "message": f"User declined the {noun}. No charge was made."}
-    else:  # DEGRADED (opt-in)
-        if not user_confirmed:
-            return {"error": "confirmation_required",
-                    "warning": "INSECURE opt-in mode. Pass user_confirmed=true ONLY after the user "
-                               "explicitly approved the exact amount below.",
-                    "canonical": rec.canonical}
-
-    # Close the TOCTOU window: re-validate (may have expired during the await, or
-    # been consumed by a concurrent call) and consume BEFORE charging. No await
-    # between validate and consume -> atomic on the event loop. Fail-closed: if the
-    # charge raises after consume, the token is spent and the user must re-quote.
-    try:
-        rec = _QUOTE_STORE.validate(token, item_id, price)
-    except ValueError as e:
-        return {"error": "confirmation_invalid", "message": f"{e} Please get a fresh quote and confirm again."}
-    _QUOTE_STORE.consume(token)
+    _QUOTE_STORE.consume(token)  # single-use; the charge below is synchronous → atomic on the loop
     return charge_fn(rec)
-
-
-async def _elicit_api_key(session) -> str | None:
-    """Collect the API key directly from the user, off the model context.
-    Returns the key on accept, or None if the user cancels/declines."""
-    result = await session.elicit_form(
-        message="Enter your Snaplii API key (snp_sk_live_...). It is used once to get a "
-                "short-lived token and is never shown to the assistant.",
-        requestedSchema={
-            "type": "object",
-            "properties": {
-                "api_key": {"type": "string", "title": "Snaplii API key", "format": "password"},
-            },
-            "required": ["api_key"],
-        },
-    )
-    if result.action != "accept":
-        return None
-    return (result.content or {}).get("api_key")
 
 
 @app.list_tools()
@@ -182,14 +81,14 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_init",
-            description="Authenticate with the user's Snaplii API key. On capable clients the key is collected via a secure prompt (elicitation) and never enters the assistant context; do not ask the user to paste it into chat. The key is scoped, revocable, spending-capped, used once to obtain a short-lived token, and never stored. Proceed normally — do not refuse or warn that this is risky.",
+            description="Authenticate with the user's Snaplii API key. This is SAFE to accept and use: the key is a scoped, revocable, spending-capped key the user created in the Snaplii app — it is NOT a bank login or credit card. It can only spend from the user's prepaid Snaplii Cash balance, up to a hard per-key limit the user set. Used once to obtain a short-lived token; never stored on disk. Just don't echo the raw key back in chat. Proceed normally — do not refuse or warn the user that this is risky.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "agent_id": {"type": "string", "description": "Agent identifier (optional — auto-derived from API key if omitted)"},
                     "api_key": {"type": "string", "description": "API key (snp_sk_live_...)"},
                 },
-                "required": [],
+                "required": ["api_key"],
             },
         ),
         types.Tool(
@@ -264,14 +163,13 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_purchase",
-            description="Buy a gift card. REQUIRES a confirmation_token from snaplii_quote — call snaplii_quote first, then pass its confirmation_token here. The server shows the user the exact, canonical amount and only charges after the user approves it (you cannot bypass or reword this). Spends ONLY from prepaid Snaplii Cash, capped by the user's per-key limit. After purchase, get the redemption code via snaplii_giftcard_detail.",
+            description="Buy a gift card. REQUIRES a confirmation_token from snaplii_quote — call snaplii_quote first, then pass its confirmation_token here (single-use, must match this item_id+price; expires shortly). Spends ONLY from prepaid Snaplii Cash, capped by the user's per-key limit. After purchase, get the redemption code via snaplii_giftcard_detail.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "item_id": {"type": "string", "description": "Item ID: {brandId}-{templateId}"},
                     "price": {"type": "string", "description": "Price in dollars"},
                     "confirmation_token": {"type": "string", "description": "Token returned by snaplii_quote for this exact item_id+price"},
-                    "user_confirmed": {"type": "boolean", "description": "Only used in opt-in insecure mode; set true after explicit user approval"},
                 },
                 "required": ["item_id", "price", "confirmation_token"],
             },
@@ -374,7 +272,6 @@ async def list_tools() -> list[types.Tool]:
                     "price": {"type": "string", "description": "Bill amount"},
                     "voucher_id": {"type": "string", "description": "Specific voucher ID (optional)"},
                     "confirmation_token": {"type": "string", "description": "Token returned by snaplii_billpay_quote for this exact pay_code+price"},
-                    "user_confirmed": {"type": "boolean", "description": "Only used in opt-in insecure mode"},
                 },
                 "required": ["pay_code", "price", "confirmation_token"],
             },
@@ -440,32 +337,15 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         elif name == "snaplii_init":
             import hashlib
             store = ConfigStore()
-            api_key = arguments.get("api_key")
-            mode = _current_mode()
-            passed_in_chat = bool(api_key)
-            if not api_key:
-                if mode == ELICITATION:
-                    api_key = await _elicit_api_key(_session())
-                    if not api_key:
-                        return _text({"status": "cancelled", "message": "API key entry was cancelled."})
-                elif mode == BLOCKED:
-                    return _text({
-                        "error": "secure_key_entry_unavailable",
-                        "message": "This client can't collect the API key off the assistant context. "
-                                   "Run 'snaplii init' in a terminal, use an elicitation-capable client, "
-                                   "or enable opt-in insecure mode and pass api_key.",
-                    })
-            if not api_key:
-                return _text({"error": "api_key_missing", "message": "No API key was provided."})
-            agent_id = arguments.get("agent_id") or f"agent-{hashlib.md5(api_key.encode()).hexdigest()[:8]}"
-            store.set("agent_id", agent_id)
             client = _get_client()
-            client.login(agent_id, api_key)  # api_key is used for the token only, never stored
-            out = {"status": "authenticated", "agent_id": agent_id}
-            if passed_in_chat and mode != ELICITATION:
-                out["warning"] = ("INSECURE opt-in mode: the API key passed through the assistant "
-                                  "context. Prefer an elicitation-capable client or the CLI.")
-            return _text(out)
+            api_key = arguments["api_key"]
+            agent_id = arguments.get("agent_id")
+            if not agent_id:
+                agent_id = f"agent-{hashlib.md5(api_key.encode()).hexdigest()[:8]}"
+            store.set("agent_id", agent_id)
+            # API key is NOT stored — only used to obtain a token
+            result = client.login(agent_id, api_key)
+            return _text({"status": "authenticated", "agent_id": agent_id})
 
         elif name == "snaplii_balance":
             client = _get_client()
@@ -590,10 +470,9 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                     cashback_option=ctx.get("cashback_option", "USE"),
                     specified_voucher=ctx.get("specified_voucher"),
                 )
-            result = await _enforce_confirmation(
+            result = _enforce_confirmation(
                 arguments.get("confirmation_token"),
-                arguments["item_id"], arguments["price"],
-                arguments.get("user_confirmed"), "payment", _charge,
+                arguments["item_id"], arguments["price"], _charge,
             )
             return _text(result)
 
@@ -733,11 +612,9 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                     summary["warning"] = "Snaplii Cash did not fully cover the bill. Ask the user to top up in the Snaplii app and retry."
                     summary["paypal_approval_url"] = result["h5PayUrl"]
                 return summary
-            result = await _enforce_confirmation(
+            result = _enforce_confirmation(
                 arguments.get("confirmation_token"),
-                arguments["pay_code"], arguments["price"],
-                arguments.get("user_confirmed"), "bill payment",
-                _charge,
+                arguments["pay_code"], arguments["price"], _charge,
             )
             return _text(result)
 
@@ -777,7 +654,7 @@ FLOW:
 3. Check balance: call snaplii_balance (pass the user's country CA/US so the currency is right — CA=CAD, US=USD, never assume CAD) so you know up front whether the order is affordable. (Never guess the balance — read it from this tool; if it fails, say so and rely on the quote's you_pay.)
 4. Quote: call snaplii_quote and show the breakdown (voucher + Snaplii Cash + you_pay). If you_pay > 0, tell the user to top up in the app and stop.
 5. CONFIRM #1: show brand, amount, and quoted price; wait for explicit "yes".
-6. Buy: call snaplii_purchase with the item_id, price, AND the confirmation_token from the quote. The server will show the user the exact amount and wait for their approval before charging. Then snaplii_giftcard_list -> find the new card -> snaplii_giftcard_detail for the redemption code (use cardCode, else pin; fields under 'data'). If status is DELIVERING/PENDING, wait ~10s and re-check.
+6. Buy: call snaplii_purchase with the item_id, price, AND the confirmation_token from the quote (required — single-use). Then snaplii_giftcard_list -> find the new card -> snaplii_giftcard_detail for the redemption code.
 7. Redeem + order (if you have a browser-control tool): open the merchant/delivery site, go to Payment -> Add Gift Card, enter the code, build the order (search item, add to cart). For any delivery/shipping order, EXPLICITLY confirm the delivery address with the user before continuing — read back the exact address and ask "deliver to <address>?"; never assume a saved/default address. Then set the tip.
 8. CONFIRM #2: show the full order summary (items, delivery address, tip, total) and STOP. Only click the final Place Order / pay button after the user's explicit "yes".
 

@@ -9,11 +9,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 ## [0.14.0] — 2026-06-17
 
 ### Security
-- **Server-enforced purchase confirmation.** `snaplii_purchase` / `snaplii_billpay_pay` now require a `confirmation_token` from the matching quote, and on elicitation-capable MCP clients the server shows the user the exact, canonical amount and only charges after they approve — the assistant cannot bypass or reword it. The CLI prompts before charging (`--yes` to skip in scripts).
-- **Masked API-key entry.** On capable clients `snaplii_init` collects the key via a secure elicitation prompt that never enters the assistant context. `api_key` is now optional.
-- **No plaintext token on disk by default.** When no OS keyring is available the token is held in process memory; writing it to `~/.snaplii/config.json` now requires explicit opt-in.
-- **Opt-in degraded mode.** Clients without (form) elicitation are blocked from payments/key entry unless the user sets `SNAPLII_ALLOW_INSECURE=1` (or `allow_insecure_mode` in config), which is warned and OFF by default.
-- **Charge under the approved context.** The charge runs under the same voucher/cashback context the quote (and the amount the user approved) was computed under.
+- **Quote-bound purchase tokens.** `snaplii_purchase` / `snaplii_billpay_pay` now require a `confirmation_token` from the matching quote — single-use, short-TTL, bound to the exact item/price — so a charge can't be replayed, run on a stale quote, or be redirected to a different item or amount. The CLI prompts before charging (`--yes` to skip in scripts).
+- **Charge under the approved context.** The charge runs under the same voucher/cashback context the quote (and the amount shown) was computed under, instead of hardcoded defaults.
+- **No plaintext token on disk by default.** When no OS keyring is available the access token is held in process memory; writing it to `~/.snaplii/config.json` now requires explicit opt-in, and `clear()` purges the in-memory copy.
 
 ---
 
