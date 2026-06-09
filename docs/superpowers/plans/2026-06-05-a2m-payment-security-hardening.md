@@ -21,6 +21,7 @@
 - `tests/test_mode.py`, `tests/test_quote_store.py`, `tests/test_canonical.py`, `tests/test_config_store_secrets.py`, `tests/test_server_confirm.py`, `tests/test_cli_purchase_confirm.py`.
 
 **Modified files:**
+- `snaplii-cli/src/snaplii/client.py` — `create_order_and_pay` accepts voucher/cashback/specified_voucher so the charge runs under the approved context (Task 11).
 - `snaplii-cli/src/snaplii/config_store.py` — kill silent plaintext token fallback; class-level in-memory secret cache; opt-in persistence.
 - `mcp-server/server.py` — quote issues token; purchase/init/billpay_pay enforce confirmation via elicitation; mode gating.
 - `snaplii-cli/src/snaplii/commands/purchase.py` — interactive confirmation built from a fresh canonical quote; `--yes` bypass.
@@ -803,10 +804,12 @@ Replace the entire `snaplii_purchase` branch body with:
             result = client.create_order_and_pay(
                 item_id=arguments["item_id"],
                 price=arguments["price"],
-                payment_method=arguments.get("payment_method", "SNAPLII_CREDIT"),
+                payment_method="SNAPLII_CREDIT",  # 0.13.1: hardcoded, never from agent args
             )
             _QUOTE_STORE.consume(token)
             return _text(result)
+
+(Note: Task 11 refines this body to also replay the approved voucher/cashback context from the token.)
 ```
 
 - [ ] **Step 8: Update the `snaplii_purchase` tool schema + description**
@@ -823,7 +826,6 @@ In the `list_tools()` return, replace the `snaplii_purchase` `types.Tool(...)` w
                     "item_id": {"type": "string", "description": "Item ID: {brandId}-{templateId}"},
                     "price": {"type": "string", "description": "Price in dollars"},
                     "confirmation_token": {"type": "string", "description": "Token returned by snaplii_quote for this exact item_id+price"},
-                    "payment_method": {"type": "string", "description": "SNAPLII_CREDIT (default)", "default": "SNAPLII_CREDIT"},
                     "user_confirmed": {"type": "boolean", "description": "Only used in opt-in insecure mode; set true after explicit user approval"},
                 },
                 "required": ["item_id", "price", "confirmation_token"],
@@ -1108,21 +1110,21 @@ from snaplii.security.canonical import build_canonical_quote, build_confirmation
 @click.command("purchase")
 @click.option("--item-id", required=True, help="Item ID (e.g. CB0000000000135-CT0000000000897)")
 @click.option("--price", required=True, help="Price in dollars (e.g. 50)")
-@click.option("--payment-method", default="SNAPLII_CREDIT", help="Payment method")
-@click.option("--payment-token", default=None, help="Payment token (auto-derived by gateway if omitted)")
 @click.option("--prov", required=True, help="Region code: CA province (ON, QC, BC) or US state (NY, CA, TX)")
 @click.option("--yes", is_flag=True, default=False, help="Skip the confirmation prompt (for scripts).")
 @click.pass_context
-def purchase_cmd(ctx, item_id, price, payment_method, payment_token, prov, yes):
+def purchase_cmd(ctx, item_id, price, prov, yes):
     """Create an order and pay for a gift card.
 
-    Shows the exact amount from a fresh quote and asks for confirmation
-    before charging, unless --yes is passed.
+    Always pays with SNAPLII_CREDIT (prepaid Snaplii Cash) — 0.13.1 removed the
+    payment-method/-token knobs (explicit methods hit MCA20004). Shows the exact
+    amount from a fresh quote and asks for confirmation before charging, unless
+    --yes is passed.
     """
     client: GatewayClient = ctx.obj["client"]
 
     if not yes:
-        quote = client.quote_order(item_id=item_id, price=price, payment_method=payment_method)
+        quote = client.quote_order(item_id=item_id, price=price)
         canonical = build_canonical_quote(quote, item_id, price)
         click.echo(build_confirmation_message(canonical), err=True)
         if not click.confirm("Proceed with this purchase?", default=False):
@@ -1132,8 +1134,6 @@ def purchase_cmd(ctx, item_id, price, payment_method, payment_token, prov, yes):
     resp = client.create_order_and_pay(
         item_id=item_id,
         price=price,
-        payment_method=payment_method,
-        payment_token=payment_token,
         location_prov=prov,
     )
     print_json(resp)
@@ -1244,6 +1244,142 @@ git commit -m "docs: server-enforced confirmation + masked key; bump to 0.14.0"
 
 ---
 
+## Task 11: Charge under the approved payment context (close D2 local half)
+
+**Why:** Today `create_order_and_pay` (client.py) hardcodes `voucherOption=BEST_FIT`,
+`cashbackOption=USE` and drops `specified_voucher`, while `snaplii_quote` honors the
+agent's `voucher_option` / `cashback_option` / `specified_voucher` when computing the
+`you_pay` the user approves. So the charge can run under a different payment context
+than the quote — a silent amount/voucher drift in normal operation (e.g. a different
+voucher gets burned, or cashback gets spent when the user asked to keep it). The token
+must be the source of truth for the charge params. (`billpay_create_and_pay` already
+honors these options — the gift-card path is the lone outlier.) This is local only; the
+gateway cryptographic amount-pin stays deferred (design §10 / D2).
+
+> **0.13.1 alignment:** the `payment_method` / `payment_token` knobs were removed in
+> 0.13.1 (explicit methods → `MCA20004`). Do NOT reintroduce them. The charge stays
+> `SNAPLII_CREDIT`-only; this task threads **only** voucher/cashback/specified_voucher.
+
+```
+issue(quote ctx {voucher,cashback,specified}) ─► QuoteRecord.context
+        │                                              │
+   user approves you_pay(that ctx)                     ▼
+        └──► purchase ──► create_order_and_pay(..., same ctx)   # no drift
+```
+
+**Files:**
+- Modify: `snaplii-cli/src/snaplii/client.py` (`create_order_and_pay` signature)
+- Modify: `snaplii-cli/src/snaplii/security/quote_store.py` (`QuoteRecord` + `issue`)
+- Modify: `mcp-server/server.py` (`snaplii_quote` issue, `snaplii_purchase` replay; billpay parity)
+- Test: `tests/test_server_confirm.py` (context-replay assertion on the accept path)
+
+- [ ] **Step 1: Thread the payment context through `create_order_and_pay`**
+
+Mirror `quote_order` / `billpay_create_and_pay`. Add the three options to the signature and `payment_ctx` (keep `payment_method`/`payment_token` params as-is — 0.13.1 left them on the client, just stopped passing overrides):
+
+```python
+    def create_order_and_pay(
+        self,
+        item_id: str,
+        price: str,
+        payment_method: str = "SNAPLII_CREDIT",
+        payment_token: str | None = None,
+        location_prov: str = "CA",
+        voucher_option: str = "BEST_FIT",
+        cashback_option: str = "USE",
+        specified_voucher: str | None = None,
+    ) -> dict:
+        payment_ctx = {
+            "specifiedPrimaryPaymentMethod": payment_method,
+            "voucherOption": voucher_option,
+            "cashbackOption": cashback_option,
+        }
+        if specified_voucher:
+            payment_ctx["specifiedVoucher"] = specified_voucher
+            payment_ctx["voucherOption"] = "USE"   # match billpay_create_and_pay
+        if payment_token:
+            payment_ctx["specifiedPrimaryPaymentToken"] = payment_token
+```
+
+(The `_post("/v2/purchase", ...)` body is unchanged.)
+
+- [ ] **Step 2: Store the resolved context on the token (`quote_store.py`)**
+
+Add a `context` field to `QuoteRecord` and an optional arg to `issue` (the default keeps Task 3's tests green):
+
+```python
+@dataclass
+class QuoteRecord:
+    item_id: str
+    price: str
+    canonical: dict
+    expires_at: float
+    used: bool = False
+    context: dict | None = None   # payment context that produced canonical.you_pay
+```
+
+```python
+    def issue(self, item_id, price, canonical, context=None) -> str:
+        token = secrets.token_urlsafe(24)
+        self._records[token] = QuoteRecord(
+            item_id=str(item_id), price=str(price), canonical=canonical,
+            expires_at=self._clock() + self._ttl, context=context,
+        )
+        return token
+```
+
+- [ ] **Step 3: Capture context at quote time, replay it at charge time (`server.py`)**
+
+In the `snaplii_quote` token-issue block (Task 6 step 6), pass the resolved context — NO `payment_method` (it's always SNAPLII_CREDIT):
+
+```python
+            context = {
+                "voucher_option": arguments.get("voucher_option", "BEST_FIT"),
+                "cashback_option": arguments.get("cashback_option", "USE"),
+                "specified_voucher": arguments.get("specified_voucher"),
+            }
+            token = _QUOTE_STORE.issue(arguments["item_id"], arguments["price"], canonical, context)
+```
+
+In `snaplii_purchase` (Task 6 step 7), drive the charge from the token's context, NOT from fresh agent args. Keep `payment_method="SNAPLII_CREDIT"` hardcoded (0.13.1):
+
+```python
+            ctx = rec.context or {}
+            client = _get_client()
+            result = client.create_order_and_pay(
+                item_id=arguments["item_id"],
+                price=arguments["price"],
+                payment_method="SNAPLII_CREDIT",
+                voucher_option=ctx.get("voucher_option", "BEST_FIT"),
+                cashback_option=ctx.get("cashback_option", "USE"),
+                specified_voucher=ctx.get("specified_voucher"),
+            )
+            _QUOTE_STORE.consume(token)
+            return _text(result)
+```
+
+- [ ] **Step 4: Bill-pay parity**
+
+Apply the same capture/replay to `snaplii_billpay_quote` → `snaplii_billpay_pay` (Task 8): store the billpay quote's `voucher_option` / `cashback_option` / `specified_voucher` (note billpay names it `voucher_id`) on the token, and pass `rec.context` into `client.billpay_create_and_pay(...)` instead of re-reading agent args. `billpay_create_and_pay` already accepts these options, so this is wiring only.
+
+- [ ] **Step 5: Test the charge runs under the quoted context**
+
+In the enforcement suite, have the fake client record the kwargs it was charged with. Assert: a token issued from a quote with `specified_voucher="V-9"` and `cashback_option="NOT_USE"` causes `create_order_and_pay` to be called with exactly those — not the `BEST_FIT`/`USE` defaults. Add the bill-pay variant.
+
+- [ ] **Step 6: Run the full suite + import smoke**
+
+Run: `.venv/bin/pytest -q && .venv/bin/python -c "import asyncio, server; print(len(asyncio.run(server.list_tools())), 'tools')"`
+Expected: all pass; tool count unchanged.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add snaplii-cli/src/snaplii/client.py snaplii-cli/src/snaplii/security/quote_store.py mcp-server/server.py tests/test_server_confirm.py
+git commit -m "fix: charge under the approved payment context (close D2 local drift)"
+```
+
+---
+
 ## Manual verification (after all tasks)
 
 These cannot be unit-tested without a live client and a real (or staging) gateway; run them by hand before any real-user transaction.
@@ -1253,6 +1389,7 @@ These cannot be unit-tested without a live client and a real (or staging) gatewa
 - [ ] Try `snaplii_purchase` **without** a `confirmation_token` → returns `confirmation_required`. Try a stale/used token → returns `confirmation_invalid`.
 - [ ] On a **non-elicitation** client with no opt-in → purchase and init are blocked with guidance. Set `SNAPLII_ALLOW_INSECURE=1` → degraded mode works and every response carries the warning.
 - [ ] CLI: `snaplii purchase ...` prompts and cancels on "n"; `--yes` skips. With no OS keyring and no opt-in, confirm the token is not written to `~/.snaplii/config.json`.
+- [ ] Quote with a **non-default** context (e.g. `specified_voucher` set, or `cashback_option=NOT_USE`), approve, then confirm the actual charge consumed the **same** voucher / applied the **same** cashback the user saw — not BEST_FIT/USE (Task 11).
 
 ---
 
@@ -1261,3 +1398,5 @@ These cannot be unit-tested without a live client and a real (or staging) gatewa
 - **Spec coverage:** §5.2 → Task 7; §5.3 → Tasks 3, 4, 6, 8, 9; §5.4 → Task 5; §5.5 → Tasks 2, 6, 7, 8 (mode gating); §9 rollout → Task 10. All four hardening items covered.
 - **Naming consistency:** `resolve_mode`, `insecure_opt_in_enabled`, `ELICITATION/DEGRADED/BLOCKED`, `QuoteStore.issue/validate/consume`, `build_canonical_quote`, `build_confirmation_message`, `_confirm_via_elicitation`, `_elicit_api_key`, `_current_mode`, `ConfigStore._MEM_SECRETS` are used identically across tasks.
 - **Forward-compat:** `confirmation_token` is the unchanged seam for a future gateway-issued token (design §10).
+- **D2 split (Task 11):** the token carries the resolved voucher/cashback context, so the charge runs under exactly the context the user approved — local only, no gateway change. Only the gateway *cryptographic* amount-pin remains deferred (design §10).
+- **0.13.1 alignment:** Tasks 6 & 9 were drafted pre-0.13.1; implement them on the current files — keep `SNAPLII_CREDIT` hardcoded, do not reintroduce the `payment_method`/`payment_token` knobs (they caused `MCA20004`).
