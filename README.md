@@ -184,7 +184,7 @@ The CLI will prompt for your API key via hidden input (like a password prompt). 
 ```bash
 snaplii browse tags --prov CA                        # Browse gift card categories (CA or US)
 snaplii browse brand --id CB...                      # See denominations and cashback
-snaplii balance                                      # Check spendable Snaplii Cash balance
+snaplii balance --country CA                         # Check spendable Snaplii Cash balance (CA=CAD, US=USD)
 snaplii quote --item-id CB...-CT... --price 50       # Preview price with voucher/cashback
 snaplii giftcard list                                # View owned cards
 snaplii purchase --item-id CB...-CT... --price 50 --prov ON   # Buy a card
@@ -221,7 +221,7 @@ snaplii billpay result --payment-no PSP...                                   # C
 | `snaplii browse brand --id ID` | View brand details, denominations, and cashback |
 | `snaplii giftcard list` | List owned gift cards |
 | `snaplii giftcard detail --card-no NO` | View card redemption code and PIN |
-| `snaplii balance` | Show spendable Snaplii Cash balance (run before quoting to confirm funds) |
+| `snaplii balance [--country CA\|US]` | Show spendable Snaplii Cash balance (run before quoting; `--country` sets currency CA=CAD/US=USD) |
 | `snaplii quote --item-id ID --price P` | Preview price with voucher/cashback before buying |
 | `snaplii purchase --item-id ID --price P --prov PROV` | Purchase a gift card (prov = province/state) |
 | `snaplii smart cashback --brand-id ID --amount A` | Calculate cashback savings |

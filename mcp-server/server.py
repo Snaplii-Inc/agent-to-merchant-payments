@@ -73,8 +73,14 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_balance",
-            description="Get the user's real, current spendable Snaplii Cash balance (the same pool that pays for gift cards and bills). This is an authoritative query — use it instead of guessing or asking the user. Call it before a quote/purchase so you can tell up front whether the order is covered, and after a purchase if the user asks what's left. Returns {balance, currency}.",
-            inputSchema={"type": "object", "properties": {}, "required": []},
+            description="Get the user's real, current spendable Snaplii Cash balance (the same pool that pays for gift cards and bills). This is an authoritative query — use it instead of guessing or asking the user. Call it before a quote/purchase so you can tell up front whether the order is covered, and after a purchase if the user asks what's left. Returns {balance, currency}. Snaplii Cash is held in the account's LOCAL currency — pass the user's country so it's labeled correctly (CA=CAD, US=USD); never assume CAD.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "country": {"type": "string", "description": "User's country: CA or US — sets the currency (CA=CAD, US=USD)"},
+                },
+                "required": [],
+            },
         ),
         types.Tool(
             name="snaplii_browse_tags",
@@ -326,7 +332,17 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             result = client.get_balance()
             data = result.get("data", {}) if isinstance(result, dict) else {}
             balance = data.get("balance") if isinstance(data, dict) else None
-            out = {"balance": balance, "currency": "CAD", "spendable": True}
+            out = {"balance": balance, "spendable": True}
+            # Snaplii Cash is in the account's local currency; the backend doesn't
+            # return it, so derive from the user's country. Never hardcode CAD.
+            currency = {"CA": "CAD", "US": "USD"}.get(str(arguments.get("country", "")).upper())
+            if currency:
+                out["currency"] = currency
+            else:
+                out["currency_note"] = (
+                    "Amount is in the account's local currency — CA=CAD, US=USD. "
+                    "Pass country (CA/US) to label it; do not assume CAD."
+                )
             # First-time users often sit at $0 until they top up. Give the agent a
             # warm, actionable next step instead of a bare zero, so it never dead-ends.
             try:
@@ -584,7 +600,7 @@ SAFETY: Snaplii spends only from the user's prepaid Snaplii Cash balance — no 
 FLOW:
 1. Auth: call snaplii_config_show; if has_valid_token is false, call snaplii_init with the user's API key.
 2. Pick the card: ask region (CA/US), call snaplii_browse_tags. For delivery (food/coffee), prefer delivery-platform cards (DoorDash, Uber Eats, Skip) over the restaurant's own card. Never show brandId/templateId to the user.
-3. Check balance: call snaplii_balance so you know up front whether the order is affordable. (Never guess the balance — read it from this tool; if it fails, say so and rely on the quote's you_pay.)
+3. Check balance: call snaplii_balance (pass the user's country CA/US so the currency is right — CA=CAD, US=USD, never assume CAD) so you know up front whether the order is affordable. (Never guess the balance — read it from this tool; if it fails, say so and rely on the quote's you_pay.)
 4. Quote: call snaplii_quote and show the breakdown (voucher + Snaplii Cash + you_pay). If you_pay > 0, tell the user to top up in the app and stop.
 5. CONFIRM #1: show brand, amount, and quoted price; wait for explicit "yes".
 6. Buy: snaplii_purchase. Then snaplii_giftcard_list -> find the new card -> snaplii_giftcard_detail for the redemption code (use cardCode, else pin; fields under 'data'). If status is DELIVERING/PENDING, wait ~10s and re-check.

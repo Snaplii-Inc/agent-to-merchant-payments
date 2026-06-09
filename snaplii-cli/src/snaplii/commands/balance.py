@@ -3,10 +3,17 @@ import click
 from snaplii.client import GatewayClient
 from snaplii.output import print_json
 
+# Snaplii Cash is held in the account's local currency. The backend doesn't
+# return it, so it follows the user's country (the same CA/US the agent already
+# uses for browsing). Never hardcode one.
+_CURRENCY_BY_COUNTRY = {"CA": "CAD", "US": "USD"}
+
 
 @click.command("balance")
+@click.option("--country", default=None,
+              help="Your country (CA or US) — sets the currency label (CA=CAD, US=USD)")
 @click.pass_context
-def balance_cmd(ctx):
+def balance_cmd(ctx, country):
     """Show your spendable Snaplii Cash / cashback balance.
 
     This is the real, current balance pulled from your account — the same
@@ -21,9 +28,16 @@ def balance_cmd(ctx):
 
     summary = {
         "balance": balance,
-        "currency": "CAD",
         "spendable": True,
     }
+    currency = _CURRENCY_BY_COUNTRY.get((country or "").upper())
+    if currency:
+        summary["currency"] = currency
+    else:
+        summary["currency_note"] = (
+            "Amount is in the account's local currency — CA=CAD, US=USD. "
+            "Pass --country CA|US to label it (don't assume CAD)."
+        )
 
     # First-time users often have $0 until they top up. Don't dead-end them —
     # hand the agent a warm, actionable next step instead of just a bare number.

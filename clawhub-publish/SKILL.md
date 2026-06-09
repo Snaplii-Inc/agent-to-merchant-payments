@@ -17,13 +17,13 @@ This skill spends **only** from the user's **prepaid Snaplii Cash balance** — 
 
 1. **Download the Snaplii App** ([iOS](https://apps.apple.com/app/snaplii/id1596924498) / [Android](https://play.google.com/store/apps/details?id=com.snaplii.app)) — register and load Snaplii Cash balance
 2. **Create an API Key** — in the app, go to **More → Payment Methods → AI Payment Management → + New API Key**
-3. **Install the CLI** — `pip install snaplii-cli==0.13.0` ([PyPI](https://pypi.org/project/snaplii-cli/) | [Source](https://github.com/Snaplii-Inc/agent-to-merchant-payments))
+3. **Install the CLI** — `pip install snaplii-cli==0.13.2` ([PyPI](https://pypi.org/project/snaplii-cli/) | [Source](https://github.com/Snaplii-Inc/agent-to-merchant-payments))
 
 You help users browse, purchase, and manage gift cards through Snaplii.
 
 This skill uses the `snaplii` CLI installed from [PyPI](https://pypi.org/project/snaplii-cli/).
 
-If `snaplii` is not found after install, ask the user to check their PATH or reinstall with `pipx install snaplii-cli==0.13.0`.
+If `snaplii` is not found after install, ask the user to check their PATH or reinstall with `pipx install snaplii-cli==0.13.2`.
 
 ## Decision Flow
 
@@ -144,7 +144,7 @@ snaplii purchase --item-id "CB...-CT..." --price 50 --prov ON
 - `--item-id` is `{cardBrandId}-{cardTemplateId}` from Step 2.
 - `--price` is the dollar amount.
 - `--prov` is **required** — the user's province or state code. Do NOT default to ON — always ask.
-- `--payment-token` is optional — gateway auto-derives it.
+- Payment is always Snaplii Cash (`SNAPLII_CREDIT`) — there's no payment-method/token to pass.
 
 If purchase fails, **do not retry automatically**. Show the user the error and ask. Common failure modes:
 
@@ -188,7 +188,7 @@ This skill handles real financial operations. These safety rules always apply:
 
 ## Error Handling
 
-- `command not found` → ask the user to reinstall with `pipx install snaplii-cli==0.13.0`.
+- `command not found` → ask the user to reinstall with `pipx install snaplii-cli==0.13.2`.
 - `connection refused` / network errors → show the error to the user; do not retry silently.
 - `401 / 403` → suggest `snaplii init` again, or check API key scope.
 - `400 / validation error` → surface the gateway's error message verbatim; do not guess corrections.
@@ -206,7 +206,7 @@ This skill handles real financial operations. These safety rules always apply:
 | `snaplii browse brand --id BRAND_ID` | Get brand details (denominations, discounts) |
 | `snaplii giftcard list [--status STATUS]` | List owned gift cards |
 | `snaplii giftcard detail --card-no CARD_NO` | Card details (code, PIN) — sensitive |
-| `snaplii balance` | Show real spendable Snaplii Cash balance (run before quoting to confirm funds) |
+| `snaplii balance [--country CA\|US]` | Show real spendable Snaplii Cash balance (run before quoting; `--country` sets currency CA=CAD/US=USD) |
 | `snaplii quote --item-id ID --price PRICE` | Preview price with voucher/cashback before buying |
 | `snaplii purchase --item-id ID --price PRICE --prov PROV` | Buy a gift card |
 | `snaplii smart cashback --brand-id ID --amount A` | Calculate cashback savings |
@@ -218,7 +218,7 @@ This skill handles real financial operations. These safety rules always apply:
 - **NEVER show sensitive card information (card code, PIN, barcode URL) without explicit user consent.**
 - **NEVER print a freshly-created API key without explicit user consent and a warning that it's shown only once.**
 - **NEVER call `purchase` or `billpay pay` without explicit current-turn confirmation.**
-- **To report the user's Snaplii Cash balance, run `snaplii balance`** — it returns the real, current spendable balance (the same pool that pays for gift cards and bills). Never guess or fabricate a number; if the command fails, tell the user you couldn't retrieve it rather than making one up — and don't block them: fall back to `quote`, which is the real affordability check. Running `snaplii balance` before a `quote` lets you tell the user up front whether an order is affordable; the quote's `you_pay` remains the hard check on whether a *specific* order is fully covered.
+- **To report the user's Snaplii Cash balance, run `snaplii balance`** — it returns the real, current spendable balance (the same pool that pays for gift cards and bills). Pass `--country CA|US` so the currency is labeled correctly: Snaplii Cash is in the account's local currency (CA=CAD, US=USD) — **never assume CAD**. Never guess or fabricate a number; if the command fails, tell the user you couldn't retrieve it rather than making one up — and don't block them: fall back to `quote`, which is the real affordability check. Running `snaplii balance` before a `quote` lets you tell the user up front whether an order is affordable; the quote's `you_pay` remains the hard check on whether a *specific* order is fully covered.
 - **A $0 balance is normal for a new account — never dead-end first-time users.** When the balance is $0 (or doesn't cover the order), warmly explain they just need to add funds in the Snaplii app (Wallet → Add Cash / Top Up), reassure them there's nothing else to set up, and offer to re-check the balance and continue once they've topped up. Keep it encouraging, not a hard stop.
 - **Token is NOT auto-refreshed.** When any command returns a token-expired or 401 error, immediately run `snaplii init` to re-authenticate. Tell the user: "Your session has expired. Please re-enter your API key." Then pipe the user's API key input into init. Do NOT ask the user to run the command themselves — handle it seamlessly.
 - Parse JSON output and present in human-friendly format. Do not surface internal IDs (brandId / templateId / cardNo / keyId) into user-facing text unless the user specifically asks.
