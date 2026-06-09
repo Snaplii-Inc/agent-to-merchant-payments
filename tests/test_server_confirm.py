@@ -2,6 +2,8 @@ import asyncio
 
 import server
 
+from snaplii.security.quote_store import QuoteStore
+
 from mcp.types import (
     ClientCapabilities,
     ElicitationCapability,
@@ -67,3 +69,109 @@ def test_caps_support_form_false_for_url_only():
 def test_caps_support_form_false_when_elicitation_absent():
     assert server._caps_support_form(ClientCapabilities()) is False
     assert server._caps_support_form(None) is False
+
+
+# ── snaplii_purchase TOCTOU fix: re-validate + consume before charge ────────
+
+
+class FakeClock:
+    def __init__(self, t=1000.0):
+        self.t = t
+
+    def __call__(self):
+        return self.t
+
+    def advance(self, secs):
+        self.t += secs
+
+
+class FakeClient:
+    def __init__(self):
+        self.charges = []
+
+    def create_order_and_pay(self, **kwargs):
+        self.charges.append(kwargs)
+        return {"orderNo": "ORD-1", "status": "SUCCESS"}
+
+
+ITEM = "CB86-TPL1"
+PRICE = "50.00"
+
+
+def _wire(monkeypatch, confirm_fn, clock=None):
+    """Set up the module seams and return (store, client). The store is fresh
+    and issues a live token for ITEM/PRICE that the tests then drive through
+    snaplii_purchase."""
+    clock = clock or FakeClock()
+    store = QuoteStore(ttl_seconds=300, clock=clock)
+    client = FakeClient()
+    monkeypatch.setattr(server, "_QUOTE_STORE", store)
+    monkeypatch.setattr(server, "_current_mode", lambda: server.ELICITATION)
+    monkeypatch.setattr(server, "_session", lambda: None)
+    monkeypatch.setattr(server, "_get_client", lambda: client)
+    monkeypatch.setattr(server, "_confirm_via_elicitation", confirm_fn)
+    return store, client, clock
+
+
+def _purchase(token):
+    res = asyncio.run(server.call_tool(
+        "snaplii_purchase",
+        {"item_id": ITEM, "price": PRICE, "confirmation_token": token},
+    ))
+    import json
+    return json.loads(res[0].text)
+
+
+def test_purchase_accept_charges_once_then_replay_rejected(monkeypatch):
+    async def accept(session, canonical):
+        return True
+
+    store, client, _ = _wire(monkeypatch, accept)
+    token = store.issue(ITEM, PRICE, {"brand": "X", "you_pay": PRICE})
+
+    out = _purchase(token)
+    assert out["orderNo"] == "ORD-1"
+    assert len(client.charges) == 1
+    assert client.charges[0]["payment_method"] == "SNAPLII_CREDIT"
+
+    # Replay with the same (now consumed) token: rejected, no second charge.
+    out2 = _purchase(token)
+    assert out2["error"] == "confirmation_invalid"
+    assert len(client.charges) == 1
+
+
+def test_purchase_expired_during_wait_not_charged(monkeypatch):
+    clock = FakeClock()
+
+    async def accept_but_expire(session, canonical):
+        # Simulate the user approving after the TTL has elapsed.
+        clock.advance(400)
+        return True
+
+    store, client, _ = _wire(monkeypatch, accept_but_expire, clock=clock)
+    token = store.issue(ITEM, PRICE, {"brand": "X", "you_pay": PRICE})
+
+    out = _purchase(token)
+    assert out["error"] == "confirmation_invalid"
+    assert "expired" in out["message"]
+    assert len(client.charges) == 0
+
+
+def test_purchase_decline_does_not_consume_and_can_retry(monkeypatch):
+    state = {"approve": False}
+
+    async def confirm(session, canonical):
+        return state["approve"]
+
+    store, client, _ = _wire(monkeypatch, confirm)
+    token = store.issue(ITEM, PRICE, {"brand": "X", "you_pay": PRICE})
+
+    out = _purchase(token)
+    assert out["status"] == "declined"
+    assert len(client.charges) == 0
+
+    # Decline did NOT consume — the same token is still live; a later accept charges.
+    state["approve"] = True
+    out2 = _purchase(token)
+    assert out2["orderNo"] == "ORD-1"
+    assert len(client.charges) == 1

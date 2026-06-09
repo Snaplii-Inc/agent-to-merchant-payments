@@ -82,6 +82,13 @@ def _current_mode() -> str:
     return resolve_mode(_elicitation_supported(), insecure_opt_in_enabled(ConfigStore()))
 
 
+def _session():
+    """Seam for the active MCP session. Isolated so the snaplii_purchase branch
+    can be driven in tests by monkeypatching this (the real attribute access
+    raises outside a live request context)."""
+    return app.request_context.session
+
+
 async def _confirm_via_elicitation(session, canonical: dict) -> bool:
     """Ask the user to approve the canonical payment off the model context.
     Returns True only on an explicit accept+confirm."""
@@ -502,8 +509,10 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                                "or enable opt-in insecure mode (not recommended).",
                 })
             if mode == ELICITATION:
-                approved = await _confirm_via_elicitation(app.request_context.session, rec.canonical)
+                # The only `await` between the top-level validate and the charge.
+                approved = await _confirm_via_elicitation(_session(), rec.canonical)
                 if not approved:
+                    # Decline does NOT consume — user may retry within TTL.
                     return _text({"status": "declined", "message": "User declined the payment. No charge was made."})
             else:  # DEGRADED (opt-in)
                 if not arguments.get("user_confirmed"):
@@ -513,14 +522,32 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                                    "explicitly approved the exact amount below.",
                         "canonical": rec.canonical,
                     })
+                approved = True
 
+            # Both approved paths funnel here. Close the TOCTOU window: re-validate
+            # the token (it may have expired during the elicitation await, or been
+            # consumed by a concurrent purchase) and consume it BEFORE charging.
+            # There is NO `await` between this re-validate and consume, so they run
+            # atomically on the event loop: a concurrent coroutine that already
+            # passed the top-level validate will see the token as used here.
+            try:
+                rec = _QUOTE_STORE.validate(token, arguments["item_id"], arguments["price"])
+            except ValueError as e:
+                return _text({
+                    "error": "confirmation_invalid",
+                    "message": f"{e} Please get a fresh quote and confirm again.",
+                })
+            _QUOTE_STORE.consume(token)
+
+            # Fail-closed tradeoff: consume happens before the network charge, so if
+            # create_order_and_pay raises, the token is already spent and the user
+            # must re-quote. That's the safe direction for payments — keep it.
             client = _get_client()
             result = client.create_order_and_pay(
                 item_id=arguments["item_id"],
                 price=arguments["price"],
                 payment_method="SNAPLII_CREDIT",  # 0.13.1: hardcoded, never from agent args
             )
-            _QUOTE_STORE.consume(token)
             return _text(result)
 
         elif name == "snaplii_cashback_calc":
