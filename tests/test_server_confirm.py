@@ -88,14 +88,20 @@ class FakeClock:
 class FakeClient:
     def __init__(self):
         self.charges = []
+        self.billpay_charges = []
 
     def create_order_and_pay(self, **kwargs):
         self.charges.append(kwargs)
         return {"orderNo": "ORD-1", "status": "SUCCESS"}
 
+    def billpay_create_and_pay(self, **kwargs):
+        self.billpay_charges.append(kwargs)
+        return {"orderNo": "B-1", "paymentNo": "P-1", "orderStatus": "SUCCESS"}
+
 
 ITEM = "CB86-TPL1"
 PRICE = "50.00"
+PAY_CODE = "PC-123"
 
 
 def _wire(monkeypatch, confirm_fn, clock=None):
@@ -175,6 +181,90 @@ def test_purchase_decline_does_not_consume_and_can_retry(monkeypatch):
     out2 = _purchase(token)
     assert out2["orderNo"] == "ORD-1"
     assert len(client.charges) == 1
+
+
+# ── snaplii_billpay_pay enforcement (shares _enforce_confirmation) ──────────
+
+
+def _billpay(token):
+    res = asyncio.run(server.call_tool(
+        "snaplii_billpay_pay",
+        {"pay_code": PAY_CODE, "price": PRICE, "prov": "ON", "confirmation_token": token},
+    ))
+    import json
+    return json.loads(res[0].text)
+
+
+def test_billpay_accept_charges_once_then_replay_rejected(monkeypatch):
+    async def accept(session, canonical):
+        return True
+
+    store, client, _ = _wire(monkeypatch, accept)
+    token = store.issue(PAY_CODE, PRICE, {"brand": "bill payment", "you_pay": PRICE})
+
+    out = _billpay(token)
+    assert out["orderNo"] == "B-1"
+    assert out["paymentNo"] == "P-1"
+    assert out["orderStatus"] == "SUCCESS"
+    assert out["result"] == "Bill paid successfully from Snaplii Cash."
+    assert len(client.billpay_charges) == 1
+    assert client.billpay_charges[0]["location_prov"] == "ON"
+
+    # Replay with the same (now consumed) token: rejected, no second charge.
+    out2 = _billpay(token)
+    assert out2["error"] == "confirmation_invalid"
+    assert len(client.billpay_charges) == 1
+
+
+def test_billpay_expired_during_wait_not_charged(monkeypatch):
+    clock = FakeClock()
+
+    async def accept_but_expire(session, canonical):
+        clock.advance(400)
+        return True
+
+    store, client, _ = _wire(monkeypatch, accept_but_expire, clock=clock)
+    token = store.issue(PAY_CODE, PRICE, {"brand": "bill payment", "you_pay": PRICE})
+
+    out = _billpay(token)
+    assert out["error"] == "confirmation_invalid"
+    assert "expired" in out["message"]
+    assert len(client.billpay_charges) == 0
+
+
+def test_billpay_decline_does_not_consume_and_can_retry(monkeypatch):
+    state = {"approve": False}
+
+    async def confirm(session, canonical):
+        return state["approve"]
+
+    store, client, _ = _wire(monkeypatch, confirm)
+    token = store.issue(PAY_CODE, PRICE, {"brand": "bill payment", "you_pay": PRICE})
+
+    out = _billpay(token)
+    assert out["status"] == "declined"
+    assert len(client.billpay_charges) == 0
+
+    # Decline did NOT consume — the same token is still live; a later accept charges.
+    state["approve"] = True
+    out2 = _billpay(token)
+    assert out2["orderNo"] == "B-1"
+    assert len(client.billpay_charges) == 1
+
+
+def test_billpay_missing_token_rejected(monkeypatch):
+    async def accept(session, canonical):
+        return True
+
+    store, client, _ = _wire(monkeypatch, accept)
+    res = asyncio.run(server.call_tool(
+        "snaplii_billpay_pay",
+        {"pay_code": PAY_CODE, "price": PRICE, "prov": "ON"},
+    ))
+    import json
+    out = json.loads(res[0].text)
+    assert out["error"] == "confirmation_required"
+    assert len(client.billpay_charges) == 0
 
 
 def test_elicit_api_key_returns_value_on_accept():

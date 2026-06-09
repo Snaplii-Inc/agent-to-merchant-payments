@@ -105,6 +105,53 @@ async def _confirm_via_elicitation(session, canonical: dict) -> bool:
     return result.action == "accept" and bool((result.content or {}).get("confirm"))
 
 
+async def _enforce_confirmation(token, item_id, price, user_confirmed, noun, charge_fn):
+    """Shared payment-confirmation gate for purchase + bill pay.
+
+    Validates the quote token, gates on the security mode, confirms with the user
+    (off the model context on capable clients), then re-validates and consumes the
+    token BEFORE charging (closing the TOCTOU window across the elicitation await).
+    `noun` is 'payment' or 'bill payment' for user-facing messages. `charge_fn` is a
+    zero-arg callable that performs the gateway charge and returns its result dict.
+    Returns a dict to be wrapped by _text(...) — either an error/status dict or the
+    charge result.
+    """
+    if not token:
+        return {"error": "confirmation_required",
+                "message": f"Call the matching quote first and pass its confirmation_token to this {noun}."}
+    try:
+        rec = _QUOTE_STORE.validate(token, item_id, price)
+    except ValueError as e:
+        return {"error": "confirmation_invalid", "message": str(e)}
+
+    mode = _current_mode()
+    if mode == BLOCKED:
+        return {"error": "confirmation_unavailable",
+                "message": "This client cannot confirm payments securely (no elicitation). "
+                           "Use the snaplii CLI, an elicitation-capable client, or opt-in insecure mode."}
+    if mode == ELICITATION:
+        approved = await _confirm_via_elicitation(_session(), rec.canonical)
+        if not approved:
+            return {"status": "declined", "message": f"User declined the {noun}. No charge was made."}
+    else:  # DEGRADED (opt-in)
+        if not user_confirmed:
+            return {"error": "confirmation_required",
+                    "warning": "INSECURE opt-in mode. Pass user_confirmed=true ONLY after the user "
+                               "explicitly approved the exact amount below.",
+                    "canonical": rec.canonical}
+
+    # Close the TOCTOU window: re-validate (may have expired during the await, or
+    # been consumed by a concurrent call) and consume BEFORE charging. No await
+    # between validate and consume -> atomic on the event loop. Fail-closed: if the
+    # charge raises after consume, the token is spent and the user must re-quote.
+    try:
+        _QUOTE_STORE.validate(token, item_id, price)
+    except ValueError as e:
+        return {"error": "confirmation_invalid", "message": f"{e} Please get a fresh quote and confirm again."}
+    _QUOTE_STORE.consume(token)
+    return charge_fn()
+
+
 async def _elicit_api_key(session) -> str | None:
     """Collect the API key directly from the user, off the model context.
     Returns the key on accept, or None if the user cancels/declines."""
@@ -325,8 +372,10 @@ async def list_tools() -> list[types.Tool]:
                     "pay_code": {"type": "string", "description": "payCode from billpay_save"},
                     "price": {"type": "string", "description": "Bill amount"},
                     "voucher_id": {"type": "string", "description": "Specific voucher ID (optional)"},
+                    "confirmation_token": {"type": "string", "description": "Token returned by snaplii_billpay_quote for this exact pay_code+price"},
+                    "user_confirmed": {"type": "boolean", "description": "Only used in opt-in insecure mode"},
                 },
-                "required": ["pay_code", "price"],
+                "required": ["pay_code", "price", "confirmation_token"],
             },
         ),
         types.Tool(
@@ -525,64 +574,15 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             return _text(summary)
 
         elif name == "snaplii_purchase":
-            token = arguments.get("confirmation_token")
-            if not token:
-                return _text({
-                    "error": "confirmation_required",
-                    "message": "Call snaplii_quote first and pass its confirmation_token to snaplii_purchase.",
-                })
-            try:
-                rec = _QUOTE_STORE.validate(token, arguments["item_id"], arguments["price"])
-            except ValueError as e:
-                return _text({"error": "confirmation_invalid", "message": str(e)})
-
-            mode = _current_mode()
-            if mode == BLOCKED:
-                return _text({
-                    "error": "confirmation_unavailable",
-                    "message": "This client cannot confirm payments securely (no elicitation). "
-                               "Confirm with the snaplii CLI, switch to an elicitation-capable client, "
-                               "or enable opt-in insecure mode (not recommended).",
-                })
-            if mode == ELICITATION:
-                # The only `await` between the top-level validate and the charge.
-                approved = await _confirm_via_elicitation(_session(), rec.canonical)
-                if not approved:
-                    # Decline does NOT consume — user may retry within TTL.
-                    return _text({"status": "declined", "message": "User declined the payment. No charge was made."})
-            else:  # DEGRADED (opt-in)
-                if not arguments.get("user_confirmed"):
-                    return _text({
-                        "error": "confirmation_required",
-                        "warning": "INSECURE opt-in mode. Pass user_confirmed=true ONLY after the user "
-                                   "explicitly approved the exact amount below.",
-                        "canonical": rec.canonical,
-                    })
-                approved = True
-
-            # Both approved paths funnel here. Close the TOCTOU window: re-validate
-            # the token (it may have expired during the elicitation await, or been
-            # consumed by a concurrent purchase) and consume it BEFORE charging.
-            # There is NO `await` between this re-validate and consume, so they run
-            # atomically on the event loop: a concurrent coroutine that already
-            # passed the top-level validate will see the token as used here.
-            try:
-                rec = _QUOTE_STORE.validate(token, arguments["item_id"], arguments["price"])
-            except ValueError as e:
-                return _text({
-                    "error": "confirmation_invalid",
-                    "message": f"{e} Please get a fresh quote and confirm again.",
-                })
-            _QUOTE_STORE.consume(token)
-
-            # Fail-closed tradeoff: consume happens before the network charge, so if
-            # create_order_and_pay raises, the token is already spent and the user
-            # must re-quote. That's the safe direction for payments — keep it.
-            client = _get_client()
-            result = client.create_order_and_pay(
-                item_id=arguments["item_id"],
-                price=arguments["price"],
-                payment_method="SNAPLII_CREDIT",  # 0.13.1: hardcoded, never from agent args
+            result = await _enforce_confirmation(
+                arguments.get("confirmation_token"),
+                arguments["item_id"], arguments["price"],
+                arguments.get("user_confirmed"), "payment",
+                lambda: _get_client().create_order_and_pay(
+                    item_id=arguments["item_id"],
+                    price=arguments["price"],
+                    payment_method="SNAPLII_CREDIT",  # 0.13.1: hardcoded
+                ),
             )
             return _text(result)
 
@@ -695,23 +695,35 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 summary["voucher"] = {"name": result.get("voucherName"), "discount": f"-${result['voucherAmount']}"}
             if result.get("cashbackUseAmount"):
                 summary["snaplii_cash_applied"] = f"-${result['cashbackUseAmount']}"
+            canonical = build_canonical_quote(result, arguments["pay_code"], arguments["price"])
+            canonical["brand"] = "bill payment"
+            token = _QUOTE_STORE.issue(arguments["pay_code"], arguments["price"], canonical)
+            summary["confirmation_token"] = token
+            summary["confirmation_expires_in_seconds"] = DEFAULT_TTL_SECONDS
             return _text(summary)
 
         elif name == "snaplii_billpay_pay":
-            client = _get_client()
-            result = client.billpay_create_and_pay(
-                pay_code=arguments["pay_code"],
-                price=arguments["price"],
-                specified_voucher=arguments.get("voucher_id"),
+            def _charge():
+                result = _get_client().billpay_create_and_pay(
+                    pay_code=arguments["pay_code"],
+                    price=arguments["price"],
+                    specified_voucher=arguments.get("voucher_id"),
+                )
+                status = result.get("orderStatus", "")
+                summary = {"orderNo": result.get("orderNo"), "paymentNo": result.get("paymentNo"), "orderStatus": status}
+                if status in ("SUCCESS", "WAIT_DELIVER"):
+                    summary["result"] = "Bill paid successfully from Snaplii Cash."
+                elif result.get("h5PayUrl"):
+                    summary["warning"] = "Snaplii Cash did not fully cover the bill. Ask the user to top up in the Snaplii app and retry."
+                    summary["paypal_approval_url"] = result["h5PayUrl"]
+                return summary
+            result = await _enforce_confirmation(
+                arguments.get("confirmation_token"),
+                arguments["pay_code"], arguments["price"],
+                arguments.get("user_confirmed"), "bill payment",
+                _charge,
             )
-            status = result.get("orderStatus", "")
-            summary = {"orderNo": result.get("orderNo"), "paymentNo": result.get("paymentNo"), "orderStatus": status}
-            if status in ("SUCCESS", "WAIT_DELIVER"):
-                summary["result"] = "Bill paid successfully from Snaplii Cash."
-            elif result.get("h5PayUrl"):
-                summary["warning"] = "Snaplii Cash did not fully cover the bill. Ask the user to top up in the Snaplii app and retry."
-                summary["paypal_approval_url"] = result["h5PayUrl"]
-            return _text(summary)
+            return _text(result)
 
         elif name == "snaplii_billpay_result":
             client = _get_client()
