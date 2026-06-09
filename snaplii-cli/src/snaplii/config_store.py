@@ -49,9 +49,29 @@ def _keyring_delete(key: str) -> None:
 
 
 class ConfigStore:
+    # Process-level cache for secrets when no OS keyring is available and the
+    # user has NOT opted into insecure on-disk storage. Survives across the many
+    # short-lived ConfigStore() instances the MCP server creates per tool call,
+    # but not across separate processes (so the CLI re-auths — by design).
+    _MEM_SECRETS: dict = {}
+
     def __init__(self, path: Path | None = None):
         self._path = path or Path.home() / ".snaplii" / "config.json"
         self._use_keyring = _keyring_available()
+
+    def _insecure_persist_ok(self) -> bool:
+        """True only when the user opted into insecure on-disk secret storage."""
+        if str(os.environ.get("SNAPLII_ALLOW_INSECURE", "")).strip().lower() in (
+            "1", "true", "yes", "on"
+        ):
+            return True
+        data = {}
+        if self._path.exists():
+            try:
+                data = json.loads(self._path.read_text())
+            except Exception:
+                data = {}
+        return bool(data.get("allow_insecure_mode", False))
 
     @property
     def path(self) -> Path:
@@ -74,27 +94,38 @@ class ConfigStore:
 
     def save(self, data: dict) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        # Extract secrets → keychain, strip _NEVER_STORE keys, keep safe fields in JSON
+        persist_secret = self._insecure_persist_ok()
         file_data = {}
         for k, v in data.items():
             if k in self._NEVER_STORE:
                 continue  # api_key is never stored anywhere
-            elif k in _SECRET_KEYS and self._use_keyring:
-                if v:
+            if k in _SECRET_KEYS:
+                if not v:
+                    continue
+                if self._use_keyring:
                     _keyring_set(k, str(v))
+                elif persist_secret:
+                    file_data[k] = v  # explicit opt-in: chmod-600 plaintext
+                else:
+                    ConfigStore._MEM_SECRETS[k] = str(v)  # process memory only
             else:
                 file_data[k] = v
         self._path.write_text(json.dumps(file_data, indent=2) + "\n")
         os.chmod(self._path, 0o600)
 
     def get(self, key: str, default: Any = None) -> Any:
-        if key in _SECRET_KEYS and self._use_keyring:
-            val = _keyring_get(key)
-            if val:
-                return val
+        if key in _SECRET_KEYS:
+            if self._use_keyring:
+                val = _keyring_get(key)
+                if val:
+                    return val
+            if key in ConfigStore._MEM_SECRETS:
+                return ConfigStore._MEM_SECRETS[key]
         return self.load().get(key, default)
 
     def set(self, key: str, value: Any) -> None:
+        if key in self._NEVER_STORE:
+            return  # never store api_key, even via set()
         if key in _SECRET_KEYS and self._use_keyring:
             _keyring_set(key, str(value))
         else:
