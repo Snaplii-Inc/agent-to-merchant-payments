@@ -49,3 +49,18 @@ def test_unknown_token_rejected():
     store = QuoteStore(ttl_seconds=300, clock=Clock())
     with pytest.raises(ValueError, match="missing"):
         store.validate("nope", "ITEM-1", "50")
+
+
+def test_context_stored_and_returned_on_validate():
+    store = QuoteStore(ttl_seconds=300, clock=Clock())
+    ctx = {"voucher_option": "NOT_USE", "cashback_option": "NOT_USE", "specified_voucher": "V-9"}
+    token = store.issue("ITEM-1", "50", {"you_pay": "46"}, context=ctx)
+    rec = store.validate(token, "ITEM-1", "50")
+    assert rec.context == ctx
+
+
+def test_context_defaults_to_none():
+    store = QuoteStore(ttl_seconds=300, clock=Clock())
+    token = store.issue("ITEM-1", "50", {"you_pay": "46"})
+    rec = store.validate(token, "ITEM-1", "50")
+    assert rec.context is None

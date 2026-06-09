@@ -92,10 +92,12 @@ class FakeClient:
 
     def create_order_and_pay(self, **kwargs):
         self.charges.append(kwargs)
+        self.last_kwargs = kwargs
         return {"orderNo": "ORD-1", "status": "SUCCESS"}
 
     def billpay_create_and_pay(self, **kwargs):
         self.billpay_charges.append(kwargs)
+        self.last_kwargs = kwargs
         return {"orderNo": "B-1", "paymentNo": "P-1", "orderStatus": "SUCCESS"}
 
 
@@ -183,6 +185,27 @@ def test_purchase_decline_does_not_consume_and_can_retry(monkeypatch):
     assert len(client.charges) == 1
 
 
+def test_purchase_replays_approved_context_not_defaults(monkeypatch):
+    # A quote issued with a non-default voucher/cashback context must charge
+    # under THAT context, not the BEST_FIT/USE hardcoded defaults (D2 drift).
+    async def accept(session, canonical):
+        return True
+
+    store, client, _ = _wire(monkeypatch, accept)
+    token = store.issue(
+        ITEM, PRICE, {"brand": "X", "you_pay": PRICE},
+        context={"voucher_option": "NOT_USE", "cashback_option": "NOT_USE",
+                 "specified_voucher": "V-9"},
+    )
+
+    out = _purchase(token)
+    assert out["orderNo"] == "ORD-1"
+    assert client.last_kwargs["specified_voucher"] == "V-9"
+    assert client.last_kwargs["cashback_option"] == "NOT_USE"
+    assert client.last_kwargs["voucher_option"] == "NOT_USE"
+    assert client.last_kwargs["payment_method"] == "SNAPLII_CREDIT"
+
+
 # ── snaplii_billpay_pay enforcement (shares _enforce_confirmation) ──────────
 
 
@@ -265,6 +288,23 @@ def test_billpay_missing_token_rejected(monkeypatch):
     out = json.loads(res[0].text)
     assert out["error"] == "confirmation_required"
     assert len(client.billpay_charges) == 0
+
+
+def test_billpay_replays_approved_voucher_not_default(monkeypatch):
+    # billpay quote only exposes voucher_id; the charge must replay it.
+    async def accept(session, canonical):
+        return True
+
+    store, client, _ = _wire(monkeypatch, accept)
+    token = store.issue(
+        PAY_CODE, PRICE, {"brand": "bill payment", "you_pay": PRICE},
+        context={"specified_voucher": "V-9"},
+    )
+
+    out = _billpay(token)
+    assert out["orderNo"] == "B-1"
+    assert client.last_kwargs["specified_voucher"] == "V-9"
+    assert client.last_kwargs["location_prov"] == "ON"
 
 
 def test_elicit_api_key_returns_value_on_accept():

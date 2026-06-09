@@ -112,7 +112,8 @@ async def _enforce_confirmation(token, item_id, price, user_confirmed, noun, cha
     (off the model context on capable clients), then re-validates and consumes the
     token BEFORE charging (closing the TOCTOU window across the elicitation await).
     `noun` is 'payment' or 'bill payment' for user-facing messages. `charge_fn` is a
-    zero-arg callable that performs the gateway charge and returns its result dict.
+    one-arg callable, given the validated QuoteRecord, that performs the gateway
+    charge (replaying the record's approved context) and returns its result dict.
     Returns a dict to be wrapped by _text(...) — either an error/status dict or the
     charge result.
     """
@@ -145,11 +146,11 @@ async def _enforce_confirmation(token, item_id, price, user_confirmed, noun, cha
     # between validate and consume -> atomic on the event loop. Fail-closed: if the
     # charge raises after consume, the token is spent and the user must re-quote.
     try:
-        _QUOTE_STORE.validate(token, item_id, price)
+        rec = _QUOTE_STORE.validate(token, item_id, price)
     except ValueError as e:
         return {"error": "confirmation_invalid", "message": f"{e} Please get a fresh quote and confirm again."}
     _QUOTE_STORE.consume(token)
-    return charge_fn()
+    return charge_fn(rec)
 
 
 async def _elicit_api_key(session) -> str | None:
@@ -568,21 +569,31 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             except (ValueError, TypeError):
                 pass
             canonical = build_canonical_quote(result, arguments["item_id"], arguments["price"])
-            token = _QUOTE_STORE.issue(arguments["item_id"], arguments["price"], canonical)
+            context = {
+                "voucher_option": arguments.get("voucher_option", "BEST_FIT"),
+                "cashback_option": arguments.get("cashback_option", "USE"),
+                "specified_voucher": arguments.get("specified_voucher"),
+            }
+            token = _QUOTE_STORE.issue(arguments["item_id"], arguments["price"], canonical, context)
             summary["confirmation_token"] = token
             summary["confirmation_expires_in_seconds"] = DEFAULT_TTL_SECONDS
             return _text(summary)
 
         elif name == "snaplii_purchase":
-            result = await _enforce_confirmation(
-                arguments.get("confirmation_token"),
-                arguments["item_id"], arguments["price"],
-                arguments.get("user_confirmed"), "payment",
-                lambda: _get_client().create_order_and_pay(
+            def _charge(rec):
+                ctx = rec.context or {}
+                return _get_client().create_order_and_pay(
                     item_id=arguments["item_id"],
                     price=arguments["price"],
                     payment_method="SNAPLII_CREDIT",  # 0.13.1: hardcoded
-                ),
+                    voucher_option=ctx.get("voucher_option", "BEST_FIT"),
+                    cashback_option=ctx.get("cashback_option", "USE"),
+                    specified_voucher=ctx.get("specified_voucher"),
+                )
+            result = await _enforce_confirmation(
+                arguments.get("confirmation_token"),
+                arguments["item_id"], arguments["price"],
+                arguments.get("user_confirmed"), "payment", _charge,
             )
             return _text(result)
 
@@ -697,17 +708,21 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 summary["snaplii_cash_applied"] = f"-${result['cashbackUseAmount']}"
             canonical = build_canonical_quote(result, arguments["pay_code"], arguments["price"])
             canonical["brand"] = "bill payment"
-            token = _QUOTE_STORE.issue(arguments["pay_code"], arguments["price"], canonical)
+            context = {"specified_voucher": arguments.get("voucher_id")}
+            token = _QUOTE_STORE.issue(arguments["pay_code"], arguments["price"], canonical, context)
             summary["confirmation_token"] = token
             summary["confirmation_expires_in_seconds"] = DEFAULT_TTL_SECONDS
             return _text(summary)
 
         elif name == "snaplii_billpay_pay":
-            def _charge():
+            def _charge(rec):
+                ctx = rec.context or {}
                 result = _get_client().billpay_create_and_pay(
                     pay_code=arguments["pay_code"],
                     price=arguments["price"],
-                    specified_voucher=arguments.get("voucher_id"),
+                    voucher_option=ctx.get("voucher_option", "BEST_FIT"),
+                    cashback_option=ctx.get("cashback_option", "USE"),
+                    specified_voucher=ctx.get("specified_voucher"),
                 )
                 status = result.get("orderStatus", "")
                 summary = {"orderNo": result.get("orderNo"), "paymentNo": result.get("paymentNo"), "orderStatus": status}

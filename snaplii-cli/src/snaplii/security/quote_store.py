@@ -19,6 +19,7 @@ class QuoteRecord:
     canonical: dict
     expires_at: float
     used: bool = False
+    context: dict | None = None
 
 
 class QuoteStore:
@@ -27,13 +28,14 @@ class QuoteStore:
         self._clock = clock
         self._records: dict[str, QuoteRecord] = {}
 
-    def issue(self, item_id: str, price: str, canonical: dict) -> str:
+    def issue(self, item_id: str, price: str, canonical: dict, context: dict | None = None) -> str:
         token = secrets.token_urlsafe(24)
         self._records[token] = QuoteRecord(
             item_id=str(item_id),
             price=str(price),
             canonical=canonical,
             expires_at=self._clock() + self._ttl,
+            context=context,
         )
         return token
 
