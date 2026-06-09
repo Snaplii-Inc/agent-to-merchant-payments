@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
+## [0.13.2] — 2026-06-09
+
+### Fixed
+- **Balance currency is no longer hardcoded to CAD.** `snaplii balance` / `snaplii_balance` previously labeled every balance `CAD`, which is wrong for US users. Snaplii Cash is held in the account's local currency and the backend doesn't return it, so it now follows the user's country: pass `--country CA|US` (CLI) or `country` (MCP) → `CA=CAD`, `US=USD`. When no country is given, the currency is omitted (with a note) instead of asserting CAD. Tool/skill/instruction docs updated to pass the country and never assume CAD.
+
+---
+
 ## [0.13.1] — 2026-06-05
 
 ### Fixed
