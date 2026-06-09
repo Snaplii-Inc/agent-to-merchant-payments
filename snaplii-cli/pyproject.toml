@@ -34,6 +34,7 @@ Repository = "https://github.com/Snaplii-Inc/agent-to-merchant-payments"
 dev = [
     "pytest>=8.0,<9",
     "pytest-httpx>=0.35,<1",
+    "pytest-asyncio>=0.23,<1",
 ]
 
 [project.scripts]
