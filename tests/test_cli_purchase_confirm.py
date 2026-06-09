@@ -1,6 +1,6 @@
 from click.testing import CliRunner
 
-from snaplii.commands.purchase import purchase_cmd
+from snaplii.commands.purchase import purchase_cmd, _brand_name
 from snaplii.commands.billpay import pay_cmd
 
 
@@ -11,9 +11,37 @@ class FakeClient:
     def quote_order(self, **kwargs):
         return {"orderAmount": "50.00", "primaryPayAmount": "46.00"}
 
+    def get_card_brand_by_id(self, brand_id):
+        # Gateway carries the brand name at data.desc.name.
+        return {"data": {"cardBrandId": brand_id, "desc": {"name": "Amazon"}}}
+
     def create_order_and_pay(self, **kwargs):
         self.purchased = True
         return {"orderNo": "ORD-1", "status": "SUCCESS"}
+
+
+def test_brand_name_resolved_from_detail():
+    assert _brand_name(FakeClient(), "CB82-CT1") == "Amazon"
+
+
+def test_brand_name_none_on_lookup_failure():
+    class Boom:
+        def get_card_brand_by_id(self, brand_id):
+            raise RuntimeError("404 not found")
+
+    class NoMethod:
+        pass
+
+    assert _brand_name(Boom(), "CB82-CT1") is None       # error swallowed -> fall back
+    assert _brand_name(NoMethod(), "CB82-CT1") is None   # missing method -> fall back
+
+
+def test_brand_name_none_when_field_absent():
+    class NoDesc:
+        def get_card_brand_by_id(self, brand_id):
+            return {"data": {"cardBrandId": brand_id}}  # no desc.name
+
+    assert _brand_name(NoDesc(), "CB82-CT1") is None
 
 
 def _run(args, input_text):
