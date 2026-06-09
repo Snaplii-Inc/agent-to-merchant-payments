@@ -307,6 +307,116 @@ def test_billpay_replays_approved_voucher_not_default(monkeypatch):
     assert client.last_kwargs["location_prov"] == "ON"
 
 
+# ── BLOCKED / DEGRADED enforcement driven through call_tool ─────────────────
+# All tests above force ELICITATION; these exercise the BLOCKED and DEGRADED
+# branches of _enforce_confirmation end-to-end through call_tool.
+
+
+def _still_live(store, token, item_id, price):
+    """True if the token has NOT been consumed (validate still succeeds)."""
+    try:
+        store.validate(token, item_id, price)
+        return True
+    except ValueError:
+        return False
+
+
+def test_purchase_blocked_no_charge(monkeypatch):
+    # BLOCKED mode: returns confirmation_unavailable before any elicitation/charge,
+    # and must NOT consume the token (a later ELICITATION accept could still charge).
+    async def accept(session, canonical):
+        return True
+
+    store, client, _ = _wire(monkeypatch, accept)
+    monkeypatch.setattr(server, "_current_mode", lambda: server.BLOCKED)
+    token = store.issue(ITEM, PRICE, {"brand": "X", "you_pay": PRICE})
+
+    out = _purchase(token)
+    assert out["error"] == "confirmation_unavailable"
+    assert len(client.charges) == 0
+    assert _still_live(store, token, ITEM, PRICE)  # token NOT consumed
+
+
+def test_billpay_blocked_no_charge(monkeypatch):
+    async def accept(session, canonical):
+        return True
+
+    store, client, _ = _wire(monkeypatch, accept)
+    monkeypatch.setattr(server, "_current_mode", lambda: server.BLOCKED)
+    token = store.issue(PAY_CODE, PRICE, {"brand": "bill payment", "you_pay": PRICE})
+
+    out = _billpay(token)
+    assert out["error"] == "confirmation_unavailable"
+    assert len(client.billpay_charges) == 0
+    assert _still_live(store, token, PAY_CODE, PRICE)  # token NOT consumed
+
+
+def test_purchase_degraded_without_confirm_no_charge(monkeypatch):
+    # DEGRADED (insecure opt-in) without user_confirmed: must return
+    # confirmation_required with the insecure warning + canonical, and not charge
+    # or consume the token.
+    async def accept(session, canonical):
+        return True
+
+    store, client, _ = _wire(monkeypatch, accept)
+    monkeypatch.setattr(server, "_current_mode", lambda: server.DEGRADED)
+    token = store.issue(ITEM, PRICE, {"brand": "X", "you_pay": PRICE})
+
+    out = _purchase(token)  # no user_confirmed in args
+    assert out["error"] == "confirmation_required"
+    assert "insecure" in out["warning"].lower()
+    assert out["canonical"]["you_pay"] == PRICE
+    assert len(client.charges) == 0
+    assert _still_live(store, token, ITEM, PRICE)  # token NOT consumed
+
+
+def test_purchase_degraded_with_confirm_charges_once_then_replay_rejected(monkeypatch):
+    # DEGRADED with user_confirmed=True: the explicit opt-in bypass charges once,
+    # consumes the token (no elicitation await), and a replay is rejected.
+    async def accept(session, canonical):
+        return True
+
+    store, client, _ = _wire(monkeypatch, accept)
+    monkeypatch.setattr(server, "_current_mode", lambda: server.DEGRADED)
+    token = store.issue(ITEM, PRICE, {"brand": "X", "you_pay": PRICE})
+
+    res = asyncio.run(server.call_tool(
+        "snaplii_purchase",
+        {"item_id": ITEM, "price": PRICE, "confirmation_token": token,
+         "user_confirmed": True},
+    ))
+    import json
+    out = json.loads(res[0].text)
+    assert out["orderNo"] == "ORD-1"
+    assert len(client.charges) == 1
+    assert not _still_live(store, token, ITEM, PRICE)  # token consumed
+
+    # Replay with the now-consumed token: rejected, no second charge.
+    out2 = _purchase(token)
+    assert out2["error"] == "confirmation_invalid"
+    assert len(client.charges) == 1
+
+
+def test_billpay_degraded_with_confirm_charges_once(monkeypatch):
+    async def accept(session, canonical):
+        return True
+
+    store, client, _ = _wire(monkeypatch, accept)
+    monkeypatch.setattr(server, "_current_mode", lambda: server.DEGRADED)
+    token = store.issue(PAY_CODE, PRICE, {"brand": "bill payment", "you_pay": PRICE})
+
+    res = asyncio.run(server.call_tool(
+        "snaplii_billpay_pay",
+        {"pay_code": PAY_CODE, "price": PRICE, "prov": "ON",
+         "confirmation_token": token, "user_confirmed": True},
+    ))
+    import json
+    out = json.loads(res[0].text)
+    assert out["orderNo"] == "B-1"
+    assert len(client.billpay_charges) == 1
+    assert not _still_live(store, token, PAY_CODE, PRICE)  # token consumed
+
+
 def test_elicit_api_key_returns_value_on_accept():
     session = FakeSession(FakeElicitResult("accept", {"api_key": "snp_sk_live_xyz"}))
     key = asyncio.run(server._elicit_api_key(session))

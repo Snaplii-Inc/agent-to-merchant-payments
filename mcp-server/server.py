@@ -708,6 +708,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 summary["snaplii_cash_applied"] = f"-${result['cashbackUseAmount']}"
             canonical = build_canonical_quote(result, arguments["pay_code"], arguments["price"])
             canonical["brand"] = "bill payment"
+            # Bill-pay intentionally exposes only voucher_id; voucher_option/cashback_option default (BEST_FIT/USE) in both quote and charge, so there's no drift to replay.
             context = {"specified_voucher": arguments.get("voucher_id")}
             token = _QUOTE_STORE.issue(arguments["pay_code"], arguments["price"], canonical, context)
             summary["confirmation_token"] = token
