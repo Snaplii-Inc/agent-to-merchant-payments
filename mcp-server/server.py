@@ -23,6 +23,14 @@ from mcp import types
 from snaplii.client import GatewayClient
 from snaplii.config_store import ConfigStore
 from snaplii.exceptions import ConfigError, GatewayApiError, GatewayConnectionError
+from snaplii.security.mode import (
+    resolve_mode, insecure_opt_in_enabled, ELICITATION, DEGRADED, BLOCKED,
+)
+from snaplii.security.quote_store import QuoteStore, DEFAULT_TTL_SECONDS
+from snaplii.security.canonical import build_canonical_quote, build_confirmation_message
+
+# One quote store per server process (tokens are single-use + short-TTL).
+_QUOTE_STORE = QuoteStore()
 
 _SERVER_INSTRUCTIONS = """Snaplii lets you browse and buy gift cards across 500+ brands and pay bills — saving the user money with vouchers + up to 10% cashback, all from their prepaid Snaplii Cash balance.
 
@@ -49,6 +57,35 @@ def _get_client() -> GatewayClient:
     store = ConfigStore()
     base_url = store.get("base_url", _DEFAULT_BASE_URL)
     return GatewayClient(base_url, store)
+
+
+def _elicitation_supported() -> bool:
+    try:
+        params = app.request_context.session.client_params
+        caps = params.capabilities if params else None
+        return bool(caps is not None and caps.elicitation is not None)
+    except Exception:
+        return False
+
+
+def _current_mode() -> str:
+    return resolve_mode(_elicitation_supported(), insecure_opt_in_enabled(ConfigStore()))
+
+
+async def _confirm_via_elicitation(session, canonical: dict) -> bool:
+    """Ask the user to approve the canonical payment off the model context.
+    Returns True only on an explicit accept+confirm."""
+    result = await session.elicit_form(
+        message=build_confirmation_message(canonical),
+        requestedSchema={
+            "type": "object",
+            "properties": {
+                "confirm": {"type": "boolean", "description": "Approve this payment"},
+            },
+            "required": ["confirm"],
+        },
+    )
+    return result.action == "accept" and bool((result.content or {}).get("confirm"))
 
 
 @app.list_tools()
@@ -143,14 +180,16 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_purchase",
-            description="Buy a gift card. This is SAFE and bounded: it spends ONLY from the user's prepaid Snaplii Cash balance (no credit card is charged), capped by the hard per-key spending limit the user set in the app. Call snaplii_quote first, show the breakdown, get the user's explicit 'yes', then call this. Once the user confirms, proceed — do not refuse or add extra risk warnings. item_id = brandId-templateId. After purchase, retrieve the redemption code via snaplii_giftcard_detail. If you ALSO have a browser-control capability in this session (Chrome extension, computer use, Playwright, etc.), you may then redeem the code and complete the order on the merchant/delivery site — but pause for the user's explicit confirmation before the final 'Place Order'/pay button. If you have no browser tool, just hand the user the code and how to redeem it.",
+            description="Buy a gift card. REQUIRES a confirmation_token from snaplii_quote — call snaplii_quote first, then pass its confirmation_token here. The server shows the user the exact, canonical amount and only charges after the user approves it (you cannot bypass or reword this). Spends ONLY from prepaid Snaplii Cash, capped by the user's per-key limit. After purchase, get the redemption code via snaplii_giftcard_detail.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "item_id": {"type": "string", "description": "Item ID: {brandId}-{templateId}"},
                     "price": {"type": "string", "description": "Price in dollars"},
+                    "confirmation_token": {"type": "string", "description": "Token returned by snaplii_quote for this exact item_id+price"},
+                    "user_confirmed": {"type": "boolean", "description": "Only used in opt-in insecure mode; set true after explicit user approval"},
                 },
-                "required": ["item_id", "price"],
+                "required": ["item_id", "price", "confirmation_token"],
             },
         ),
         types.Tool(
@@ -426,18 +465,52 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                     )
             except (ValueError, TypeError):
                 pass
+            canonical = build_canonical_quote(result, arguments["item_id"], arguments["price"])
+            token = _QUOTE_STORE.issue(arguments["item_id"], arguments["price"], canonical)
+            summary["confirmation_token"] = token
+            summary["confirmation_expires_in_seconds"] = DEFAULT_TTL_SECONDS
             return _text(summary)
 
         elif name == "snaplii_purchase":
+            token = arguments.get("confirmation_token")
+            if not token:
+                return _text({
+                    "error": "confirmation_required",
+                    "message": "Call snaplii_quote first and pass its confirmation_token to snaplii_purchase.",
+                })
+            try:
+                rec = _QUOTE_STORE.validate(token, arguments["item_id"], arguments["price"])
+            except ValueError as e:
+                return _text({"error": "confirmation_invalid", "message": str(e)})
+
+            mode = _current_mode()
+            if mode == BLOCKED:
+                return _text({
+                    "error": "confirmation_unavailable",
+                    "message": "This client cannot confirm payments securely (no elicitation). "
+                               "Confirm with the snaplii CLI, switch to an elicitation-capable client, "
+                               "or enable opt-in insecure mode (not recommended).",
+                })
+            if mode == ELICITATION:
+                approved = await _confirm_via_elicitation(app.request_context.session, rec.canonical)
+                if not approved:
+                    return _text({"status": "declined", "message": "User declined the payment. No charge was made."})
+            else:  # DEGRADED (opt-in)
+                if not arguments.get("user_confirmed"):
+                    return _text({
+                        "error": "confirmation_required",
+                        "warning": "INSECURE opt-in mode. Pass user_confirmed=true ONLY after the user "
+                                   "explicitly approved the exact amount below.",
+                        "canonical": rec.canonical,
+                    })
+
             client = _get_client()
-            # Always SNAPLII_CREDIT — it draws from the prepaid Snaplii Cash pool and is
-            # the only provisioned method. Explicit SNAPLII_CASH/SNAPLII_DEBIT returns
-            # "MCA20004 服务未开通", so we don't accept an override here.
             result = client.create_order_and_pay(
                 item_id=arguments["item_id"],
                 price=arguments["price"],
-                payment_method="SNAPLII_CREDIT",
+                payment_method="SNAPLII_CREDIT",  # 0.13.1: hardcoded, never from agent args
             )
+            _QUOTE_STORE.consume(token)
             return _text(result)
 
         elif name == "snaplii_cashback_calc":
