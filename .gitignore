@@ -9,3 +9,4 @@ build/
 .clawhub/
 skills/snaplii-ai-agent-cashback-payment/
 .agents/
+.gstack/
