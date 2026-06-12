@@ -333,9 +333,13 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             data = result.get("data", {}) if isinstance(result, dict) else {}
             balance = data.get("balance") if isinstance(data, dict) else None
             out = {"balance": balance, "spendable": True}
-            # Snaplii Cash is in the account's local currency; the backend doesn't
-            # return it, so derive from the user's country. Never hardcode CAD.
-            currency = {"CA": "CAD", "US": "USD"}.get(str(arguments.get("country", "")).upper())
+            # Snaplii Cash is in the account's local currency. The account's real
+            # country is cached at login (from the token response) and is
+            # authoritative; the country argument is only a fallback for tokens
+            # issued before the gateway started returning it. Never hardcode CAD.
+            account_country = ConfigStore().get("country")
+            country = account_country or arguments.get("country", "")
+            currency = {"CA": "CAD", "US": "USD"}.get(str(country).upper())
             if currency:
                 out["currency"] = currency
             else:
