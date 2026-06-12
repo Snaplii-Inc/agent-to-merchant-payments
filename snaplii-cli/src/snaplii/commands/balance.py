@@ -30,7 +30,11 @@ def balance_cmd(ctx, country):
         "balance": balance,
         "spendable": True,
     }
-    currency = _CURRENCY_BY_COUNTRY.get((country or "").upper())
+    # The account's real country is cached at login (from the token response) and
+    # is authoritative. The --country flag is only a fallback for tokens issued
+    # before the gateway started returning it.
+    account_country = ctx.obj["config_store"].get("country")
+    currency = _CURRENCY_BY_COUNTRY.get((account_country or country or "").upper())
     if currency:
         summary["currency"] = currency
     else:

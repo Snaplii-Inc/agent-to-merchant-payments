@@ -69,6 +69,13 @@ class GatewayClient:
         expires_in = resp.get("expires_in", 3600)
         if token:
             self._config.cache_token(token, expires_in)
+        # The gateway knows the account's country at apiKeyLogin. When it returns
+        # it here, cache it so balance/quote can label the local currency exactly
+        # (CA=CAD, US=USD) instead of relying on an agent-supplied --country guess.
+        # Falls back gracefully: older gateways omit it and the flag still works.
+        country = resp.get("country")
+        if country:
+            self._config.set("country", str(country).upper())
         return resp
 
     # ── User cards ────────────────────────────────────────────────
