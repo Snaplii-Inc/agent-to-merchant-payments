@@ -1,12 +1,8 @@
 import click
 
 from snaplii.client import GatewayClient
+from snaplii.currency import currency_for_country
 from snaplii.output import print_json
-
-# Snaplii Cash is held in the account's local currency. The backend doesn't
-# return it, so it follows the user's country (the same CA/US the agent already
-# uses for browsing). Never hardcode one.
-_CURRENCY_BY_COUNTRY = {"CA": "CAD", "US": "USD"}
 
 
 @click.command("balance")
@@ -34,7 +30,7 @@ def balance_cmd(ctx, country):
     # is authoritative. The --country flag is only a fallback for tokens issued
     # before the gateway started returning it.
     account_country = ctx.obj["config_store"].get("country")
-    currency = _CURRENCY_BY_COUNTRY.get((account_country or country or "").upper())
+    currency = currency_for_country(account_country or country)
     if currency:
         summary["currency"] = currency
     else:

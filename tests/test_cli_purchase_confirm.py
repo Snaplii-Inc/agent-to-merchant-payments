@@ -4,6 +4,16 @@ from snaplii.commands.purchase import purchase_cmd, _brand_name
 from snaplii.commands.billpay import pay_cmd
 
 
+class _FakeStore:
+    """Minimal config store for the CLI context (only `country` is read here)."""
+
+    def __init__(self, country=None):
+        self._country = country
+
+    def get(self, key, default=None):
+        return self._country if key == "country" else default
+
+
 class FakeClient:
     def __init__(self):
         self.purchased = False
@@ -44,11 +54,12 @@ def test_brand_name_none_when_field_absent():
     assert _brand_name(NoDesc(), "CB82-CT1") is None
 
 
-def _run(args, input_text):
+def _run(args, input_text, country=None):
     client = FakeClient()
     runner = CliRunner()
     result = runner.invoke(purchase_cmd, args, input=input_text,
-                           obj={"client": client}, catch_exceptions=False)
+                           obj={"client": client, "config_store": _FakeStore(country)},
+                           catch_exceptions=False)
     return result, client
 
 
@@ -81,11 +92,12 @@ class FakeBillPayClient:
         return {"orderNo": "BP-1", "paymentNo": "PAY-1", "orderStatus": "SUCCESS"}
 
 
-def _run_pay(args, input_text):
+def _run_pay(args, input_text, country=None):
     client = FakeBillPayClient()
     runner = CliRunner()
     result = runner.invoke(pay_cmd, args, input=input_text,
-                           obj={"client": client}, catch_exceptions=False)
+                           obj={"client": client, "config_store": _FakeStore(country)},
+                           catch_exceptions=False)
     return result, client
 
 

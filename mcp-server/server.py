@@ -448,7 +448,8 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                     )
             except (ValueError, TypeError):
                 pass
-            canonical = build_canonical_quote(result, arguments["item_id"], arguments["price"])
+            canonical = build_canonical_quote(result, arguments["item_id"], arguments["price"],
+                                              country=ConfigStore().get("country"))
             context = {
                 "voucher_option": arguments.get("voucher_option", "BEST_FIT"),
                 "cashback_option": arguments.get("cashback_option", "USE"),
@@ -585,7 +586,8 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 summary["voucher"] = {"name": result.get("voucherName"), "discount": f"-${result['voucherAmount']}"}
             if result.get("cashbackUseAmount"):
                 summary["snaplii_cash_applied"] = f"-${result['cashbackUseAmount']}"
-            canonical = build_canonical_quote(result, arguments["pay_code"], arguments["price"])
+            canonical = build_canonical_quote(result, arguments["pay_code"], arguments["price"],
+                                              country=ConfigStore().get("country"))
             canonical["brand"] = "bill payment"
             # Bill-pay intentionally exposes only voucher_id; voucher_option/cashback_option default (BEST_FIT/USE) in both quote and charge, so there's no drift to replay.
             context = {"specified_voucher": arguments.get("voucher_id")}

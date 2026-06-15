@@ -39,7 +39,10 @@ def purchase_cmd(ctx, item_id, price, yes):
 
     if not yes:
         quote = client.quote_order(item_id=item_id, price=price)
-        canonical = build_canonical_quote(quote, item_id, price, brand_name=_brand_name(client, item_id))
+        country = ctx.obj["config_store"].get("country")
+        canonical = build_canonical_quote(quote, item_id, price,
+                                          brand_name=_brand_name(client, item_id),
+                                          country=country)
         click.echo(build_confirmation_message(canonical), err=True)
         if not click.confirm("Proceed with this purchase?", default=False):
             print_json({"status": "cancelled", "message": "Purchase cancelled. No charge was made."})

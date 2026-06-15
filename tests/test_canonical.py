@@ -40,3 +40,28 @@ def test_confirmation_message_without_brand_uses_item_id():
     c = build_canonical_quote({"orderAmount": "25", "primaryPayAmount": "25"}, "ITEM-2", "25")
     msg = build_confirmation_message(c)
     assert "ITEM-2" in msg
+
+
+def test_canonical_currency_follows_country():
+    assert build_canonical_quote(GATEWAY_QUOTE, "I", "50", country="CA")["currency"] == "CAD"
+    assert build_canonical_quote(GATEWAY_QUOTE, "I", "50", country="US")["currency"] == "USD"
+    # Unknown country -> None, never assume CAD.
+    assert build_canonical_quote(GATEWAY_QUOTE, "I", "50")["currency"] is None
+
+
+def test_confirmation_renders_currency_symbol():
+    ca = build_confirmation_message(build_canonical_quote(GATEWAY_QUOTE, "I", "50", country="CA"))
+    assert "CA$46.00" in ca          # you_pay
+    assert "CA$50.00" in ca          # order total
+    assert "-CA$2.00" in ca          # voucher / cashback discount
+
+    us = build_confirmation_message(build_canonical_quote(GATEWAY_QUOTE, "I", "50", country="US"))
+    assert "US$46.00" in us
+    assert "CA$" not in us
+
+
+def test_confirmation_bare_dollar_when_country_unknown():
+    msg = build_confirmation_message(build_canonical_quote(GATEWAY_QUOTE, "I", "50"))
+    assert "$46.00" in msg
+    assert "CA$" not in msg
+    assert "US$" not in msg

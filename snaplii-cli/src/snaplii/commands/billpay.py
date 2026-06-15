@@ -155,7 +155,8 @@ def pay_cmd(ctx, pay_code, price, voucher_id, yes):
     if not yes:
         quote = client.billpay_quote(pay_code=pay_code, price=price, specified_voucher=voucher_id)
         from snaplii.security.canonical import build_canonical_quote, build_confirmation_message
-        canonical = build_canonical_quote(quote, pay_code, price)
+        country = ctx.obj["config_store"].get("country")
+        canonical = build_canonical_quote(quote, pay_code, price, country=country)
         canonical["brand"] = "bill payment"
         click.echo(build_confirmation_message(canonical), err=True)
         if not click.confirm("Proceed with this bill payment?", default=False):
