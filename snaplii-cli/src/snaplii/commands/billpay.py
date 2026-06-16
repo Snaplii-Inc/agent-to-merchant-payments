@@ -146,16 +146,14 @@ def quote_cmd(ctx, pay_code, price, voucher_id):
 @billpay_group.command("pay")
 @click.option("--pay-code", required=True, help="payCode from 'billpay save'")
 @click.option("--price", required=True, help="Bill amount")
-@click.option("--prov", required=True, help="Province/state code (ON, QC, BC, NY)")
 @click.option("--voucher-id", default=None, help="Specific voucher ID to apply")
 @click.pass_context
-def pay_cmd(ctx, pay_code, price, prov, voucher_id):
+def pay_cmd(ctx, pay_code, price, voucher_id):
     """Pay the bill from Snaplii Cash balance."""
     client: GatewayClient = ctx.obj["client"]
     resp = client.billpay_create_and_pay(
         pay_code=pay_code,
         price=price,
-        location_prov=prov,
         specified_voucher=voucher_id,
     )
     status = resp.get("orderStatus", "")

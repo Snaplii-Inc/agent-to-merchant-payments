@@ -59,8 +59,7 @@ Credentials live at `~/.snaplii/config.json`. To log out, run `snaplii config cl
 ### Step 2: Browse & recommend
 
 ```bash
-snaplii browse tags                        # all cards for the account's country
-snaplii browse tags --prov ON              # narrow by province/state (optional)
+snaplii browse tags                        # categories + brands for your account's country
 snaplii browse brand --id CB0000000000135
 snaplii smart cashback --brand-id CB... --amount 50
 snaplii smart dashboard
@@ -68,8 +67,7 @@ snaplii smart dashboard
 
 Recommendation rules:
 
-- **Country is automatic — do NOT ask for it.** The account's country (CA/US) is fixed at login and enforced server-side, so the user only ever sees cards available to their country (e.g. a Canadian account sees Canada-only + CA/US-universal cards; it can never see US-only cards). You don't pass a country flag. Do **not** rely on emoji flags in brand names — they may be missing or wrong.
-- **Province/state CAN change availability — resolve it before browsing.** Card availability can differ by province/state, so pass `--prov` (e.g. `--prov ON`, `--prov QC`, `--prov NY`) when you know it. To get it, in this order: **(1) auto-detect** the province/state from the conversation (a city/region the user mentioned, delivery address, prior context) and **confirm it back** to the user ("Looks like you're in Ontario — using ON, ok?"); **(2) if you can't detect it, ask** the user directly. Only `browse tags` with no `--prov` (all cards for the country) if the user doesn't know or doesn't care. `--prov` is a **province/state** code (ON, QC, BC, NY…), never a country code.
+- **Region is automatic — there's no region/province flag to pass.** The account's country (CA/US) is fixed at login and enforced server-side, so the user only ever sees cards available to them (e.g. a Canadian account sees Canada-only + CA/US-universal cards; it can never see US-only cards). The US catalog is not split by state, and the few Canadian cards that differ by province (some restaurants) simply appear as separate categories like "Restaurants in Ontario" / "Restaurants in BC" — pick the right one by name. Do **not** rely on emoji flags in brand names — they may be missing or wrong.
 - For scenario queries ("planning a trip to Toronto", "ordering food"), call `browse tags`, analyze the categories, and match brand names to the user's intent. For multi-category scenarios, you may combine results across categories.
 - Default sort is by cashback rate (highest first). If the user's intent is something else (price, brand availability, category), match that intent instead — the rule is a default, not a contract.
 - Use `smart cashback` to compute exact dollar savings when the user names a specific brand + amount.
@@ -150,12 +148,11 @@ Wait for "yes", "confirm", or "buy". Anything else means cancel.
 #### 4d. Execute the purchase
 
 ```bash
-snaplii purchase --item-id "CB...-CT..." --price 50 --prov ON
+snaplii purchase --item-id "CB...-CT..." --price 50
 ```
 
 - `--item-id` is `{cardBrandId}-{cardTemplateId}` from Step 2.
 - `--price` is the dollar amount.
-- `--prov` is **required** — the user's **province/state** code (ON, QC, BC, NY, …). Do NOT default to ON — always ask (or reuse the province you already resolved in Step 2). Same meaning as `browse`'s `--prov`, but here it's mandatory.
 - Payment is always Snaplii Cash (`SNAPLII_CREDIT`) — there's no payment-method/token to pass.
 - **Never pass `--yes`.** That flag skips the CLI's built-in confirmation prompt; you must always confirm with the user in the current turn (see Sensitive Data Handling).
 - **MCP runtime:** if you are using the `snaplii_*` MCP tools instead of the CLI, `snaplii_purchase` requires the `confirmation_token` returned by the preceding `snaplii_quote` (single-use, bound to the quoted item + price). Capture it from the quote and pass it through. The Bash CLI does not use a token — it re-quotes internally and prompts — so this applies to the MCP path only.
@@ -181,7 +178,7 @@ snaplii billpay detail --payee-code PE01015                     # account valida
 snaplii billpay save --payee-code PE01015 --first-name Alex --last-name Chen --amount 75.25 --account 1234567890
 snaplii billpay vouchers --pay-code PC... --price 75.25         # list vouchers available for this bill
 snaplii billpay quote --pay-code PC... --price 75.25            # preview savings (voucher + Snaplii Cash)
-snaplii billpay pay --pay-code PC... --price 75.25 --prov ON    # pay from Snaplii Cash
+snaplii billpay pay --pay-code PC... --price 75.25             # pay from Snaplii Cash
 snaplii billpay result --payment-no PSP...                      # check status
 snaplii billpay history --payee-code PE01015                    # past payments to a payee
 ```
@@ -221,13 +218,13 @@ This skill handles real financial operations. These safety rules always apply:
 | `snaplii config show` | Show config (secrets auto-masked) |
 | `snaplii config set --base-url URL` | Switch gateway (e.g. staging vs prod) |
 | `snaplii config clear` | Log out / wipe local credentials |
-| `snaplii browse tags [--channel CH] [--prov PROV]` | List card categories + brand summaries. `--prov` is an **optional province/state** code (ON, QC, NY…) — availability varies by province. Country is automatic (fixed by the account). |
+| `snaplii browse tags [--channel CH]` | List card categories + brand summaries for the account's country (region is automatic — no flag). |
 | `snaplii browse brand --id BRAND_ID` | Get brand details (denominations, discounts) |
 | `snaplii giftcard list [--status STATUS]` | List owned gift cards |
 | `snaplii giftcard detail --card-no CARD_NO` | Card details (code, PIN) — sensitive |
 | `snaplii balance [--country CA\|US]` | Show real spendable Snaplii Cash balance (run before quoting; `--country` sets currency CA=CAD/US=USD) |
 | `snaplii quote --item-id ID --price PRICE` | Preview price with voucher/cashback before buying |
-| `snaplii purchase --item-id ID --price PRICE --prov PROV` | Buy a gift card. `--prov` is a **province/state** code (ON, QC, NY, …) — here it's **required** (in `browse` it's optional). Never pass `--yes`. |
+| `snaplii purchase --item-id ID --price PRICE` | Buy a gift card. Never pass `--yes`. |
 | `snaplii smart cashback --brand-id ID --amount A` | Calculate cashback savings |
 | `snaplii smart dashboard` | Owned-card inventory summary |
 | `snaplii help [SUBCOMMAND]` | Built-in help — use as a fallback if a flag here looks wrong |

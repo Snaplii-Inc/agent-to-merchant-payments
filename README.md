@@ -182,17 +182,17 @@ The CLI will prompt for your API key via hidden input (like a password prompt). 
 ### 5. Use the CLI
 
 ```bash
-snaplii browse tags --prov CA                        # Browse gift card categories (CA or US)
+snaplii browse tags                                  # Browse gift card categories
 snaplii browse brand --id CB...                      # See denominations and cashback
 snaplii balance --country CA                         # Check spendable Snaplii Cash balance (CA=CAD, US=USD)
 snaplii quote --item-id CB...-CT... --price 50       # Preview price with voucher/cashback
 snaplii giftcard list                                # View owned cards
-snaplii purchase --item-id CB...-CT... --price 50 --prov ON   # Buy a card
+snaplii purchase --item-id CB...-CT... --price 50    # Buy a card
 ```
 
 > `--item-id` is formatted as `{cardBrandId}-{cardTemplateId}`. Both IDs are available from `snaplii browse brand`.
 >
-> **Note on `--prov`:** For `browse tags`, use country code (`CA` for Canada, `US` for United States). For `purchase`, use province/state code (`ON`, `QC`, `BC`, `NY`, `CA`, `TX`, etc.).
+> The catalog is scoped to your account's country (fixed at login, enforced server-side), so there's no region/province flag to pass.
 
 ### 6. Pay a Bill
 
@@ -203,7 +203,7 @@ snaplii billpay payees                                                       # F
 snaplii billpay detail --payee-code PE01015                                  # Check account rules
 snaplii billpay save --payee-code PE01015 --first-name Alex --last-name Chen --amount 75.25 --account 1234567890
 snaplii billpay quote --pay-code PC... --price 75.25                         # Preview savings
-snaplii billpay pay --pay-code PC... --price 75.25 --prov ON                 # Pay from Snaplii Cash
+snaplii billpay pay --pay-code PC... --price 75.25                          # Pay from Snaplii Cash
 snaplii billpay result --payment-no PSP...                                   # Check status
 ```
 
@@ -223,14 +223,14 @@ snaplii billpay result --payment-no PSP...                                   # C
 | `snaplii giftcard detail --card-no NO` | View card redemption code and PIN |
 | `snaplii balance [--country CA\|US]` | Show spendable Snaplii Cash balance (run before quoting; `--country` sets currency CA=CAD/US=USD) |
 | `snaplii quote --item-id ID --price P` | Preview price with voucher/cashback before buying |
-| `snaplii purchase --item-id ID --price P --prov PROV` | Purchase a gift card (prov = province/state) |
+| `snaplii purchase --item-id ID --price P` | Purchase a gift card |
 | `snaplii smart cashback --brand-id ID --amount A` | Calculate cashback savings |
 | `snaplii smart dashboard` | View card inventory summary |
 | `snaplii billpay payees` | List available billers (electricity, gas, telecom) |
 | `snaplii billpay detail --payee-code CODE` | View biller account validation rules |
 | `snaplii billpay save --payee-code CODE --first-name F --last-name L --amount A --account NO` | Save a bill pay instruction |
 | `snaplii billpay quote --pay-code PC --price P` | Preview bill price with voucher/cashback |
-| `snaplii billpay pay --pay-code PC --price P --prov PROV` | Pay the bill from Snaplii Cash |
+| `snaplii billpay pay --pay-code PC --price P` | Pay the bill from Snaplii Cash |
 | `snaplii billpay result --payment-no NO` | Check bill payment status |
 
 ---
@@ -256,7 +256,7 @@ Returns a JWT token. Use it as `Authorization: Bearer <token>` for all subsequen
 #### Step 2: Browse gift cards
 
 ```bash
-curl https://aipayment.snaplii.com/v2/card-brands?channel=HOME_PAGE&locationProv=CA \
+curl https://aipayment.snaplii.com/v2/card-brands?channel=HOME_PAGE \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -281,8 +281,7 @@ curl -X POST https://aipayment.snaplii.com/v2/purchase \
   -d '{
     "orderInfo": {"orderType": "GIFT_CARD", "item": {"itemId": "CB...-CT...", "price": "50"}, "orderContext": {"giftOrder": "false"}, "businessChannel": "APP"},
     "paymentContext": {"specifiedPrimaryPaymentMethod": "SNAPLII_CREDIT", "voucherOption": "BEST_FIT", "cashbackOption": "USE"},
-    "delivery": {"type": "WALLET", "immediateSend": "true"},
-    "locationProv": "ON"
+    "delivery": {"type": "WALLET", "immediateSend": "true"}
   }'
 ```
 

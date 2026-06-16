@@ -35,7 +35,7 @@ Always leave the user with a working option. Never return a raw error or say "I 
 ## Full Flow
 
 ### 1. Authenticate & pick the card
-Follow the base flow: resolve the user's province/state (auto-detect it from the conversation — city, delivery address, prior context — and confirm it back; otherwise ask) → `browse` (country is automatic from the account; pass `--prov` for province) → for delivery, prefer delivery-platform cards (DoorDash, Uber Eats, Skip) → `balance` (check spendable Snaplii Cash so you know up front whether it's affordable) → `quote` (auto-applies vouchers + Snaplii Cash) → show the breakdown.
+Follow the base flow: `browse` (region is automatic from the account — no flag) → for delivery, prefer delivery-platform cards (DoorDash, Uber Eats, Skip) → `balance` (check spendable Snaplii Cash so you know up front whether it's affordable) → `quote` (auto-applies vouchers + Snaplii Cash) → show the breakdown.
 
 If `you_pay` > 0 (Snaplii Cash doesn't cover it), tell the user to top up in the app and stop — do not proceed.
 

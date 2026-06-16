@@ -89,7 +89,6 @@ async def list_tools() -> list[types.Tool]:
                 "type": "object",
                 "properties": {
                     "channel": {"type": "string", "description": "HOME_PAGE or SEND_GIFT", "default": "HOME_PAGE"},
-                    "prov": {"type": "string", "description": "Country code: CA (Canada) or US", "default": "CA"},
                 },
                 "required": [],
             },
@@ -250,10 +249,9 @@ async def list_tools() -> list[types.Tool]:
                 "properties": {
                     "pay_code": {"type": "string", "description": "payCode from billpay_save"},
                     "price": {"type": "string", "description": "Bill amount"},
-                    "prov": {"type": "string", "description": "Province/state code (ON, QC, BC, NY)"},
                     "voucher_id": {"type": "string", "description": "Specific voucher ID (optional)"},
                 },
-                "required": ["pay_code", "price", "prov"],
+                "required": ["pay_code", "price"],
             },
         ),
         types.Tool(
@@ -365,7 +363,6 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             client = _get_client()
             result = client.get_all_card_tags(
                 channel=arguments.get("channel", "HOME_PAGE"),
-                location_prov=arguments.get("prov", "CA"),
             )
             return _text(result)
 
@@ -559,7 +556,6 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             result = client.billpay_create_and_pay(
                 pay_code=arguments["pay_code"],
                 price=arguments["price"],
-                location_prov=arguments["prov"],
                 specified_voucher=arguments.get("voucher_id"),
             )
             status = result.get("orderStatus", "")
