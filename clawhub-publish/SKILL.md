@@ -68,6 +68,7 @@ snaplii smart dashboard
 Recommendation rules:
 
 - **Region is automatic — there's no region/province flag to pass.** The account's country (CA/US) is fixed at login and enforced server-side, so the user only ever sees cards available to them (e.g. a Canadian account sees Canada-only + CA/US-universal cards; it can never see US-only cards). The US catalog is not split by state, and the few Canadian cards that differ by province (some restaurants) simply appear as separate categories like "Restaurants in Ontario" / "Restaurants in BC" — pick the right one by name. Do **not** rely on emoji flags in brand names — they may be missing or wrong.
+- **Don't ask the user their country — read it from config.** The account's country is cached at login and exposed by `snaplii config show` as the `country` field (`CA`/`US`). Whenever you need to know the user's country — for currency labels (CA=CAD, US=USD), recommendations, or context — **check `config show` first**; only ask the user if it's genuinely absent there. Asking for something already in config is a bug.
 - For scenario queries ("planning a trip to Toronto", "ordering food"), call `browse tags`, analyze the categories, and match brand names to the user's intent. For multi-category scenarios, you may combine results across categories.
 - Default sort is by cashback rate (highest first). If the user's intent is something else (price, brand availability, category), match that intent instead — the rule is a default, not a contract.
 - Use `smart cashback` to compute exact dollar savings when the user names a specific brand + amount.
@@ -154,8 +155,8 @@ snaplii purchase --item-id "CB...-CT..." --price 50
 - `--item-id` is `{cardBrandId}-{cardTemplateId}` from Step 2.
 - `--price` is the dollar amount.
 - Payment is always Snaplii Cash (`SNAPLII_CREDIT`) — there's no payment-method/token to pass.
-- **Never pass `--yes`.** That flag skips the CLI's built-in confirmation prompt; you must always confirm with the user in the current turn (see Sensitive Data Handling).
-- **MCP runtime:** if you are using the `snaplii_*` MCP tools instead of the CLI, `snaplii_purchase` requires the `confirmation_token` returned by the preceding `snaplii_quote` (single-use, bound to the quoted item + price). Capture it from the quote and pass it through. The Bash CLI does not use a token — it re-quotes internally and prompts — so this applies to the MCP path only.
+- The CLI does **not** prompt for its own confirmation — it charges as soon as you call `purchase`. **You** are the confirmation gate: always get the user's explicit current-turn "yes" (Steps 4b–4c) before running it.
+- **MCP runtime:** if you are using the `snaplii_*` MCP tools instead of the CLI, `snaplii_purchase` requires the `confirmation_token` returned by the preceding `snaplii_quote` (single-use, bound to the quoted item + price). Capture it from the quote and pass it through. The Bash CLI does not use a token, so this applies to the MCP path only.
 
 If purchase fails, **do not retry automatically**. Show the user the error and ask. Common failure modes:
 
@@ -189,7 +190,7 @@ Flow: **payees → detail → save (returns payCode) → [vouchers] → quote �
 - Validate the account number against the `accountRegex` from `detail` before saving.
 - `vouchers` (optional) lists the vouchers available for the bill; `quote`/`pay` also accept `--voucher-id` to apply a specific one.
 - `quote` shows voucher + Snaplii Cash applied and the actual `you_pay`. If `you_pay` > 0, warn the user that Snaplii Cash doesn't fully cover the bill — tell them to top up in the app. Do NOT call `pay` if `you_pay` > 0.
-- **Always confirm the biller, account, and amount with the user before calling `pay`.** As with `purchase`, **never pass `--yes`** to `billpay pay` — it skips the confirmation prompt.
+- **Always confirm the biller, account, and amount with the user before calling `pay`.** Like `purchase`, `billpay pay` charges immediately with no built-in prompt — you must get the user's explicit current-turn "yes" first.
 - Use `billpay history --payee-code ...` to review a payee's past payments.
 - Payment is from Snaplii Cash — no PayPal redirect when balance covers the bill.
 
@@ -224,7 +225,7 @@ This skill handles real financial operations. These safety rules always apply:
 | `snaplii giftcard detail --card-no CARD_NO` | Card details (code, PIN) — sensitive |
 | `snaplii balance [--country CA\|US]` | Show real spendable Snaplii Cash balance (run before quoting; `--country` sets currency CA=CAD/US=USD) |
 | `snaplii quote --item-id ID --price PRICE` | Preview price with voucher/cashback before buying |
-| `snaplii purchase --item-id ID --price PRICE` | Buy a gift card. Never pass `--yes`. |
+| `snaplii purchase --item-id ID --price PRICE` | Buy a gift card. Charges immediately — confirm with the user first. |
 | `snaplii smart cashback --brand-id ID --amount A` | Calculate cashback savings |
 | `snaplii smart dashboard` | Owned-card inventory summary |
 | `snaplii help [SUBCOMMAND]` | Built-in help — use as a fallback if a flag here looks wrong |
