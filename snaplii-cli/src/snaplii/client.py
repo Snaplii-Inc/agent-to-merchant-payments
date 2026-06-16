@@ -92,11 +92,14 @@ class GatewayClient:
 
     # ── Card browsing ─────────────────────────────────────────────
 
-    def get_all_card_tags(self, channel: str = "HOME_PAGE", location_prov: str = "CA") -> dict:
-        resp = self._get("/v2/card-brands", params={
-            "channel": channel,
-            "locationProv": location_prov,
-        })
+    def get_all_card_tags(self, channel: str = "HOME_PAGE", location_prov: str = None) -> dict:
+        # The account's country is fixed at login and enforced server-side.
+        # locationProv only narrows by province/state and is optional — when it's
+        # not supplied, omit it so the gateway returns all cards for the country.
+        params = {"channel": channel}
+        if location_prov:
+            params["locationProv"] = location_prov
+        resp = self._get("/v2/card-brands", params=params)
         # Gateway returns list directly; normalize to {"data": [...]}
         if isinstance(resp, list):
             return {"data": resp}
