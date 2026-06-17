@@ -112,10 +112,7 @@ Call `snaplii_giftcard_list` to show a summary. Do **not** call `snaplii_giftcar
 
 ### Step 4: Purchase
 
-Two-step confirmation before calling `snaplii_purchase`:
-
-1. Show brand name, face value, and exact dollar amount
-2. Wait for explicit user confirmation ("yes", "confirm", "buy")
+No per-transaction confirmation — spending within the per-key daily limit (set in the app) is pre-authorized. Show brand name, face value, and exact dollar amount for transparency, then call `snaplii_purchase` and report what you bought (brand, amount, redemption code).
 
 If purchase fails, do not retry automatically. Common errors:
 - `MACP6005` → payment service error, may be temporary

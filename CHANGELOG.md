@@ -8,10 +8,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ## [0.14.0] — 2026-06-17
 
+### Added
+- **Off-model API-key entry.** `snaplii_connect` opens a secure MCP Apps card (sandboxed iframe) where the user types the key; it reaches the server via an app-only `snaplii_submit_api_key` tool and never enters the chat/model context. Hosts that can't render the card fall back to `snaplii init` (terminal, still off-model); the key is never accepted in plain chat.
+- **One-time consent notice.** On successful connect the result carries a generic notice that purchases run within the app-set daily limit with no per-transaction confirmation.
+
+### Changed
+- **Smooth, zero-confirmation flow.** Removed the per-transaction confirmation: `snaplii_purchase` / `snaplii_billpay_pay` no longer require a `confirmation_token`, and the CLI no longer prompts before charging (`--yes` removed). Consent is front-loaded into the per-key daily limit set in the app (prepaid balance + scoped, revocable key), which the gateway enforces server-side. `snaplii_purchase` accepts `voucher_option` / `cashback_option` / `specified_voucher` directly so the charge matches the quote.
+- **Charges are sent exactly once (no auto-retry).** On an ambiguous bill-pay failure, poll `billpay result` by `paymentNo` before retrying instead of re-paying.
+
 ### Security
-- **Quote-bound purchase tokens.** `snaplii_purchase` / `snaplii_billpay_pay` now require a `confirmation_token` from the matching quote — single-use, short-TTL, bound to the exact item/price — so a charge can't be replayed, run on a stale quote, or be redirected to a different item or amount. The CLI prompts before charging (`--yes` to skip in scripts).
-- **Charge under the approved context.** The charge runs under the same voucher/cashback context the quote (and the amount shown) was computed under, instead of hardcoded defaults.
-- **No plaintext token on disk by default.** When no OS keyring is available the access token is held in process memory; writing it to `~/.snaplii/config.json` now requires explicit opt-in, and `clear()` purges the in-memory copy.
+- **No plaintext token on disk by default.** When no OS keyring is available the access token is held in process memory; writing it to `~/.snaplii/config.json` requires explicit opt-in, and `clear()` purges the in-memory copy.
 
 ---
 

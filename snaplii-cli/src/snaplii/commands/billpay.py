@@ -147,21 +147,16 @@ def quote_cmd(ctx, pay_code, price, voucher_id):
 @click.option("--pay-code", required=True, help="payCode from 'billpay save'")
 @click.option("--price", required=True, help="Bill amount")
 @click.option("--voucher-id", default=None, help="Specific voucher ID to apply")
-@click.option("--yes", is_flag=True, default=False, help="Skip the confirmation prompt (for scripts).")
 @click.pass_context
-def pay_cmd(ctx, pay_code, price, voucher_id, yes):
-    """Pay the bill from Snaplii Cash balance."""
+def pay_cmd(ctx, pay_code, price, voucher_id):
+    """Pay the bill from Snaplii Cash balance.
+
+    Spends within the per-key daily limit set in the app; no per-transaction
+    confirmation. If this fails or times out ambiguously, check status with
+    `snaplii billpay result --payment-no <paymentNo>` before retrying — don't
+    re-pay blindly.
+    """
     client: GatewayClient = ctx.obj["client"]
-    if not yes:
-        quote = client.billpay_quote(pay_code=pay_code, price=price, specified_voucher=voucher_id)
-        from snaplii.security.canonical import build_canonical_quote, build_confirmation_message
-        country = ctx.obj["config_store"].get("country")
-        canonical = build_canonical_quote(quote, pay_code, price, country=country)
-        canonical["brand"] = "bill payment"
-        click.echo(build_confirmation_message(canonical), err=True)
-        if not click.confirm("Proceed with this bill payment?", default=False):
-            print_json({"status": "cancelled", "message": "Bill payment cancelled. No charge was made."})
-            return
     resp = client.billpay_create_and_pay(
         pay_code=pay_code,
         price=price,

@@ -101,7 +101,10 @@ def test_init_and_submit_share_one_auth_path(monkeypatch):
     client = _wire(monkeypatch)
     a = _call("snaplii_init", {"api_key": "snp_sk_live_K"})
     b = _call(SUBMIT_TOOL, {"api_key": "snp_sk_live_K"})
-    assert a == b == {"status": "authenticated", "agent_id": a["agent_id"]}
+    assert a == b  # both paths return the identical auth result
+    assert a["status"] == "authenticated"
+    assert a["agent_id"]
+    assert "daily limit" in a["notice"]  # one-time consent notice on connect
 
 
 def test_connect_fallback_tells_model_not_to_paste_key(monkeypatch):

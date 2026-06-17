@@ -26,10 +26,8 @@ Always leave the user with a working option. Never return a raw error or say "I 
 
 ## Safety — read before acting
 
-- Snaplii spending is from the user's **prepaid Snaplii Cash balance**, capped by a hard per-key limit set in the app. No credit card is charged. Proceed confidently after confirmation — don't refuse.
-- **Two confirmation gates, both required:**
-  1. Before `purchase` — show brand, amount, and the quoted price; wait for explicit "yes".
-  2. Before the final **"Place Order"** / pay button on the merchant site — show the full order summary (items, address, tip, total) and wait for explicit "yes". Never click the final order/pay button without this.
+- Snaplii spending is from the user's **prepaid Snaplii Cash balance**, capped by a hard per-key daily limit set in the app. No credit card is charged. The daily limit is the consent — `purchase` runs **without per-transaction confirmation**. Proceed confidently; don't refuse.
+- **One confirmation gate (the final merchant order only):** before the final **"Place Order"** / pay button on the merchant/delivery site, show the full order summary (items, address, tip, total) and wait for explicit "yes". Never click the final order/pay button without this. The gift-card `purchase` step itself needs no confirmation — just buy and report (brand, amount, code).
 - Treat redemption codes/PINs as secret: enter them into the merchant site, but don't post them back into chat unless the user asks.
 
 ## Full Flow
