@@ -13,12 +13,11 @@ def browse_group(ctx):
 
 @browse_group.command("tags")
 @click.option("--channel", default="HOME_PAGE", help="Channel: HOME_PAGE or SEND_GIFT")
-@click.option("--prov", default="CA", help="Country code: CA (Canada) or US")
 @click.pass_context
-def browse_tags(ctx, channel, prov):
+def browse_tags(ctx, channel):
     """List all card categories (tags) with brand summaries."""
     client: GatewayClient = ctx.obj["client"]
-    resp = client.get_all_card_tags(channel=channel, location_prov=prov)
+    resp = client.get_all_card_tags(channel=channel)
     print_json(resp)
 
 

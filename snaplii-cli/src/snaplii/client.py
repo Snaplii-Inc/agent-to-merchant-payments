@@ -92,11 +92,10 @@ class GatewayClient:
 
     # ── Card browsing ─────────────────────────────────────────────
 
-    def get_all_card_tags(self, channel: str = "HOME_PAGE", location_prov: str = "CA") -> dict:
-        resp = self._get("/v2/card-brands", params={
-            "channel": channel,
-            "locationProv": location_prov,
-        })
+    def get_all_card_tags(self, channel: str = "HOME_PAGE") -> dict:
+        # The account's country is fixed at login and enforced server-side, so
+        # the catalog is already scoped to the user — no province/state filter.
+        resp = self._get("/v2/card-brands", params={"channel": channel})
         # Gateway returns list directly; normalize to {"data": [...]}
         if isinstance(resp, list):
             return {"data": resp}
@@ -119,7 +118,6 @@ class GatewayClient:
         price: str,
         payment_method: str = "SNAPLII_CREDIT",
         payment_token: str | None = None,
-        location_prov: str = "CA",
     ) -> dict:
         payment_ctx = {
             "specifiedPrimaryPaymentMethod": payment_method,
@@ -137,7 +135,6 @@ class GatewayClient:
             },
             "paymentContext": payment_ctx,
             "delivery": {"type": "WALLET", "immediateSend": "true"},
-            "locationProv": location_prov,
         })
 
     # ── Quote ─────────────────────────────────────────────────────
@@ -241,7 +238,6 @@ class GatewayClient:
         })
 
     def billpay_create_and_pay(self, pay_code: str, price: str,
-                               location_prov: str = "ON",
                                voucher_option: str = "BEST_FIT",
                                cashback_option: str = "USE",
                                specified_voucher: str | None = None) -> dict:
@@ -263,7 +259,6 @@ class GatewayClient:
             },
             "paymentContext": payment_ctx,
             "delivery": {"type": "WALLET", "immediateSend": "false"},
-            "locationProv": location_prov,
         })
 
     def billpay_pay_result(self, payment_no: str) -> dict:

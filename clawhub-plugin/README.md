@@ -50,7 +50,7 @@ Spending is **only** from the user's **prepaid Snaplii Cash balance** — no cre
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
-| `snaplii_browse_tags` | `prov` (CA or US), `channel` (HOME_PAGE or SEND_GIFT) | Browse all gift card categories with brand summaries (name, cashback rate). **Always ask the user's region first** (Canada or US) before calling. |
+| `snaplii_browse_tags` | `channel` (HOME_PAGE or SEND_GIFT, optional) | Browse all gift card categories with brand summaries (name, cashback rate). Region is automatic — the catalog is scoped to the account's country (fixed at login, enforced server-side); there's no region parameter. |
 | `snaplii_browse_brand` | `brand_id` (required) | Get brand details: available denominations, discounts, and template IDs. Use `brandId` from `browse_tags`. |
 | `snaplii_cashback_calc` | `brand_id` (required), `amount` (required) | Calculate exact cashback savings for a specific brand and dollar amount. Returns savings, effective cost, and the `item_id` needed for purchase. |
 
@@ -83,7 +83,7 @@ Pay utility bills, telecoms, etc. from Snaplii Cash — same payment rail as gif
 | `snaplii_billpay_save` | `payee_code`, `first_name`, `last_name`, `amount`, `account` (required); `phone`, `email` (optional) | Save bill pay instruction, returns payCode. **Requires user confirmation.** |
 | `snaplii_billpay_vouchers` | `pay_code`, `price` (required) | List available vouchers for the bill. |
 | `snaplii_billpay_quote` | `pay_code`, `price` (required); `voucher_id` (optional) | Preview price: voucher + Snaplii Cash applied, actual pay amount. |
-| `snaplii_billpay_pay` | `pay_code`, `price`, `prov` (required); `voucher_id` (optional) | Pay the bill from Snaplii Cash. **Requires user confirmation.** |
+| `snaplii_billpay_pay` | `pay_code`, `price` (required); `voucher_id` (optional) | Pay the bill from Snaplii Cash. **Requires user confirmation.** |
 | `snaplii_billpay_result` | `payment_no` (required) | Check payment status (SUCCESS / FAILED / PROCESSING). |
 
 ### API Keys
@@ -102,7 +102,7 @@ If the response includes an `update_available` field, tell the user a newer vers
 
 ### Step 2: Browse
 
-Ask the user's region first (Canada or US), then call `snaplii_browse_tags` with `prov: "CA"` or `prov: "US"`. Use `snaplii_browse_brand` for denomination details and `snaplii_cashback_calc` to show exact savings.
+Call `snaplii_browse_tags` directly — there's no region parameter; the catalog is scoped to the account's country automatically. Use `snaplii_browse_brand` for denomination details and `snaplii_cashback_calc` to show exact savings.
 
 **Never expose `brandId` or `templateId` in user-facing text** — show brand name, cashback %, and available amounts only.
 
@@ -112,11 +112,10 @@ Call `snaplii_giftcard_list` to show a summary. Do **not** call `snaplii_giftcar
 
 ### Step 4: Purchase
 
-Three-step confirmation before calling `snaplii_purchase`:
+Two-step confirmation before calling `snaplii_purchase`:
 
-1. Confirm the user's region (province/state code: ON, QC, BC, NY, CA, TX, etc.)
-2. Show brand name, face value, and exact dollar amount
-3. Wait for explicit user confirmation ("yes", "confirm", "buy")
+1. Show brand name, face value, and exact dollar amount
+2. Wait for explicit user confirmation ("yes", "confirm", "buy")
 
 If purchase fails, do not retry automatically. Common errors:
 - `MACP6005` → payment service error, may be temporary

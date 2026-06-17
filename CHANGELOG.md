@@ -6,6 +6,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
+## [0.13.3] — 2026-06-16
+
+### Changed
+- **Region is now automatic — `--prov` / `locationProv` removed from `browse`, `purchase`, and `billpay pay`.** The account's country is fixed at login and enforced server-side, so the catalog is already scoped to the user and `locationProv` is no longer sent. `purchase` / `billpay pay` no longer accept `--prov` (it was previously required on `purchase`); `browse tags` takes only `--channel`. Verified against the gateway that `/v2/purchase` does not require `locationProv` (a request without it still returns `SUCCESS`), and that `browse` defaults the region server-side. MCP tools, skills, plugin README, and README updated to drop the region parameter and to read the user's country from `snaplii config show` instead of asking.
+
+### Removed
+- **Dead `card_brands` command module** removed from the CLI (no longer registered or referenced).
+
+---
+
 ## [0.13.2] — 2026-06-09
 
 ### Fixed

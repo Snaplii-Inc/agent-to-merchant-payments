@@ -1,6 +1,6 @@
 ---
 name: snaplii-cli
-description: "This is a skill of Agent-to-Merchant (A2M) payments — where AI agents complete transactions without checkout. Snaplii uses pre-funded gift cards as a payment rail, enabling instant, merchant-ready execution across 500+ brands."
+description: "Agent-to-Merchant (A2M) payments — AI agents complete transactions without checkout, using Snaplii's pre-funded gift cards as a payment rail across 500+ brands. Use when the user wants to browse, buy, or manage gift cards, check their Snaplii Cash balance, or pay bills (utilities, telecom)."
 ---
 
 # Snaplii AI Agent Cashback Payment
@@ -17,13 +17,22 @@ This skill spends **only** from the user's **prepaid Snaplii Cash balance** — 
 
 1. **Download the Snaplii App** ([iOS](https://apps.apple.com/app/snaplii/id1596924498) / [Android](https://play.google.com/store/apps/details?id=com.snaplii.app)) — register and load Snaplii Cash balance
 2. **Create an API Key** — in the app, go to **More → Payment Methods → AI Payment Management → + New API Key**
-3. **Install the CLI** — `pip install snaplii-cli==0.13.2` ([PyPI](https://pypi.org/project/snaplii-cli/) | [Source](https://github.com/Snaplii-Inc/agent-to-merchant-payments))
+3. **Install the CLI** — `pip install -U snaplii-cli` (always pull the latest published release; do not pin to an old exact version)
 
 You help users browse, purchase, and manage gift cards through Snaplii.
 
-This skill uses the `snaplii` CLI installed from [PyPI](https://pypi.org/project/snaplii-cli/).
+**Runtime selection.** If `snaplii_*` MCP tools are available in this session (e.g. Claude Desktop with the Snaplii MCP server installed), prefer them — they wrap the same gateway. Otherwise, use the **Bash tool** to invoke the `snaplii` CLI. Never just print commands without executing them.
 
-If `snaplii` is not found after install, ask the user to check their PATH or reinstall with `pipx install snaplii-cli==0.13.2`.
+**PATH handling (Bash mode).** The first `snaplii` call in a session may fail with `command not found` because the script is in a directory not on PATH (typical with `pip --user` / system-Python installs). When that happens:
+
+1. Run `which snaplii` (Unix) or `where.exe snaplii` (Windows). If it returns a path, prepend that directory to PATH for subsequent commands in the session.
+2. If `which` finds nothing, probe the typical locations:
+   - macOS (system Python): `~/Library/Python/3.x/bin`
+   - Linux / `pip --user` / pipx: `~/.local/bin`
+   - Windows: `%APPDATA%\Python\Python3xx\Scripts`
+3. Only if the binary truly does not exist, ask the user to install per the project README (do **not** run `pip install` autonomously — installs vary by system).
+
+Never hardcode a user-specific path; always resolve it dynamically.
 
 ## Decision Flow
 
@@ -32,7 +41,7 @@ If `snaplii` is not found after install, ask the user to check their PATH or rei
 Every `snaplii` command prints an update notice to **stderr** when a newer release is available, e.g.:
 `[snaplii] Update available: 0.8.0 -> 0.9.0. Run 'snaplii update' or 'pip install -U snaplii-cli'.`
 
-If you see this notice, run `snaplii update` once, then continue. The check is cached (once per day) and never blocks normal commands.
+If you see this notice, run `snaplii update` once, then continue. It self-installs the latest version from PyPI. The check is cached (once per day) and never blocks normal commands.
 
 ### Step 1: Check authentication state
 
@@ -45,12 +54,12 @@ The CLI will prompt for the API key via hidden stdin input — **never pass the 
 - Output contains `agent_id` → configured. Proceed.
 - A later call returns `401 / 403` → token expired or revoked. Re-run `init`.
 
-To log out, run `snaplii config clear`.
+Credentials live at `~/.snaplii/config.json`. To log out, run `snaplii config clear` (or delete that file).
 
 ### Step 2: Browse & recommend
 
 ```bash
-snaplii browse tags --prov CA              # or --prov US
+snaplii browse tags                        # categories + brands for your account's country
 snaplii browse brand --id CB0000000000135
 snaplii smart cashback --brand-id CB... --amount 50
 snaplii smart dashboard
@@ -58,7 +67,8 @@ snaplii smart dashboard
 
 Recommendation rules:
 
-- **Always ask the user's region first** (Canada or US) before showing any gift card. Remember it for the session and pass it as `--prov CA` / `--prov US` so the gateway filters server-side. Do **not** rely on emoji flags in brand names — they may be missing or wrong.
+- **Region is automatic — there's no region/province flag to pass.** The account's country (CA/US) is fixed at login and enforced server-side, so the user only ever sees cards available to them (e.g. a Canadian account sees Canada-only + CA/US-universal cards; it can never see US-only cards). The US catalog is not split by state, and the few Canadian cards that differ by province (some restaurants) simply appear as separate categories like "Restaurants in Ontario" / "Restaurants in BC" — pick the right one by name. Do **not** rely on emoji flags in brand names — they may be missing or wrong.
+- **Don't ask the user their country — read it from config.** The account's country is cached at login and exposed by `snaplii config show` as the `country` field (`CA`/`US`). Whenever you need to know the user's country — for currency labels (CA=CAD, US=USD), recommendations, or context — **check `config show` first**; only ask the user if it's genuinely absent there. Asking for something already in config is a bug.
 - For scenario queries ("planning a trip to Toronto", "ordering food"), call `browse tags`, analyze the categories, and match brand names to the user's intent. For multi-category scenarios, you may combine results across categories.
 - Default sort is by cashback rate (highest first). If the user's intent is something else (price, brand availability, category), match that intent instead — the rule is a default, not a contract.
 - Use `smart cashback` to compute exact dollar savings when the user names a specific brand + amount.
@@ -110,10 +120,11 @@ This returns the price breakdown:
 - `voucher` — voucher name and discount (if any)
 - `snaplii_cash_applied` — Snaplii Cash balance used (if any)
 
-You can also control voucher behavior:
+You can also control voucher and cashback behavior:
 - `--voucher BEST_FIT` (default) — auto-apply the best available voucher
-- `--voucher NOT_USE` — skip vouchers
+- `--voucher USE` — apply a voucher / `--voucher NOT_USE` — skip vouchers
 - `--voucher-id VOUCHER_ID` — apply a specific voucher
+- `--cashback USE` (default) — apply Snaplii Cash cashback / `--cashback NOT_USE` — skip it
 
 #### 4b. Present the quote to the user
 
@@ -138,13 +149,14 @@ Wait for "yes", "confirm", or "buy". Anything else means cancel.
 #### 4d. Execute the purchase
 
 ```bash
-snaplii purchase --item-id "CB...-CT..." --price 50 --prov ON
+snaplii purchase --item-id "CB...-CT..." --price 50
 ```
 
 - `--item-id` is `{cardBrandId}-{cardTemplateId}` from Step 2.
 - `--price` is the dollar amount.
-- `--prov` is **required** — the user's province or state code. Do NOT default to ON — always ask.
 - Payment is always Snaplii Cash (`SNAPLII_CREDIT`) — there's no payment-method/token to pass.
+- The CLI does **not** prompt for its own confirmation — it charges as soon as you call `purchase`. **You** are the confirmation gate: always get the user's explicit current-turn "yes" (Steps 4b–4c) before running it.
+- **MCP runtime:** if you are using the `snaplii_*` MCP tools instead of the CLI, `snaplii_purchase` requires the `confirmation_token` returned by the preceding `snaplii_quote` (single-use, bound to the quoted item + price). Capture it from the quote and pass it through. The Bash CLI does not use a token, so this applies to the MCP path only.
 
 If purchase fails, **do not retry automatically**. Show the user the error and ask. Common failure modes:
 
@@ -165,16 +177,21 @@ Pay bills (electricity, gas, internet, phone) from the user's Snaplii Cash balan
 snaplii billpay payees                                          # list available billers
 snaplii billpay detail --payee-code PE01015                     # account validation rules
 snaplii billpay save --payee-code PE01015 --first-name Alex --last-name Chen --amount 75.25 --account 1234567890
+snaplii billpay vouchers --pay-code PC... --price 75.25         # list vouchers available for this bill
 snaplii billpay quote --pay-code PC... --price 75.25            # preview savings (voucher + Snaplii Cash)
-snaplii billpay pay --pay-code PC... --price 75.25 --prov ON    # pay from Snaplii Cash
+snaplii billpay pay --pay-code PC... --price 75.25             # pay from Snaplii Cash
 snaplii billpay result --payment-no PSP...                      # check status
+snaplii billpay history --payee-code PE01015                    # past payments to a payee
 ```
 
-Flow: **payees → detail → save (get payCode) → quote → confirm → pay → result**.
+Flow: **payees → detail → save (returns payCode) → [vouchers] → quote → confirm → pay → result**.
 
-- Validate the account number against `accountRegex` from `detail` before saving.
-- `quote` shows voucher + Snaplii Cash applied and the actual `you_pay`. If `you_pay` > 0, warn the user that Snaplii Cash doesn't fully cover the bill — tell them to top up in the app. Do NOT pay if `you_pay` > 0.
-- **Always confirm the biller, account, and amount with the user before calling `pay`.**
+- The `save` step returns a `payCode` used by `vouchers`, `quote`, and `pay`.
+- Validate the account number against the `accountRegex` from `detail` before saving.
+- `vouchers` (optional) lists the vouchers available for the bill; `quote`/`pay` also accept `--voucher-id` to apply a specific one.
+- `quote` shows voucher + Snaplii Cash applied and the actual `you_pay`. If `you_pay` > 0, warn the user that Snaplii Cash doesn't fully cover the bill — tell them to top up in the app. Do NOT call `pay` if `you_pay` > 0.
+- **Always confirm the biller, account, and amount with the user before calling `pay`.** Like `purchase`, `billpay pay` charges immediately with no built-in prompt — you must get the user's explicit current-turn "yes" first.
+- Use `billpay history --payee-code ...` to review a payee's past payments.
 - Payment is from Snaplii Cash — no PayPal redirect when balance covers the bill.
 
 ## Sensitive Data Handling
@@ -188,7 +205,7 @@ This skill handles real financial operations. These safety rules always apply:
 
 ## Error Handling
 
-- `command not found` → ask the user to reinstall with `pipx install snaplii-cli==0.13.2`.
+- `command not found` → see PATH handling above.
 - `connection refused` / network errors → show the error to the user; do not retry silently.
 - `401 / 403` → suggest `snaplii init` again, or check API key scope.
 - `400 / validation error` → surface the gateway's error message verbatim; do not guess corrections.
@@ -202,13 +219,13 @@ This skill handles real financial operations. These safety rules always apply:
 | `snaplii config show` | Show config (secrets auto-masked) |
 | `snaplii config set --base-url URL` | Switch gateway (e.g. staging vs prod) |
 | `snaplii config clear` | Log out / wipe local credentials |
-| `snaplii browse tags [--channel CH] [--prov PROV]` | List card categories + brand summaries (prov = province code: ON, QC, BC) |
+| `snaplii browse tags [--channel CH]` | List card categories + brand summaries for the account's country (region is automatic — no flag). |
 | `snaplii browse brand --id BRAND_ID` | Get brand details (denominations, discounts) |
 | `snaplii giftcard list [--status STATUS]` | List owned gift cards |
 | `snaplii giftcard detail --card-no CARD_NO` | Card details (code, PIN) — sensitive |
 | `snaplii balance [--country CA\|US]` | Show real spendable Snaplii Cash balance (run before quoting; `--country` sets currency CA=CAD/US=USD) |
 | `snaplii quote --item-id ID --price PRICE` | Preview price with voucher/cashback before buying |
-| `snaplii purchase --item-id ID --price PRICE --prov PROV` | Buy a gift card |
+| `snaplii purchase --item-id ID --price PRICE` | Buy a gift card. Charges immediately — confirm with the user first. |
 | `snaplii smart cashback --brand-id ID --amount A` | Calculate cashback savings |
 | `snaplii smart dashboard` | Owned-card inventory summary |
 | `snaplii help [SUBCOMMAND]` | Built-in help — use as a fallback if a flag here looks wrong |
