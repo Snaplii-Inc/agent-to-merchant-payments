@@ -62,7 +62,7 @@ def _purchase(token=None):
 
 
 def _billpay(token=None):
-    args = {"pay_code": PAY_CODE, "price": PRICE, "prov": "ON"}
+    args = {"pay_code": PAY_CODE, "price": PRICE}
     if token is not None:
         args["confirmation_token"] = token
     res = asyncio.run(server.call_tool("snaplii_billpay_pay", args))
@@ -147,7 +147,6 @@ def test_billpay_valid_token_charges_once_then_replay_rejected(monkeypatch):
     assert out["orderStatus"] == "SUCCESS"
     assert out["result"] == "Bill paid successfully from Snaplii Cash."
     assert len(client.billpay_charges) == 1
-    assert client.billpay_charges[0]["location_prov"] == "ON"
 
     # Replay with the same (now consumed) token: rejected, no second charge.
     out2 = _billpay(token)
@@ -194,4 +193,3 @@ def test_billpay_replays_approved_voucher_not_default(monkeypatch):
     out = _billpay(token)
     assert out["orderNo"] == "B-1"
     assert client.last_kwargs["specified_voucher"] == "V-9"
-    assert client.last_kwargs["location_prov"] == "ON"

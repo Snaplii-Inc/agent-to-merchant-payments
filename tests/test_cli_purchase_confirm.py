@@ -64,19 +64,19 @@ def _run(args, input_text, country=None):
 
 
 def test_purchase_cancelled_when_user_says_no():
-    result, client = _run(["--item-id", "I-1", "--price", "50", "--prov", "ON"], "n\n")
+    result, client = _run(["--item-id", "I-1", "--price", "50"], "n\n")
     assert client.purchased is False
     assert "cancelled" in result.output.lower()
 
 
 def test_purchase_proceeds_when_user_says_yes():
-    result, client = _run(["--item-id", "I-1", "--price", "50", "--prov", "ON"], "y\n")
+    result, client = _run(["--item-id", "I-1", "--price", "50"], "y\n")
     assert client.purchased is True
     assert "ORD-1" in result.output
 
 
 def test_purchase_yes_flag_skips_prompt():
-    result, client = _run(["--item-id", "I-1", "--price", "50", "--prov", "ON", "--yes"], "")
+    result, client = _run(["--item-id", "I-1", "--price", "50", "--yes"], "")
     assert client.purchased is True
 
 
@@ -103,13 +103,13 @@ def _run_pay(args, input_text, country=None):
 
 def test_billpay_cancelled_when_user_says_no():
     result, client = _run_pay(
-        ["--pay-code", "PC-1", "--price", "30", "--prov", "ON"], "n\n")
+        ["--pay-code", "PC-1", "--price", "30"], "n\n")
     assert client.paid is False
     assert "cancelled" in result.output.lower()
 
 
 def test_billpay_yes_flag_skips_prompt():
     result, client = _run_pay(
-        ["--pay-code", "PC-1", "--price", "30", "--prov", "ON", "--yes"], "")
+        ["--pay-code", "PC-1", "--price", "30", "--yes"], "")
     assert client.paid is True
     assert "BP-1" in result.output
