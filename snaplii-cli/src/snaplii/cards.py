@@ -24,6 +24,8 @@ SUBMIT_TOOL = "snaplii_submit_api_key"
 # Self-contained card. Under the spec's default CSP
 # (script-src 'self' 'unsafe-inline'; connect-src 'none') the inline script runs
 # and no external network is needed — the key only travels via postMessage→host.
+# Aesthetic: "Fintech restrained" — deep slate, single emerald accent, a hairline
+# accent at the top, and a clean centered success state.
 APIKEY_CARD_HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -35,17 +37,19 @@ APIKEY_CARD_HTML = r"""<!DOCTYPE html>
     color-scheme: light dark;
     --bg: #eef0f3; --card: #ffffff; --border: #e5e7eb; --text: #14171d;
     --muted: #6b7280; --field: #f7f8fa; --field-border: #d6dae1;
-    --accent: #12a150; --accent-press: #0e8a44; --accent-soft: rgba(18,161,80,.14);
-    --ok: #12a150; --err: #d23f3f;
-    --shadow: 0 6px 24px rgba(17,24,39,.08), 0 1px 2px rgba(17,24,39,.06);
+    --accent: #12a150; --accent2: #1bb45e; --accent-press: #0e8a44;
+    --accent-soft: rgba(18,161,80,.14);
+    --err: #d23f3f;
+    --shadow: 0 10px 30px rgba(17,24,39,.10), 0 1px 2px rgba(17,24,39,.06);
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #14171c; --card: #1f242b; --border: #2c323b; --text: #e9ecf0;
-      --muted: #9aa2ad; --field: #161a20; --field-border: #353c46;
-      --accent: #2bd574; --accent-press: #25c069; --accent-soft: rgba(43,213,116,.16);
-      --ok: #2bd574; --err: #ff6b6b;
-      --shadow: 0 8px 28px rgba(0,0,0,.40);
+      --bg: #0f1216; --card: #1b2026; --border: #2c323b; --text: #e9ecf0;
+      --muted: #9aa2ad; --field: #12161b; --field-border: #353c46;
+      --accent: #2bd574; --accent2: #33e07d; --accent-press: #25c069;
+      --accent-soft: rgba(43,213,116,.16);
+      --err: #ff6b6b;
+      --shadow: 0 14px 40px rgba(0,0,0,.5);
     }
   }
   * { box-sizing: border-box; }
@@ -55,21 +59,36 @@ APIKEY_CARD_HTML = r"""<!DOCTYPE html>
     -webkit-font-smoothing: antialiased;
   }
   .card {
-    background: var(--card); border: 1px solid var(--border); border-radius: 16px;
-    padding: 22px; max-width: 420px; box-shadow: var(--shadow);
+    position: relative; overflow: hidden;
+    background: var(--card); border: 1px solid var(--border); border-radius: 18px;
+    padding: 24px; width: 100%; box-shadow: var(--shadow);
   }
-  .head { display: flex; align-items: center; gap: 11px; margin-bottom: 14px; }
+  /* hairline accent at the very top edge */
+  .card::before {
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent2), transparent);
+    opacity: .9;
+  }
+  .head { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
   .badge {
-    width: 38px; height: 38px; border-radius: 11px; flex: 0 0 auto;
-    display: grid; place-items: center; background: var(--accent-soft); color: var(--accent);
+    width: 40px; height: 40px; border-radius: 12px; flex: 0 0 auto;
+    display: grid; place-items: center; color: #fff;
+    background: linear-gradient(140deg, var(--accent2), var(--accent-press));
+    box-shadow: 0 4px 12px var(--accent-soft);
   }
-  .badge svg { width: 21px; height: 21px; display: block; }
-  .title { font-size: 16px; font-weight: 680; letter-spacing: -.01em; }
-  .title small { display: block; font-weight: 500; font-size: 12.5px; color: var(--muted); margin-top: 1px; }
-  label { display: block; font-weight: 600; font-size: 12.5px; margin: 0 0 6px; color: var(--muted); }
+  .badge svg { width: 22px; height: 22px; display: block; }
+  .title { font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
+  .title small {
+    display: block; font-weight: 500; font-size: 12.5px; color: var(--muted);
+    margin-top: 3px; letter-spacing: 0;
+  }
+  label {
+    display: block; font-weight: 700; font-size: 11px; text-transform: uppercase;
+    letter-spacing: .07em; margin: 0 0 7px; color: var(--muted);
+  }
   .field { position: relative; }
   input {
-    width: 100%; padding: 12px 13px; border-radius: 11px; background: var(--field);
+    width: 100%; padding: 13px 14px; border-radius: 12px; background: var(--field);
     border: 1.5px solid var(--field-border); color: var(--text);
     font: 13.5px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .3px;
     transition: border-color .15s, box-shadow .15s; outline: none;
@@ -77,18 +96,38 @@ APIKEY_CARD_HTML = r"""<!DOCTYPE html>
   input::placeholder { color: var(--muted); opacity: .6; }
   input:focus { border-color: var(--accent); box-shadow: 0 0 0 3.5px var(--accent-soft); }
   button {
-    width: 100%; margin-top: 14px; padding: 12px 16px; border-radius: 11px; border: 0;
-    font: 600 14.5px -apple-system, system-ui, sans-serif; color: #fff; cursor: pointer;
-    background: var(--accent); transition: background .15s, transform .05s, opacity .15s;
+    width: 100%; margin-top: 15px; padding: 13px 16px; border-radius: 12px; border: 0;
+    font: 700 14.5px -apple-system, system-ui, sans-serif; color: #fff; cursor: pointer;
+    background: linear-gradient(140deg, var(--accent2), var(--accent));
+    box-shadow: 0 4px 14px var(--accent-soft);
+    transition: filter .15s, transform .05s, opacity .15s;
   }
-  button:hover:not(:disabled) { background: var(--accent-press); }
+  button:hover:not(:disabled) { filter: brightness(1.06); }
   button:active:not(:disabled) { transform: translateY(1px); }
-  button:disabled { opacity: .55; cursor: default; }
+  button:disabled { opacity: .6; cursor: default; }
   #status { margin-top: 12px; font-weight: 600; font-size: 13px; min-height: 17px; }
-  #status.ok { color: var(--ok); }
   #status.err { color: var(--err); }
+  /* success state replaces the form entirely */
+  #success { display: none; flex-direction: column; align-items: center; text-align: center; padding: 6px 0 2px; }
+  #success.show { display: flex; }
+  .scheck {
+    width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center;
+    color: #fff; background: linear-gradient(140deg, var(--accent2), var(--accent-press));
+    box-shadow: 0 6px 18px var(--accent-soft); margin-bottom: 12px;
+  }
+  .scheck svg { width: 28px; height: 28px; }
+  .stitle { font-size: 16px; font-weight: 700; letter-spacing: -.01em; }
+  .ssub { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  /* collapsed state: recede to a slim "✓ Connected" bar once the user has read it */
+  .card.done { padding: 14px 18px; }
+  .card.done .head, .card.done .foot { display: none; }
+  .card.done #success { flex-direction: row; gap: 9px; padding: 0; }
+  .card.done #success .scheck { width: 24px; height: 24px; margin-bottom: 0; }
+  .card.done #success .scheck svg { width: 15px; height: 15px; }
+  .card.done #success .stitle { font-size: 14.5px; }
+  .card.done #success .ssub { display: none; }
   .foot {
-    display: flex; gap: 8px; align-items: flex-start; margin-top: 16px; padding-top: 14px;
+    display: flex; gap: 8px; align-items: flex-start; margin-top: 18px; padding-top: 15px;
     border-top: 1px solid var(--border); color: var(--muted); font-size: 11.5px; line-height: 1.45;
   }
   .foot svg { width: 13px; height: 13px; flex: 0 0 auto; margin-top: 2px; opacity: .85; }
@@ -109,13 +148,24 @@ APIKEY_CARD_HTML = r"""<!DOCTYPE html>
       </div>
     </div>
 
-    <label for="apikey">Snaplii API key</label>
-    <div class="field">
-      <input id="apikey" type="password" autocomplete="off" spellcheck="false"
-             placeholder="snp_sk_live_…" />
+    <div id="form">
+      <label for="apikey">Snaplii API key</label>
+      <div class="field">
+        <input id="apikey" type="password" autocomplete="off" spellcheck="false"
+               placeholder="snp_sk_live_…" />
+      </div>
+      <button id="connect">Connect securely</button>
+      <div id="status"></div>
     </div>
-    <button id="connect">Connect securely</button>
-    <div id="status"></div>
+
+    <div id="success" aria-live="polite">
+      <div class="scheck" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+             stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+      </div>
+      <div class="stitle">Connected</div>
+      <div class="ssub">You're connected — just continue in chat. Spending stays within the daily limit <b>you</b> set in the app, so I won't ask you to confirm each purchase.</div>
+    </div>
 
     <div class="foot">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -134,6 +184,8 @@ APIKEY_CARD_HTML = r"""<!DOCTYPE html>
   var statusEl = document.getElementById("status");
   var inputEl = document.getElementById("apikey");
   var btnEl = document.getElementById("connect");
+  var formEl = document.getElementById("form");
+  var successEl = document.getElementById("success");
   var pending = {};
   var nextId = 1;
 
@@ -153,9 +205,17 @@ APIKEY_CARD_HTML = r"""<!DOCTYPE html>
   function notify(method, params) { post({ jsonrpc: "2.0", method: method, params: params || {} }); }
 
   // Host keeps the iframe at 0px until the app reports its size.
+  // IMPORTANT for shrinking: document.documentElement.scrollHeight is floored to
+  // the current iframe (viewport) height, so once the host has grown the frame it
+  // would keep reporting that large value and the frame could never shrink back.
+  // Measure the actual CONTENT instead — the card box plus the body's vertical
+  // padding — so the collapsed "✓ Connected" bar reports its true, smaller height.
   function reportSize() {
-    var h = Math.ceil(Math.max(document.documentElement.scrollHeight,
-      document.body.scrollHeight, document.body.getBoundingClientRect().height));
+    var card = document.querySelector(".card");
+    var bs = window.getComputedStyle(document.body);
+    var padV = (parseFloat(bs.paddingTop) || 0) + (parseFloat(bs.paddingBottom) || 0);
+    var contentH = card ? card.getBoundingClientRect().height + padV : document.body.scrollHeight;
+    var h = Math.ceil(Math.max(contentH, 1));
     var w = document.documentElement.clientWidth || document.body.scrollWidth;
     post({ jsonrpc: "2.0", method: "ui/notifications/size-changed", params: { width: w, height: h } });
   }
@@ -186,6 +246,31 @@ APIKEY_CARD_HTML = r"""<!DOCTYPE html>
     });
   }
 
+  // A single reportSize() right after a class change is unreliable: scrollHeight
+  // read synchronously is stale (pre-reflow, still the old large height), and some
+  // hosts debounce or drop a lone shrink. Re-report across a couple of animation
+  // frames and a few timeouts so the host receives the true, smaller size.
+  function reportSizeSoon() {
+    if (window.requestAnimationFrame) {
+      requestAnimationFrame(function () { requestAnimationFrame(reportSize); });
+    }
+    [0, 60, 180, 360].forEach(function (ms) { setTimeout(reportSize, ms); });
+  }
+
+  function showSuccess() {
+    formEl.style.display = "none";
+    successEl.classList.add("show");
+    reportSizeSoon();
+    // Briefly let the user register "Connected", then recede to a slim
+    // "✓ Connected" bar and re-report the smaller size after reflow so hosts
+    // that honor downward resize shrink the frame to just the bar.
+    setTimeout(function () {
+      var card = document.querySelector(".card");
+      if (card) { card.classList.add("done"); }
+      reportSizeSoon();
+    }, 1500);
+  }
+
   function submit() {
     var key = (inputEl.value || "").trim();
     if (!key) { setStatus("Enter your API key first.", "err"); inputEl.focus(); return; }
@@ -195,13 +280,22 @@ APIKEY_CARD_HTML = r"""<!DOCTYPE html>
       .then(function (res) {
         var text = "";
         try { text = (res.content || []).map(function (c) { return c.text || ""; }).join(" "); } catch (e) {}
-        var ok = text.indexOf("authenticated") !== -1;
+        // Success only when the auth result explicitly says so. Parse the JSON
+        // result and check status; fall back to a quoted-substring match.
+        var ok = false, message = "";
+        try {
+          var parsed = JSON.parse(text);
+          ok = parsed.status === "authenticated";
+          message = parsed.message || "";
+        } catch (e) {
+          ok = text.indexOf('"authenticated"') !== -1;
+        }
         inputEl.value = "";  // never keep the key in the DOM longer than needed
         if (ok) {
-          setStatus("✓ Connected. You can close this and continue.", "ok");
-          btnEl.textContent = "Connected";
+          setStatus("", "");
+          showSuccess();
         } else {
-          setStatus("⚠ " + (text || "Could not connect."), "err");
+          setStatus("⚠ " + (message || text || "Could not connect."), "err");
           btnEl.disabled = false; inputEl.disabled = false;
         }
       })

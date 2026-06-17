@@ -107,8 +107,101 @@ def test_init_and_submit_share_one_auth_path(monkeypatch):
     assert "daily limit" in a["notice"]  # one-time consent notice on connect
 
 
-def test_connect_fallback_tells_model_not_to_paste_key(monkeypatch):
-    _wire(monkeypatch)
+def test_auth_fails_when_gateway_returns_no_token(monkeypatch):
+    # A bogus key the gateway rejects (no access_token) must NOT report success.
+    class NoTokenClient:
+        def login(self, agent_id, api_key):
+            return {"rspMsgCd": "MCA20101", "rspMsgInf": "Invalid API key"}
+    monkeypatch.setattr(server, "_get_client", lambda: NoTokenClient())
+    monkeypatch.setattr(server, "ConfigStore", FakeStore)
+    out = _call(SUBMIT_TOOL, {"api_key": "1"})
+    assert out.get("status") != "authenticated"
+    assert out["error"] == "auth_failed"
+
+
+def test_auth_fails_when_login_raises(monkeypatch):
+    from snaplii.exceptions import GatewayApiError
+
+    class RaisingClient:
+        def login(self, agent_id, api_key):
+            raise GatewayApiError(401, {"friendly_message": "This API key has been deactivated."}, "/v2/auth/token")
+    monkeypatch.setattr(server, "_get_client", lambda: RaisingClient())
+    monkeypatch.setattr(server, "ConfigStore", FakeStore)
+    out = _call(SUBMIT_TOOL, {"api_key": "snp_sk_live_x"})
+    assert out["error"] == "auth_failed"
+    assert "deactivated" in out["message"]
+
+
+# ── connect routing: card / URL-elicitation / text, by client capability ──────
+
+from types import SimpleNamespace
+
+
+def _caps(experimental=None, elicitation=None):
+    return SimpleNamespace(experimental=experimental, elicitation=elicitation)
+
+
+def test_route_card_when_host_advertises_ui():
+    caps = _caps(experimental={"io.modelcontextprotocol/ui": {}})
+    assert server._route_for_caps(caps) == "card"
+
+
+def test_route_elicit_only_when_url_mode_supported():
+    # URL mode present → elicit; form-only → card (spec forbids key via form).
+    assert server._route_for_caps(_caps(elicitation=SimpleNamespace(url={}, form={}))) == "elicit"
+    assert server._route_for_caps(_caps(elicitation=SimpleNamespace(url=None, form={}))) == "card"
+
+
+def test_route_defaults_to_card_when_no_positive_elicit_signal():
+    # No surface advertised → default to card, NOT text: the card_requested message
+    # self-describes and the card still renders via the tool's own _meta.ui.
+    assert server._route_for_caps(_caps()) == "card"
+    # form-only elicitation is not enough (spec forbids key via form) → card.
+    assert server._route_for_caps(_caps(elicitation=SimpleNamespace(url=None, form={}))) == "card"
+
+
+def test_connect_card_route_warns_against_pasting_key(monkeypatch):
+    monkeypatch.setattr(server, "_connect_route", lambda: "card")
     out = _call("snaplii_connect", {})
     assert out["status"] == "card_requested"
     assert "paste" in out["message"].lower()
+    assert "snaplii init" in out["message"]
+
+
+def test_connect_elicit_route_unconfigured_falls_back_to_cli(monkeypatch):
+    # Client can do URL-mode elicitation, but the hosted page (#2) isn't set up.
+    monkeypatch.setattr(server, "_connect_route", lambda: "elicit")
+    monkeypatch.setattr(server, "_elicit_url", lambda: None)
+    out = _call("snaplii_connect", {})
+    assert out["status"] == "connect_unconfigured"
+    assert "snaplii init" in out["message"]
+
+
+def test_connect_elicit_route_with_url_opens_secure_page(monkeypatch):
+    # When the page IS configured, fire URL-mode elicitation and report on accept.
+    monkeypatch.setattr(server, "_connect_route", lambda: "elicit")
+    monkeypatch.setattr(server, "_elicit_url", lambda: "https://connect.snaplii.com/x")
+
+    captured = {}
+
+    class FakeSession:
+        async def elicit_url(self, message, url, elicitation_id):
+            captured["url"] = url
+            captured["id"] = elicitation_id
+            return SimpleNamespace(action="accept")
+
+    class FakeApp:
+        @property
+        def request_context(self):
+            return SimpleNamespace(session=FakeSession())
+
+    class TokenStore:
+        def get_cached_token(self):
+            return "jwt"
+
+    monkeypatch.setattr(server, "app", FakeApp())
+    monkeypatch.setattr(server, "ConfigStore", TokenStore)
+    out = _call("snaplii_connect", {})
+    assert out["status"] == "authenticated"
+    assert captured["url"] == "https://connect.snaplii.com/x"
+    assert captured["id"]  # a correlation id was generated

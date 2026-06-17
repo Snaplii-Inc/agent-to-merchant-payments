@@ -63,8 +63,22 @@ def _authenticate(api_key: str, agent_id: str | None = None) -> dict:
         return {"error": "api_key_required", "message": "No API key was provided."}
     if not agent_id:
         agent_id = f"agent-{hashlib.md5(api_key.encode()).hexdigest()[:8]}"
+    # Verify the key actually authenticates before reporting success — the gateway
+    # must return a token. Otherwise a bogus key (e.g. "1") would look "connected".
+    try:
+        resp = _get_client().login(agent_id, api_key)  # exchanges key for token; key not stored
+    except GatewayApiError as e:
+        body = getattr(e, "body", {}) or {}
+        return {"error": "auth_failed",
+                "message": body.get("friendly_message") or body.get("rspMsgInf")
+                or "That API key wasn't accepted. Check the key and try again."}
+    except GatewayConnectionError:
+        return {"error": "auth_failed",
+                "message": "Couldn't reach Snaplii to verify the key. Check your connection and try again."}
+    if not (isinstance(resp, dict) and resp.get("access_token")):
+        return {"error": "auth_failed",
+                "message": "That API key wasn't accepted. Check the key and try again."}
     ConfigStore().set("agent_id", agent_id)
-    _get_client().login(agent_id, api_key)  # caches token + country; key not stored
     return {
         "status": "authenticated",
         "agent_id": agent_id,
@@ -77,6 +91,52 @@ def _authenticate(api_key: str, agent_id: str | None = None) -> dict:
             "one. You can change the limit or revoke this key in the app anytime."
         ),
     }
+
+
+def _elicit_url() -> str | None:
+    """The hosted Snaplii secure-connect page used for URL-mode elicitation — the
+    cross-client way to collect the API key off the model AND off the client, for
+    clients that can't render the MCP Apps card. Returns None until that gateway
+    page exists and is configured (env SNAPLII_ELICIT_URL or config `elicit_url`);
+    until then the elicit branch degrades to the `snaplii init` text guidance."""
+    import os
+    return os.environ.get("SNAPLII_ELICIT_URL") or ConfigStore().get("elicit_url")
+
+
+def _connect_route() -> str:
+    """Pick the connect channel from the client's ADVERTISED capabilities (never a
+    hardcoded client list — see the confirmation-channel design doc §6):
+
+      "card"   — host renders MCP Apps `ui://` cards (Claude, ChatGPT, VS Code …)
+      "elicit" — host supports URL-mode elicitation (Codex, Cursor, Claude Code …)
+      "text"   — neither; fall back to terminal `snaplii init`
+
+    Card always renders via the tool's own _meta.ui regardless of this result, so a
+    mis-detect only changes the off-card fallback, never hides the card. URL mode
+    (not form) is required because the spec forbids collecting secrets via form."""
+    try:
+        caps = app.request_context.session.client_params.capabilities
+    except Exception:
+        return "text"
+    return _route_for_caps(caps)
+
+
+def _route_for_caps(caps) -> str:
+    """Pure routing decision over a ClientCapabilities object (see _connect_route).
+
+    Default is "card" — not "text" — because the card path's message is
+    self-describing (the host renders the card if it can, otherwise the message
+    guides the user to `snaplii init`), and card rendering is driven by the tool's
+    own _meta.ui, which the host honors WITHOUT necessarily advertising a ui
+    capability. Diverting to "elicit" only on a POSITIVE URL-mode signal avoids
+    ever mis-routing a card-capable host (Claude, ChatGPT) away from the card."""
+    exp = getattr(caps, "experimental", None) or {}
+    if any("ui" in str(k).lower() for k in exp):
+        return "card"
+    elic = getattr(caps, "elicitation", None)
+    if elic is not None and getattr(elic, "url", None) is not None:
+        return "elicit"
+    return "card"
 
 
 @app.list_tools()
@@ -366,16 +426,72 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             return _text(_authenticate(arguments["api_key"], arguments.get("agent_id")))
 
         elif name == "snaplii_connect":
-            # On UI hosts the secure card renders off-model via _meta.ui.resourceUri;
-            # this text is the fallback for hosts that can't render MCP Apps.
+            route = _connect_route()
+
+            if route == "elicit":
+                url = _elicit_url()
+                if url:
+                    # URL-mode elicitation: the user enters the key on the hosted
+                    # Snaplii page — off the model AND off this client. The spec
+                    # mandates URL mode (not form) for secrets like API keys.
+                    import uuid
+                    try:
+                        result = await app.request_context.session.elicit_url(
+                            message=(
+                                "Open the secure Snaplii page to connect your account. "
+                                "Enter your API key there — it never passes through this chat."
+                            ),
+                            url=url,
+                            elicitation_id=uuid.uuid4().hex,
+                        )
+                    except Exception as e:
+                        return _text({
+                            "status": "elicit_failed",
+                            "message": (
+                                f"Couldn't start secure web connect: {e}. Have the user "
+                                "run 'snaplii init' in a terminal instead."
+                            ),
+                        })
+                    if getattr(result, "action", None) == "accept":
+                        # Key submitted off-model on the hosted page; the gateway binds
+                        # it to the user. TODO(#2): hand the resulting token back to
+                        # this process. For now re-probe the local token store.
+                        if ConfigStore().get_cached_token():
+                            return _text({"status": "authenticated",
+                                          "message": "✅ Connected via the secure Snaplii page."})
+                        return _text({
+                            "status": "pending",
+                            "message": (
+                                "Thanks — if you haven't finished on the Snaplii page, do "
+                                "that and retry. If it still won't connect, run 'snaplii "
+                                "init' in a terminal."
+                            ),
+                        })
+                    return _text({
+                        "status": "declined",
+                        "message": "Secure connect was cancelled. Run snaplii_connect again when ready.",
+                    })
+                # Elicitation-capable, but the hosted page isn't configured yet (#2).
+                return _text({
+                    "status": "connect_unconfigured",
+                    "message": (
+                        "This client supports secure web entry, but the Snaplii connect "
+                        "page isn't configured yet. Have the user run 'snaplii init' in a "
+                        "terminal (it prompts for the key privately). Do NOT ask for the "
+                        "API key in chat."
+                    ),
+                })
+
+            # Default (route == "card"): UI hosts render the secure card off-model via
+            # _meta.ui.resourceUri; for hosts that can't, this same message guides the
+            # user to `snaplii init`. Self-describing, so it never dead-ends.
             return _text({
                 "status": "card_requested",
                 "message": (
                     "A secure card to enter the Snaplii API key should appear. If the "
                     "user doesn't see it, this client can't render it — have them run "
-                    "'snaplii init' in a terminal (it prompts for the key privately), or "
-                    "use a client that supports MCP Apps. Do NOT ask the user to paste "
-                    "their API key into the chat."
+                    "'snaplii init' in a terminal (it prompts for the key privately). "
+                    "Do NOT ask the user to paste their API key into chat."
                 ),
             })
 
