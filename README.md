@@ -289,7 +289,7 @@ curl -X POST https://aipayment.snaplii.com/v2/purchase \
 
 ### MCP Server (Claude, OpenClaw, Cursor)
 
-The MCP server exposes 19 tools via the [Model Context Protocol](https://modelcontextprotocol.io/). Works with any MCP-compatible client.
+The MCP server exposes 21 tools via the [Model Context Protocol](https://modelcontextprotocol.io/). Works with any MCP-compatible client.
 
 #### Step 1: Install dependencies
 
@@ -386,7 +386,8 @@ Configure your client to launch this command as an MCP stdio server.
 
 | Tool | Description |
 |---|---|
-| `snaplii_init` | Authenticate with API key (not stored) |
+| `snaplii_connect` | Securely connect via an off-model card — the key never enters the chat/model |
+| `snaplii_init` | Authenticate with API key (terminal fallback; not stored) |
 | `snaplii_config_show` | Show auth status |
 | `snaplii_balance` | Real spendable Snaplii Cash balance |
 | `snaplii_browse_tags` | Browse gift card categories (CA/US) |
@@ -394,7 +395,7 @@ Configure your client to launch this command as an MCP stdio server.
 | `snaplii_giftcard_list` | List owned gift cards |
 | `snaplii_giftcard_detail` | Card redemption code (sensitive) |
 | `snaplii_quote` | Preview price with voucher/cashback |
-| `snaplii_purchase` | Buy a gift card (requires confirmation) |
+| `snaplii_purchase` | Buy a gift card (no per-transaction confirmation; capped by the daily limit) |
 | `snaplii_cashback_calc` | Calculate cashback savings |
 | `snaplii_dashboard` | Owned card inventory summary |
 | `snaplii_billpay_*` | Bill pay: payees, detail, save, quote, pay, result |
