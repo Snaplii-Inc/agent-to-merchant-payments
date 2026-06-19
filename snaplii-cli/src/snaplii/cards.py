@@ -58,6 +58,18 @@ APIKEY_CARD_HTML = r"""<!DOCTYPE html>
     margin: 0; padding: 20px; background: var(--bg); color: var(--text);
     -webkit-font-smoothing: antialiased;
   }
+  /* NO_COLLAPSE hosts (Codex) don't shrink the iframe. Stretch the card to FILL the
+     frame and show a big centered check with "Connected" below it — one solid panel,
+     no dead void. */
+  body.centered { min-height: 100vh; display: flex; flex-direction: column; }
+  body.centered > .card { flex: 1 1 auto; }
+  .card.filled { display: flex; align-items: center; justify-content: center; }
+  .card.filled .head, .card.filled .foot { display: none; }
+  .card.filled #success { padding: 0; }
+  .card.filled #success .ssub { display: none; }
+  .card.filled #success .scheck { width: 72px; height: 72px; margin-bottom: 16px; }
+  .card.filled #success .scheck svg { width: 40px; height: 40px; }
+  .card.filled #success .stitle { font-size: 19px; }
   .card {
     position: relative; overflow: hidden;
     background: var(--card); border: 1px solid var(--border); border-radius: 18px;
@@ -181,6 +193,10 @@ APIKEY_CARD_HTML = r"""<!DOCTYPE html>
 (function () {
   var PROTOCOL = "2025-11-25";
   var SUBMIT_TOOL = "__SUBMIT_TOOL__";
+  // Flipped to true by the server for hosts that DROP downward resize (e.g. Codex):
+  // there, collapsing to the slim "✓ Connected" bar just leaves dead space below, so
+  // we keep the full success card instead.
+  var NO_COLLAPSE = false;
   var statusEl = document.getElementById("status");
   var inputEl = document.getElementById("apikey");
   var btnEl = document.getElementById("connect");
@@ -241,6 +257,7 @@ APIKEY_CARD_HTML = r"""<!DOCTYPE html>
       notify("ui/notifications/initialized", {});
       reportSize();
       setStatus("");
+      checkAlreadyConnected();
     }).catch(function () {
       setStatus("Couldn't reach the host — try a client that supports MCP Apps, or run 'snaplii init' in a terminal.", "err");
     });
@@ -254,12 +271,34 @@ APIKEY_CARD_HTML = r"""<!DOCTYPE html>
     if (window.requestAnimationFrame) {
       requestAnimationFrame(function () { requestAnimationFrame(reportSize); });
     }
-    [0, 60, 180, 360].forEach(function (ms) { setTimeout(reportSize, ms); });
+    // Re-report over a longer, denser window: some hosts (e.g. Codex) debounce or
+    // drop a lone downward resize, so the iframe stays at its grown height and the
+    // collapsed "✓ Connected" bar leaves dead space below. Repeating the smaller
+    // size past the host's settle window gives it several chances to shrink.
+    [0, 60, 180, 360, 650, 1000, 1500, 2200].forEach(function (ms) {
+      setTimeout(reportSize, ms);
+    });
   }
 
-  function showSuccess() {
+  function showSuccess(immediate) {
     formEl.style.display = "none";
     successEl.classList.add("show");
+    if (NO_COLLAPSE) {
+      // Host drops downward resize (Codex): fill the frame with one solid panel —
+      // big centered check + "Connected" below — instead of a slim bar over a void.
+      document.body.classList.add("centered");
+      var cc = document.querySelector(".card");
+      if (cc) { cc.classList.add("filled"); }
+      return;
+    }
+    if (immediate) {
+      // Already-connected on (re)load — go straight to the slim "✓ Connected" bar,
+      // no celebration delay.
+      var c0 = document.querySelector(".card");
+      if (c0) { c0.classList.add("done"); }
+      reportSizeSoon();
+      return;
+    }
     reportSizeSoon();
     // Briefly let the user register "Connected", then recede to a slim
     // "✓ Connected" bar and re-report the smaller size after reflow so hosts
@@ -269,6 +308,23 @@ APIKEY_CARD_HTML = r"""<!DOCTYPE html>
       if (card) { card.classList.add("done"); }
       reportSizeSoon();
     }, 1500);
+  }
+
+  // On (re)load — e.g. revisiting an old conversation that re-renders this card —
+  // collapse straight to the "✓ Connected" bar if the account is already
+  // authenticated, instead of showing a live input form again. Best-effort: only
+  // takes effect on hosts that re-run the card JS (not a frozen snapshot) and let
+  // the app query snaplii_config_show; otherwise the form stays as-is.
+  function checkAlreadyConnected() {
+    request("tools/call", { name: "snaplii_config_show", arguments: {} })
+      .then(function (res) {
+        var text = "";
+        try { text = (res.content || []).map(function (c) { return c.text || ""; }).join(" "); } catch (e) {}
+        var connected = false;
+        try { connected = JSON.parse(text).has_valid_token === true; } catch (e) {}
+        if (connected) { showSuccess(true); }
+      })
+      .catch(function () { /* leave the form as-is */ });
   }
 
   function submit() {

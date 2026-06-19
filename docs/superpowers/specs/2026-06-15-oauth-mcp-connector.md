@@ -1,7 +1,7 @@
 # 上线 OAuth 架构 — MCP Connector(托管 HTTP)
 
 **日期:** 2026-06-15
-**状态:** 设计 / 上线阶段实现清单
+**状态:** 设计 / 上线阶段实现清单(2026-06-19 补:§8 测试接入 vs 发布接入、§9 三条 off-model 通道 + 按连接隔离为硬前提;streamable-HTTP 传输雏形已落地)
 **适用:** 把同一份 MCP server 托管成公网 HTTP 端点,供 Claude(网页/手机)、ChatGPT
 等**跑不了本地进程**的客户端通过 connector 接入。
 **不适用:** 本地 stdio(Claude Desktop)——那条用 API key 卡片
@@ -131,6 +131,40 @@ host(Claude/ChatGPT)自动发现后:
 - [ ] 日志脱敏、CORS/allowed_hosts、CSP
 - [ ] device flow(terminal)、验证域名 + 隐私政策/条款(商店)
 - [ ] 撤销 key/token 后,**在途 token 是否一并失效** —— 与后端确认(撤销延迟 ≤ JWT TTL)
+
+---
+
+## 8. 测试接入 vs 发布接入(ChatGPT 具体,2026-06-19)
+
+ChatGPT 跟本地 stdio 客户端(Claude Desktop/Codex/VS Code)根本区别:**它不在本机起进程,只连一个远程 HTTPS URL**。所以接入分两条路:
+
+| | 测试接入 | 发布接入(production) |
+|---|---|---|
+| 方式 | Developer mode + 手动粘 connector URL | 发布成 **ChatGPT App(Apps SDK)**,进 Apps 目录 |
+| 用户操作 | 每个用户自己开开发者模式、粘网址 | 在 Apps 里点一下启用 |
+| server | 临时隧道(cloudflared `https://…trycloudflare.com/mcp/`) | **稳定托管域名**(如 `mcp.snaplii.com`) |
+| 认证 | 共享 config 凑合(单人) | **OAuth 强制**(账号绑定/隔离/吊销) |
+| 审核 | 无 | OpenAI 审核(支付类重点审,no-auth 直接拒,见 §5.6) |
+
+- **结论:要让真实用户不手动配置,只能发布成 App;而发布 App = 托管 HTTPS + OAuth + 审核,OAuth 在这条路上是标配不是可选。**
+- 复用项:现有 `ui://` API key 卡片就是 Apps SDK 的 UI 格式;`SNAPLII_MCP_HTTP=1` 起的 streamable-HTTP 传输(端点 `/mcp/`)就是托管 server 的雏形。
+- 各平台发布路径**互相独立**(ChatGPT Apps 目录 / Claude connector 目录),但后端同一套:**托管 HTTPS MCP + OAuth**,一次做好三端都能接。
+
+---
+
+## 9. 三条 off-model 通道 + 按连接隔离是硬前提(2026-06-19)
+
+同一个 server 可以**并存**三条把 key/凭证收在 model 之外的通道,运行时按客户端能力选:
+
+| 通道 | 适用宿主 | key 流向 |
+|---|---|---|
+| **card**(`ui://` 卡片) | card 宿主(Claude Desktop、VS Code、ChatGPT、Codex) | 用户输入 → 宿主 → `snaplii_submit_api_key` → **流过我们的 MCP server** |
+| **/connect**(URL-mode elicitation) | URL-mode 宿主(Codex、Cursor) | 用户在**网关托管页**输入 → 网关发 token → server **只轮询拿 token,从不碰原始 key** |
+| **OAuth** | 托管/发布宿主(Claude 网页/手机、ChatGPT App) | 账号登录,**根本无 API key** |
+
+- **远程模式下 /connect 比 card 更干净**:card 路径会让原始 key 经 HTTPS 流过我们的 MCP server;/connect 把"输 key"留在可信网关,server 只见 token。
+- **但真正的硬前提是:token 存储必须按连接/按用户隔离。** 现有 `_authenticate` 把 token 写进共享 `~/.snaplii/config.json` —— 这是**为本地单用户写的**,远程多用户会串号。无论走哪条通道,远程上线前都必须先把 token 存储改成**按 `mcp-session-id`/按用户隔离**(OAuth 天然满足;非 OAuth 通道需自行按 session 存)。
+- 这件事**正交于认证方式**:card / /connect / OAuth 都依赖它,且必须最先做。
 
 ---
 

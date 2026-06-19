@@ -43,10 +43,16 @@ def update_hint(package: str) -> str:
     return f"pip install -U {package}"
 
 
-def check_for_update(store, package: str = "snaplii-cli") -> dict | None:
+def check_for_update(store, package: str = "snaplii-cli",
+                     allow_network: bool = True) -> dict | None:
     """Return {'current': ..., 'latest': ...} if a newer version of ``package``
     is on PyPI, else None. Caches the PyPI result in config (one cache key per
-    package); queries at most once per day. Never raises."""
+    package); queries at most once per day. Never raises.
+
+    allow_network=False makes this a cache-only read — it never makes the (up to
+    2s) PyPI request, so it's safe to call on a latency-sensitive path. When the
+    cache is empty or stale it simply returns None; refresh the cache separately
+    (e.g. from a background thread with allow_network=True)."""
     try:
         current = pkg_version(package)
     except Exception:
@@ -60,9 +66,15 @@ def check_for_update(store, package: str = "snaplii-cli") -> dict | None:
         checked_at = cache.get("checked_at", 0)
 
         if not latest or now - checked_at >= _CHECK_INTERVAL:
-            resp = httpx.get(f"https://pypi.org/pypi/{package}/json", timeout=2.0)
-            latest = resp.json()["info"]["version"]
-            store.set(cache_key, {"latest": latest, "checked_at": now})
+            if not allow_network:
+                # Cache-only: don't block on PyPI. Use a stale `latest` if we have
+                # one; otherwise we simply can't tell yet.
+                if not latest:
+                    return None
+            else:
+                resp = httpx.get(f"https://pypi.org/pypi/{package}/json", timeout=2.0)
+                latest = resp.json()["info"]["version"]
+                store.set(cache_key, {"latest": latest, "checked_at": now})
 
         if latest and _parse_version(latest) > _parse_version(current):
             return {"current": current, "latest": latest}

@@ -164,4 +164,23 @@ URL 安全(spec):HTTPS;**不带任何敏感信息**;**不预认证**;客户端�
 | `eid` 绑定 + 短 TTL + 一次性 token 回交 | 中(本设计的核心) |
 | web 部署的 session/sub 防钓鱼校验 | 中(随 06-15 OAuth 一起做) |
 
-**决策:gated。** 现在保持 `_elicit_url() → None` 的 stub;**等做托管网页版(或出现「无终端 + 仅 elicit」的真实用户)时再建**。届时:网关上三端点 + 一页 + 替换 #1 的 `TODO(#2)` 轮询段,即可让 Codex/Cursor 这类客户端获得与 card 同等安全的连接体验。
+**状态(2026-06-17 更新):已实现并本地验证。**
+- 网关侧(`snaplii-agent-gateway`,分支 `feature/url-elicitation-connect-page`):三端点 + `V8 elicit_token` 表 + 收 key 页,全套 34 测试通过,V8 迁移在真 MySQL 上跑通。
+- a2m 侧(`feature/payment-security-hardening`):`client.poll_connect_token`、`_elicit_url()` 默认派生 `{gateway}/connect`、`snaplii_connect` 的 elicit 分支真轮询并缓存 token,31 测试通过。
+- **部署顺序**:网关 `/connect` 要**先于或同时**部署 a2m;否则 elicit 客户端开页 404 → 最终落 `pending`(优雅降级,不崩)。
+
+---
+
+## 12. 可调参数(以后大概率要改)
+
+这几个值都是**按权衡定的判断值,不是硬性要求**,集中记在这里方便以后调。
+
+| 参数 | 当前值 | 在哪 | 约束 / 怎么调 |
+|---|---|---|---|
+| **轮询间隔** `_ELICIT_POLL_INTERVAL_S` | `1.5s` | `mcp-server/server.py` | 提交后最多这么久被接到;越短越跟手但越多空轮询。1–2s 都合理,不敏感。 |
+| **轮询次数** `_ELICIT_POLL_MAX_ATTEMPTS` | `20`(× 1.5s ≈ **30s 窗口**) | `mcp-server/server.py` | accept 后阻塞轮询的总时长。**上限①**:不能超过 MCP 客户端的工具调用超时(常见 ~30–60s),否则客户端先断。**上限②**:不超过网关 token TTL。**下限**:够用户切窗口+输 key(~10–40s)。想覆盖更慢用户就加大,但卡在客户端超时以内。 |
+| **网关 token TTL** `TTL_MS` | `120_000`(**2 分钟**) | `ElicitConnectController.java` | 提交后 token 在 `elicit_token` 里寄存多久。轮询窗口应 ≤ 它。太短:用户慢了 token 先过期;太长:废弃 token 多占一会儿 DB。 |
+
+**关键性质:超时不是硬失败。** 轮询窗口到了没接到 → 返回 `pending`,提示「再跑一次 `snaplii_connect`」。只要还在 TTL 内,token 仍寄存着,第二次轮询就能取到。所以窗口偏短只是「偶尔点两次」,不丢连接。
+
+**调的时候记得两边一起看**:`POLL 窗口(a2m)` 必须同时 `≤ 客户端工具超时` 且 `≤ TTL(网关)`。改 TTL 时回头确认窗口仍在它之内。已知目标客户端(如 Codex)的工具超时后,可把窗口卡到刚好够用。
