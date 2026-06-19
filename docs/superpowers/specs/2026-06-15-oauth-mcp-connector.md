@@ -1,7 +1,7 @@
 # 上线 OAuth 架构 — MCP Connector(托管 HTTP)
 
 **日期:** 2026-06-15
-**状态:** 设计 / 上线阶段实现清单(2026-06-19 补:§8 测试接入 vs 发布接入、§9 三条 off-model 通道 + 按连接隔离为硬前提;streamable-HTTP 传输雏形已落地)
+**状态:** 设计 / 上线阶段实现清单(2026-06-19 补:§8 测试接入 vs 发布接入、§9 三条 off-model 通道 + 按连接隔离为硬前提;streamable-HTTP 传输雏形曾实现并验证,后移除 —— 现阶段只做 stdio,做远程时再加)
 **适用:** 把同一份 MCP server 托管成公网 HTTP 端点,供 Claude(网页/手机)、ChatGPT
 等**跑不了本地进程**的客户端通过 connector 接入。
 **不适用:** 本地 stdio(Claude Desktop)——那条用 API key 卡片
@@ -147,7 +147,7 @@ ChatGPT 跟本地 stdio 客户端(Claude Desktop/Codex/VS Code)根本区别:**�
 | 审核 | 无 | OpenAI 审核(支付类重点审,no-auth 直接拒,见 §5.6) |
 
 - **结论:要让真实用户不手动配置,只能发布成 App;而发布 App = 托管 HTTPS + OAuth + 审核,OAuth 在这条路上是标配不是可选。**
-- 复用项:现有 `ui://` API key 卡片就是 Apps SDK 的 UI 格式;`SNAPLII_MCP_HTTP=1` 起的 streamable-HTTP 传输(端点 `/mcp/`)就是托管 server 的雏形。
+- 复用项:现有 `ui://` API key 卡片就是 Apps SDK 的 UI 格式。streamable-HTTP 传输(`SNAPLII_MCP_HTTP=1` → `/mcp/`)的雏形 2026-06-19 实现并验证过(ChatGPT 真连上),但**已移除**——现阶段只做 stdio,做远程时再按这个雏形加回(~50 行,依赖已在 venv)。
 - 各平台发布路径**互相独立**(ChatGPT Apps 目录 / Claude connector 目录),但后端同一套:**托管 HTTPS MCP + OAuth**,一次做好三端都能接。
 
 ---

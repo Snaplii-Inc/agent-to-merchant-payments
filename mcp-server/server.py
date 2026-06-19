@@ -1004,50 +1004,8 @@ async def main():
         await app.run(read_stream, write_stream, app.create_initialization_options())
 
 
-def _run_http():
-    """Serve the same MCP server over streamable-HTTP, for REMOTE hosts (e.g. ChatGPT
-    desktop) that connect to an HTTPS MCP URL instead of launching a local stdio
-    process. Endpoint: POST/GET {host}:{port}/mcp.
-
-    ⚠️ TEST / SINGLE-USER ONLY. The auth token is cached in the shared
-    ~/.snaplii/config.json, so there is NO per-connection isolation — every caller
-    shares whatever account last connected. Do NOT expose this publicly for multiple
-    users; production multi-user needs the OAuth-for-MCP-connector design (see specs).
-    Env: SNAPLII_MCP_HOST (default 127.0.0.1), SNAPLII_MCP_PORT (default 8765)."""
-    import contextlib
-    import os
-    import uvicorn
-    from starlette.applications import Starlette
-    from starlette.routing import Mount
-    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
-
-    manager = StreamableHTTPSessionManager(app=app)
-
-    async def handle_mcp(scope, receive, send):
-        await manager.handle_request(scope, receive, send)
-
-    @contextlib.asynccontextmanager
-    async def lifespan(_star):
-        async with manager.run():
-            yield
-
-    star = Starlette(routes=[Mount("/mcp", app=handle_mcp)], lifespan=lifespan)
-    host = os.environ.get("SNAPLII_MCP_HOST", "127.0.0.1")
-    port = int(os.environ.get("SNAPLII_MCP_PORT", "8765"))
-    print(f"[snaplii-mcp] streamable-HTTP on http://{host}:{port}/mcp "
-          f"(TEST/single-user — token is shared via ~/.snaplii/config.json)",
-          file=sys.stderr, flush=True)
-    uvicorn.run(star, host=host, port=port)
-
-
 def main_sync():
-    import os
-    # Default transport is stdio (Claude Desktop / Codex / VS Code launch this as a
-    # local process). Opt into HTTP for remote hosts via env.
-    if os.environ.get("SNAPLII_MCP_HTTP") or os.environ.get("SNAPLII_MCP_TRANSPORT") == "http":
-        _run_http()
-    else:
-        asyncio.run(main())
+    asyncio.run(main())
 
 
 if __name__ == "__main__":
