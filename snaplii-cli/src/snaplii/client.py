@@ -78,6 +78,24 @@ class GatewayClient:
             self._config.set("country", str(country).upper())
         return resp
 
+    def poll_connect_token(self, eid: str) -> dict | None:
+        """Take the token the gateway parked under `eid` after the user submitted
+        their key on the hosted /connect page (URL-mode elicitation). Sends NO auth
+        header — the endpoint is guarded by possession of the one-time eid. Returns
+        the token dict on 200, or None when not ready yet (204) / on any other
+        status, so the caller can keep polling."""
+        url = f"{self._base_url}/v2/auth/elicit/{eid}/token"
+        try:
+            resp = self._http.get(url)
+        except httpx.ConnectError as e:
+            raise GatewayConnectionError(url, e)
+        if resp.status_code == 200:
+            try:
+                return resp.json()
+            except Exception:
+                return None
+        return None
+
     # ── User cards ────────────────────────────────────────────────
 
     def list_user_cards(self, status: str = "ACTIVE", page: int = 1, page_size: int = 20) -> dict:
@@ -118,12 +136,18 @@ class GatewayClient:
         price: str,
         payment_method: str = "SNAPLII_CREDIT",
         payment_token: str | None = None,
+        voucher_option: str = "BEST_FIT",
+        cashback_option: str = "USE",
+        specified_voucher: str | None = None,
     ) -> dict:
         payment_ctx = {
             "specifiedPrimaryPaymentMethod": payment_method,
-            "voucherOption": "BEST_FIT",
-            "cashbackOption": "USE",
+            "voucherOption": voucher_option,
+            "cashbackOption": cashback_option,
         }
+        if specified_voucher:
+            payment_ctx["specifiedVoucher"] = specified_voucher
+            payment_ctx["voucherOption"] = "USE"   # match billpay_create_and_pay
         if payment_token:
             payment_ctx["specifiedPrimaryPaymentToken"] = payment_token
         return self._post("/v2/purchase", json={

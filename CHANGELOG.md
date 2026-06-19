@@ -6,6 +6,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
+## [0.14.0] — 2026-06-19
+
+### Added
+- **Off-model API-key entry.** `snaplii_connect` opens a secure MCP Apps card (sandboxed iframe) where the user types the key; it reaches the server via an app-only `snaplii_submit_api_key` tool and never enters the chat/model context. Hosts that can't render the card fall back to `snaplii init` (terminal, still off-model); the key is never accepted in plain chat. (Brings the MCP server to **21 tools**.)
+- **Capability-routed connect.** `snaplii_connect` picks the connect channel from the client's advertised capabilities: card hosts (Claude Desktop, VS Code, ChatGPT, Codex) render the secure card; URL-mode hosts get a hosted `/connect` page (key entered off the model **and** off the client, token claimed via a one-time id); terminal-only hosts (Claude Code) fall back to `snaplii init`. A small client-name allowlist routes Codex — which renders the card but doesn't advertise the UI capability — to the card instead of also firing a redundant URL page. Hosts that drop a downward iframe resize (Codex) get a filled "Connected" panel instead of a slim bar over dead space.
+- **Already-connected guard.** `snaplii_connect` returns `already_connected` (no reconnect) when a valid token is already cached, and the card self-checks on (re)load — so revisiting an old conversation shows the connected state instead of re-prompting for a key.
+- **One-time consent notice.** On successful connect the result carries a generic notice that purchases run within the app-set daily limit with no per-transaction confirmation.
+
+### Changed
+- **Smooth, zero-confirmation flow.** Removed the per-transaction confirmation: `snaplii_purchase` / `snaplii_billpay_pay` no longer require a `confirmation_token`, and the CLI no longer prompts before charging (`--yes` removed). Consent is front-loaded into the per-key daily limit set in the app (prepaid balance + scoped, revocable key), which the gateway enforces server-side. `snaplii_purchase` accepts `voucher_option` / `cashback_option` / `specified_voucher` directly so the charge matches the quote.
+- **Charges are sent exactly once (no auto-retry).** On an ambiguous bill-pay failure, poll `billpay result` by `paymentNo` before retrying instead of re-paying.
+- **Region read from the account, never asked.** `snaplii_browse_tags` now surfaces the account country (`account_country`) and `snaplii_balance` labels currency from the stored country, so the agent filters by region without asking — the country cached at login is authoritative, and a wrong `country` argument is ignored. (Extends 0.13.3.)
+- **Non-blocking update check.** The PyPI version check no longer sits in the tool-call path: it reads the cache only and refreshes in a background thread, so the first tool call after a restart never waits on PyPI.
+
+### Security
+- **No plaintext token on disk by default.** When no OS keyring is available the access token is held in process memory; writing it to `~/.snaplii/config.json` requires explicit opt-in, and `clear()` purges the in-memory copy.
+
+---
+
 ## [0.13.3] — 2026-06-16
 
 ### Changed

@@ -149,7 +149,13 @@ def quote_cmd(ctx, pay_code, price, voucher_id):
 @click.option("--voucher-id", default=None, help="Specific voucher ID to apply")
 @click.pass_context
 def pay_cmd(ctx, pay_code, price, voucher_id):
-    """Pay the bill from Snaplii Cash balance."""
+    """Pay the bill from Snaplii Cash balance.
+
+    Spends within the per-key daily limit set in the app; no per-transaction
+    confirmation. If this fails or times out ambiguously, check status with
+    `snaplii billpay result --payment-no <paymentNo>` before retrying — don't
+    re-pay blindly.
+    """
     client: GatewayClient = ctx.obj["client"]
     resp = client.billpay_create_and_pay(
         pay_code=pay_code,

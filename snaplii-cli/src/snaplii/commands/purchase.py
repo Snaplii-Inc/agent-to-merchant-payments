@@ -14,6 +14,8 @@ def purchase_cmd(ctx, item_id, price):
     Always pays with SNAPLII_CREDIT, which draws from the prepaid Snaplii Cash
     balance — the only provisioned method. (Explicit SNAPLII_CASH/SNAPLII_DEBIT
     is rejected by the backend as "service not enabled", so it's not exposed.)
+    Spends within the per-key daily limit set in the app; no per-transaction
+    confirmation. Use `snaplii quote` first if you want to see the exact cost.
     """
     client: GatewayClient = ctx.obj["client"]
     resp = client.create_order_and_pay(

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "snaplii-cli"
-version = "0.13.3"
+version = "0.14.0"
 description = "Browse, purchase gift cards, and pay bills through Snaplii — safe payments for AI agents"
 readme = {file = "../README.md", content-type = "text/markdown"}
 requires-python = ">=3.9"
@@ -34,6 +34,7 @@ Repository = "https://github.com/Snaplii-Inc/agent-to-merchant-payments"
 dev = [
     "pytest>=8.0,<9",
     "pytest-httpx>=0.35,<1",
+    "pytest-asyncio>=0.23,<1",
 ]
 
 [project.scripts]

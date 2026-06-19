@@ -289,7 +289,7 @@ curl -X POST https://aipayment.snaplii.com/v2/purchase \
 
 ### MCP Server (Claude, OpenClaw, Cursor)
 
-The MCP server exposes 19 tools via the [Model Context Protocol](https://modelcontextprotocol.io/). Works with any MCP-compatible client.
+The MCP server exposes 21 tools via the [Model Context Protocol](https://modelcontextprotocol.io/). Works with any MCP-compatible client.
 
 #### Step 1: Install dependencies
 
@@ -386,7 +386,8 @@ Configure your client to launch this command as an MCP stdio server.
 
 | Tool | Description |
 |---|---|
-| `snaplii_init` | Authenticate with API key (not stored) |
+| `snaplii_connect` | Securely connect via an off-model card — the key never enters the chat/model |
+| `snaplii_init` | Authenticate with API key (terminal fallback; not stored) |
 | `snaplii_config_show` | Show auth status |
 | `snaplii_balance` | Real spendable Snaplii Cash balance |
 | `snaplii_browse_tags` | Browse gift card categories (CA/US) |
@@ -394,7 +395,7 @@ Configure your client to launch this command as an MCP stdio server.
 | `snaplii_giftcard_list` | List owned gift cards |
 | `snaplii_giftcard_detail` | Card redemption code (sensitive) |
 | `snaplii_quote` | Preview price with voucher/cashback |
-| `snaplii_purchase` | Buy a gift card (requires confirmation) |
+| `snaplii_purchase` | Buy a gift card (no per-transaction confirmation; capped by the daily limit) |
 | `snaplii_cashback_calc` | Calculate cashback savings |
 | `snaplii_dashboard` | Owned card inventory summary |
 | `snaplii_billpay_*` | Bill pay: payees, detail, save, quote, pay, result |
@@ -479,6 +480,9 @@ Your JWT token has expired. Call `/v2/auth/token` again with your API key to get
 - **Limited authorization:** agents can only spend from Snaplii Cash, your prepaid balance.
 - **Scoped API keys:** keys can be restricted to `PAY_READ` view-only or `PAY_WRITE` view + purchase.
 - **Spending limits:** strict per-key consumption caps are set via the mobile app.
+- **Consent is the daily limit, set once.** You authorize spending when you create the key and set its per-day cap in the app; within that cap the agent buys and pays **without a per-transaction confirmation**, so the flow stays smooth. Spending is prepaid-only and the key is revocable, so the daily limit is the blast radius. On connect, the agent surfaces this once.
+- **Off-model key entry.** The API key is entered through a secure MCP Apps card rendered by the host — it never passes through the chat or the model. Clients that can't render the card fall back to `snaplii init` in a terminal (still off-model); the key is never accepted in plain chat. The access token is held in process memory rather than written to disk in plaintext unless you explicitly opt in.
+- **Charges are sent once.** Charges are not auto-retried. On an ambiguous bill-pay failure, query `billpay result` by `paymentNo` before retrying rather than re-paying.
 - **No credential storage:** API keys are used once to obtain a token and are never saved to disk.
 - **Data protection:** card redemption codes and PINs are strictly masked and never exposed without explicit user consent.
 

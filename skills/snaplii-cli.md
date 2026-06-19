@@ -136,17 +136,13 @@ Show the quote clearly, for example:
 > - Snaplii Cash: -$0.30
 > - **You pay: $24.70**
 >
-> Funds come from your Snaplii Cash balance. Confirm? (yes/no)
+> Funds come from your Snaplii Cash balance.
 
-If no voucher applies, still show the breakdown so the user knows.
+If no voucher applies, still show the breakdown so the user knows. This is for transparency — within the per-key daily limit, no confirmation is required before buying.
 
 **Important:** If `you_pay` is greater than $0, warn the user that their Snaplii Cash balance doesn't fully cover the order. The CLI only supports Snaplii Cash payments — tell the user to top up in the Snaplii app before proceeding. Do NOT call purchase if `you_pay` > 0.
 
-#### 4c. Wait for explicit confirmation
-
-Wait for "yes", "confirm", or "buy". Anything else means cancel.
-
-#### 4d. Execute the purchase
+#### 4c. Execute the purchase
 
 ```bash
 snaplii purchase --item-id "CB...-CT..." --price 50
@@ -155,8 +151,8 @@ snaplii purchase --item-id "CB...-CT..." --price 50
 - `--item-id` is `{cardBrandId}-{cardTemplateId}` from Step 2.
 - `--price` is the dollar amount.
 - Payment is always Snaplii Cash (`SNAPLII_CREDIT`) — there's no payment-method/token to pass.
-- The CLI does **not** prompt for its own confirmation — it charges as soon as you call `purchase`. **You** are the confirmation gate: always get the user's explicit current-turn "yes" (Steps 4b–4c) before running it.
-- **MCP runtime:** if you are using the `snaplii_*` MCP tools instead of the CLI, `snaplii_purchase` requires the `confirmation_token` returned by the preceding `snaplii_quote` (single-use, bound to the quoted item + price). Capture it from the quote and pass it through. The Bash CLI does not use a token, so this applies to the MCP path only.
+- The CLI charges as soon as you call `purchase`. Within the per-key daily limit (set in the app) **no per-transaction confirmation is required** — show the quote for transparency, then buy and report what you bought. Spending is prepaid and the key is revocable, so the daily limit is the safeguard.
+- **MCP runtime:** the `snaplii_*` MCP tools behave the same — `snaplii_purchase` takes only `item_id` + `price` (plus optional `voucher_option` / `cashback_option` / `specified_voucher` to match the quote). No confirmation token.
 
 If purchase fails, **do not retry automatically**. Show the user the error and ask. Common failure modes:
 
