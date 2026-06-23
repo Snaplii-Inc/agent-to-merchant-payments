@@ -313,18 +313,21 @@ def test_connect_elicit_pending_when_token_never_arrives(monkeypatch):
     assert "snaplii init" in out["message"]
 
 
-# ── _CARD_CLIENT_NAMES: name-based card allowlist (Codex) ──────────────────────
+# ── Codex terminal vs desktop routing ──────────────────────────────────────────
 
-def test_route_card_for_allowlisted_client_without_ui_cap():
-    # Codex advertises ONLY elicitation (no ui ext) yet renders the card. The name
-    # allowlist routes it to card so we don't also fire URL-mode elicitation.
+def test_route_codex_without_ui_cap_uses_elicitation():
+    # Codex Terminal can share the same clientInfo.name as Codex Desktop but has no
+    # card surface. Without an advertised ui capability, keep URL-mode elicitation.
     caps = _caps(elicitation=SimpleNamespace(url={}, form={}))
+    assert server._route_for_caps(caps, SimpleNamespace(name="codex-mcp-client")) == "elicit"
+
+
+def test_route_codex_with_ui_cap_uses_card():
+    caps = _caps(
+        extensions={"io.modelcontextprotocol/ui": {}},
+        elicitation=SimpleNamespace(url={}, form={}),
+    )
     assert server._route_for_caps(caps, SimpleNamespace(name="codex-mcp-client")) == "card"
-
-
-def test_route_allowlist_is_case_insensitive():
-    caps = _caps(elicitation=SimpleNamespace(url={}, form={}))
-    assert server._route_for_caps(caps, SimpleNamespace(name="Codex-MCP-Client")) == "card"
 
 
 def test_route_non_allowlisted_url_client_still_elicits():
