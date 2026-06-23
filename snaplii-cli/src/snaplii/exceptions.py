@@ -45,6 +45,40 @@ class GatewayConnectionError(SnapliiCliError):
         }
 
 
+class AmountValidationError(SnapliiCliError):
+    """Requested amount is outside the brand's allowed denomination range.
+
+    Raised client-side before quote/purchase so an out-of-range order never
+    reaches the backend (which currently accepts it, returns you_pay=0, then
+    fails the card and refunds — burning a round-trip and a Snaplii Cash debit).
+    """
+
+    def __init__(self, message: str, *, item_id: str = "", amount=None,
+                 min_amount=None, max_amount=None, fixed=None):
+        self.message = message
+        self.item_id = item_id
+        self.amount = amount
+        self.min_amount = min_amount
+        self.max_amount = max_amount
+        self.fixed = fixed
+        super().__init__(message)
+
+    def to_dict(self) -> dict:
+        out = {"error": "amount_out_of_range", "message": self.message}
+        if self.item_id:
+            out["item_id"] = self.item_id
+        if self.amount is not None:
+            out["requested_amount"] = self.amount
+        if self.fixed is not None:
+            out["fixed_amount"] = self.fixed
+        else:
+            if self.min_amount is not None:
+                out["min_amount"] = self.min_amount
+            if self.max_amount is not None:
+                out["max_amount"] = self.max_amount
+        return out
+
+
 class ConfigError(SnapliiCliError):
     def __init__(self, message: str):
         self.message = message

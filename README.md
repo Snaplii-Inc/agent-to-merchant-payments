@@ -193,6 +193,8 @@ snaplii purchase --item-id CB...-CT... --price 50    # Buy a card
 > `--item-id` is formatted as `{cardBrandId}-{cardTemplateId}`. Both IDs are available from `snaplii browse brand`.
 >
 > The catalog is scoped to your account's country (fixed at login, enforced server-side), so there's no region/province flag to pass.
+>
+> `--price` must be within the brand's denomination range — `browse brand` shows each card's min/max (variable) or fixed amount. `quote` and `purchase` reject an out-of-range price up front (e.g. \$10 on a \$20-minimum card) so you never pay for a card that can't be issued.
 
 ### 6. Pay a Bill
 

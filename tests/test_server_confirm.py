@@ -13,6 +13,9 @@ class FakeClient:
         self.billpay_charges = []
         self.last_kwargs = None
 
+    def validate_amount(self, item_id, price):
+        return None  # in-range; real guard is exercised in test_amount_validation
+
     def create_order_and_pay(self, **kwargs):
         self.charges.append(kwargs)
         self.last_kwargs = kwargs

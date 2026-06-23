@@ -16,6 +16,9 @@ class FakeClient:
     def __init__(self):
         self.purchased = False
 
+    def validate_amount(self, item_id, price):
+        return None  # in-range; real guard is exercised in test_amount_validation
+
     def create_order_and_pay(self, **kwargs):
         self.purchased = True
         return {"orderNo": "ORD-1", "status": "SUCCESS"}

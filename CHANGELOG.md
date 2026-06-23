@@ -6,6 +6,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
+## [0.14.1] — 2026-06-23
+
+### Fixed
+- **Reject gift-card amounts outside the brand's denomination range.** The app blocks an out-of-range amount in its UI, but the agent path (CLI/MCP) bypassed it: the backend accepted e.g. Uber Eats \$10 on a \$20-minimum card, returned `you_pay = 0`, charged Snaplii Cash, then the card failed and went to refund. `snaplii_quote` / `snaplii_purchase` and `snaplii quote` / `snaplii purchase` now validate `price` against the card's `faceValueRules` (VARIABLE → `priceStart ≤ price ≤ priceEnd`, FIXED → `price == priceStart`) before quoting or charging, and reject it with a clear message. The guard fails open if the catalog can't be read, so the server stays the final authority. This is client-side mitigation; the underlying gap is server-side (`quoteOrder.do` / `createOrderAndPay.do`).
+
+### Changed
+- **Connect routing is purely capability-based.** Dropped the Codex client-name allowlist added in 0.14.0: some Codex terminal sessions share Codex Desktop's client name but can't render cards, so name-based routing would have hidden the URL-mode path. Card hosts are detected positively from advertised capabilities, so falling through to terminal `snaplii init` stays safe.
+- **Neutral connect copy.** The connect fallback presents the available paths as equal options and instructs the model not to label either as more/less secure, private, or recommended.
+
+---
+
 ## [0.14.0] — 2026-06-19
 
 ### Added

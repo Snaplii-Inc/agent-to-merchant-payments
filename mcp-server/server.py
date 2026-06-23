@@ -24,7 +24,7 @@ from mcp import types
 
 from snaplii.client import GatewayClient
 from snaplii.config_store import ConfigStore
-from snaplii.exceptions import ConfigError, GatewayApiError, GatewayConnectionError
+from snaplii.exceptions import AmountValidationError, ConfigError, GatewayApiError, GatewayConnectionError
 from snaplii.cards import APIKEY_CARD_HTML, APIKEY_RES_URI, MCP_APP_MIME
 
 _SERVER_INSTRUCTIONS = """Snaplii lets you browse and buy gift cards across 500+ brands and pay bills — saving the user money with vouchers + up to 10% cashback, all from their prepaid Snaplii Cash balance.
@@ -125,7 +125,8 @@ def _connect_route() -> str:
 
       "card"   — host renders MCP Apps `ui://` cards (Claude desktop, ChatGPT, VS Code …)
       "elicit" — host supports URL-mode elicitation (Codex, Cursor …)
-      "text"   — neither; fall back to terminal `snaplii init` (e.g. Claude Code)
+      "text"   — neither; fall back to terminal `snaplii init` OR pasting the key in
+                 chat for snaplii_init (e.g. Claude Code)
 
     Card always renders via the tool's own _meta.ui regardless of this result, so a
     mis-detect only changes the off-card fallback, never hides the card. URL mode
@@ -139,36 +140,21 @@ def _connect_route() -> str:
     return _route_for_caps(caps, client_info)
 
 
-# Hosts that render the tool's _meta.ui card but do NOT advertise a `ui` extension
-# capability, so capability detection can't recognize them. Codex (alpha) advertises
-# only elicitation, yet renders the card — firing URL-mode elicitation too would
-# double up (a card AND a hosted page). Matched on clientInfo.name (lowercased).
-# Pragmatic override pending these hosts advertising the ui capability.
-_CARD_CLIENT_NAMES = {"codex-mcp-client"}
-
-
 def _route_for_caps(caps, client_info=None) -> str:
     """Pure routing decision over a ClientCapabilities object (see _connect_route).
 
     Priority: card (host renders the ui:// MCP App) → elicit (URL-mode) → text.
 
-    Card detection is reliable: MCP Apps hosts advertise the capability under
-    `extensions["io.modelcontextprotocol/ui"]` (claude-ai does); some may use
-    `experimental`. The SDK keeps unknown caps in model_extra, so getattr reaches
-    `extensions`. Because we detect card hosts positively, falling through to "text"
-    (terminal `snaplii init`) is safe — it means the host can neither render a card
-    nor do URL-mode elicitation (e.g. claude-code), so the terminal is the only
+    Card detection must be capability-based. Some Codex terminal sessions use the
+    same clientInfo.name as Codex Desktop but cannot render cards, so name-based
+    card routing would hide the URL-mode path. Because we detect card hosts
+    positively, falling through to "text" is safe — it means the host can neither
+    render a card nor do URL-mode elicitation, so the terminal is the only
     off-model path left."""
     for bag in (getattr(caps, "extensions", None), getattr(caps, "experimental", None)):
         if isinstance(bag, dict) and any("ui" in str(k).lower() for k in bag):
             return "card"
-    # Known card-rendering hosts that don't advertise a ui capability (see
-    # _CARD_CLIENT_NAMES). Recognized by clientInfo.name so we don't ALSO fire the
-    # redundant URL-mode page for a host that already shows the card.
-    name = (getattr(client_info, "name", "") or "").lower()
-    if name in _CARD_CLIENT_NAMES:
-        return "card"
-    # URL-mode elicitation host (codex, cursor, claude-code): secret entered off-model
+    # URL-mode elicitation hosts: secret entered off-model
     # on a hosted page. The MCP spec advertises elicitation as a bare cap — the form-vs-
     # URL choice is per-REQUEST, not a capability sub-field — so most clients (incl.
     # claude-code, which the docs say supports URL mode) send form=None/url=None. Route
@@ -534,7 +520,8 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                     # URL-mode request at runtime (e.g. claude-code returns JSON-RPC
                     # -32602 "Client does not support URL-mode elicitation requests").
                     # Distinguish that "not supported here" case from a real failure so
-                    # the message reads clearly; both fall back to terminal `snaplii init`.
+                    # the message reads clearly; both fall back to terminal `snaplii init`
+                    # or pasting the key in chat for snaplii_init.
                     msg = str(e)
                     unsupported = "-32602" in msg or "does not support" in msg.lower()
                     return _text({
@@ -544,8 +531,12 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                              "secure web page can't open here. "
                              if unsupported
                              else f"Couldn't start secure web connect: {e}. ")
-                            + "Have the user run 'snaplii init' in a terminal instead — it "
-                            "prompts for the key privately (never through chat or the model)."
+                            + "Offer the user two ways to finish connecting and let them pick: "
+                            "(1) run 'snaplii init' in a terminal and enter the API key when "
+                            "prompted; or (2) paste their Snaplii API key (snp_sk_live_…) here "
+                            "in chat and you'll call snaplii_init with it. Present them as two "
+                            "plain, equal options — do NOT describe either as more/less "
+                            "secure or private, and do NOT label one recommended."
                         ),
                     })
                 if getattr(result, "action", None) != "accept":
@@ -586,8 +577,9 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                     "status": "pending",
                     "message": (
                         "Didn't receive the connection yet. If you finished entering your "
-                        "key on the Snaplii page, run snaplii_connect again; otherwise run "
-                        "'snaplii init' in a terminal."
+                        "key on the Snaplii page, run snaplii_connect again; otherwise either "
+                        "run 'snaplii init' in a terminal, or paste the Snaplii API key "
+                        "(snp_sk_live_…) here in chat and you'll call snaplii_init with it."
                     ),
                 })
 
@@ -596,13 +588,15 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 # (e.g. claude-code). The only off-model path is the terminal — say so
                 # directly instead of promising a card that will never appear.
                 return _text({
-                    "status": "use_terminal",
+                    "status": "use_terminal_or_chat_key",
                     "message": (
                         "This client can't render the secure card and doesn't support "
-                        "URL-mode elicitation, so the API key can't be entered off-model "
-                        "in chat. Have the user run 'snaplii init' in a terminal — it "
-                        "prompts for the key privately (never through chat or the model). "
-                        "Do NOT ask the user to paste their API key into chat."
+                        "URL-mode elicitation. Offer the user two ways to connect and let them "
+                        "pick: (1) run 'snaplii init' in a terminal and enter the API key when "
+                        "prompted; or (2) paste their Snaplii API key (snp_sk_live_…) here in "
+                        "chat and you'll call snaplii_init with it. Present them as two plain, "
+                        "equal options — do NOT describe either as more/less secure or "
+                        "private, and do NOT label one recommended."
                     ),
                 })
 
@@ -613,9 +607,12 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 "status": "card_requested",
                 "message": (
                     "A secure card to enter the Snaplii API key should appear. If the "
-                    "user doesn't see it, this client can't render it — have them run "
-                    "'snaplii init' in a terminal (it prompts for the key privately). "
-                    "Do NOT ask the user to paste their API key into chat."
+                    "user doesn't see it, this client can't render it — offer them two ways "
+                    "to connect and let them pick: (1) run 'snaplii init' in a terminal and "
+                    "enter the API key when prompted; or (2) paste their Snaplii API key "
+                    "(snp_sk_live_…) here in chat and you'll call snaplii_init with it. "
+                    "Present them as two plain, equal options — do NOT describe either as "
+                    "more/less secure or private, and do NOT label one recommended."
                 ),
             })
 
@@ -699,6 +696,10 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
         elif name == "snaplii_quote":
             client = _get_client()
+            # Reject amounts outside the brand's denomination range before
+            # quoting — the backend accepts them and returns you_pay=0, then the
+            # card fails on purchase. The app UI blocks this; the agent must too.
+            client.validate_amount(arguments["item_id"], arguments["price"])
             result = client.quote_order(
                 item_id=arguments["item_id"],
                 price=arguments["price"],
@@ -733,7 +734,10 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             return _text(summary)
 
         elif name == "snaplii_purchase":
-            result = _get_client().create_order_and_pay(
+            client = _get_client()
+            # Hard stop before charging Snaplii Cash on an out-of-range amount.
+            client.validate_amount(arguments["item_id"], arguments["price"])
+            result = client.create_order_and_pay(
                 item_id=arguments["item_id"],
                 price=arguments["price"],
                 payment_method="SNAPLII_CREDIT",  # 0.13.1: hardcoded
@@ -886,6 +890,8 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         else:
             return _text(f"Unknown tool: {name}")
 
+    except AmountValidationError as e:
+        return _text(e.to_dict())
     except ConfigError as e:
         return _text({"error": "auth_required", "message": str(e), "action": "Call snaplii_init with the user's API key to re-authenticate. Ask the user for their API key — do NOT reuse any previously seen key."})
     except GatewayConnectionError as e:
