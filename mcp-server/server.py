@@ -24,7 +24,7 @@ from mcp import types
 
 from snaplii.client import GatewayClient
 from snaplii.config_store import ConfigStore
-from snaplii.exceptions import ConfigError, GatewayApiError, GatewayConnectionError
+from snaplii.exceptions import AmountValidationError, ConfigError, GatewayApiError, GatewayConnectionError
 from snaplii.cards import APIKEY_CARD_HTML, APIKEY_RES_URI, MCP_APP_MIME
 
 _SERVER_INSTRUCTIONS = """Snaplii lets you browse and buy gift cards across 500+ brands and pay bills — saving the user money with vouchers + up to 10% cashback, all from their prepaid Snaplii Cash balance.
@@ -696,6 +696,10 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
         elif name == "snaplii_quote":
             client = _get_client()
+            # Reject amounts outside the brand's denomination range before
+            # quoting — the backend accepts them and returns you_pay=0, then the
+            # card fails on purchase. The app UI blocks this; the agent must too.
+            client.validate_amount(arguments["item_id"], arguments["price"])
             result = client.quote_order(
                 item_id=arguments["item_id"],
                 price=arguments["price"],
@@ -730,7 +734,10 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             return _text(summary)
 
         elif name == "snaplii_purchase":
-            result = _get_client().create_order_and_pay(
+            client = _get_client()
+            # Hard stop before charging Snaplii Cash on an out-of-range amount.
+            client.validate_amount(arguments["item_id"], arguments["price"])
+            result = client.create_order_and_pay(
                 item_id=arguments["item_id"],
                 price=arguments["price"],
                 payment_method="SNAPLII_CREDIT",  # 0.13.1: hardcoded
@@ -883,6 +890,8 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         else:
             return _text(f"Unknown tool: {name}")
 
+    except AmountValidationError as e:
+        return _text(e.to_dict())
     except ConfigError as e:
         return _text({"error": "auth_required", "message": str(e), "action": "Call snaplii_init with the user's API key to re-authenticate. Ask the user for their API key — do NOT reuse any previously seen key."})
     except GatewayConnectionError as e:

@@ -3,7 +3,13 @@ from __future__ import annotations
 import httpx
 
 from snaplii.config_store import ConfigStore
-from snaplii.exceptions import ConfigError, GatewayApiError, GatewayConnectionError
+from snaplii.exceptions import (
+    AmountValidationError,
+    ConfigError,
+    GatewayApiError,
+    GatewayConnectionError,
+    SnapliiCliError,
+)
 
 
 def summarize_denominations(brand_resp: dict) -> list:
@@ -127,6 +133,71 @@ class GatewayClient:
         if isinstance(resp, dict) and "data" not in resp and "cardBrandId" in resp:
             return {"data": resp}
         return resp
+
+    # ── Amount guard ──────────────────────────────────────────────
+
+    def validate_amount(self, item_id: str, price) -> None:
+        """Guard quote/purchase: confirm `price` falls within the brand's
+        allowed denomination for `item_id` ({brandId}-{templateId}).
+
+        Raises AmountValidationError when the amount is confirmed out of range.
+        Fails open (returns silently) whenever the catalog can't be resolved —
+        the server stays the final authority. This mirrors the app's UI check
+        (DrawerBottomInputAmount) which the agent path would otherwise bypass.
+        """
+        try:
+            amount = float(price)
+        except (TypeError, ValueError):
+            return  # malformed price — let the server reject it
+
+        brand_id, _, template_id = (item_id or "").partition("-")
+        if not brand_id or not template_id:
+            return  # can't parse the item id — don't block on the guard
+
+        try:
+            detail = self.get_card_brand_by_id(brand_id)
+        except SnapliiCliError:
+            return  # catalog fetch failed — don't block; server decides
+
+        brand = detail.get("data", detail) if isinstance(detail, dict) else {}
+        cards = brand.get("cards", []) if isinstance(brand, dict) else []
+        card = next((c for c in cards if isinstance(c, dict)
+                     and c.get("cardTemplateId") == template_id), None)
+        if not card:
+            return  # unknown template — server decides
+
+        fv = card.get("faceValueRules", {}) or {}
+        ftype = fv.get("type")
+
+        def _num(v):
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return None
+
+        if ftype == "FIXED":
+            fixed = _num(fv.get("priceStart"))
+            if fixed is not None and amount != fixed:
+                raise AmountValidationError(
+                    f"This card is a fixed ${fixed:g} denomination — "
+                    f"${amount:g} is not available. Buy exactly ${fixed:g}.",
+                    item_id=item_id, amount=amount, fixed=fixed,
+                )
+        elif ftype == "VARIABLE":
+            lo = _num(fv.get("priceStart"))
+            hi = _num(fv.get("priceEnd"))
+            if lo is not None and amount < lo:
+                raise AmountValidationError(
+                    f"${amount:g} is below this card's ${lo:g} minimum. "
+                    f"Choose ${lo:g} or more.",
+                    item_id=item_id, amount=amount, min_amount=lo, max_amount=hi,
+                )
+            if hi is not None and amount > hi:
+                raise AmountValidationError(
+                    f"${amount:g} is above this card's ${hi:g} maximum. "
+                    f"For larger amounts, contact Snaplii.",
+                    item_id=item_id, amount=amount, min_amount=lo, max_amount=hi,
+                )
 
     # ── Purchase ──────────────────────────────────────────────────
 
