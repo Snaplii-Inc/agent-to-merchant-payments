@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "snaplii-mcp"
-version = "0.14.0"
+version = "0.14.1"
 description = "MCP server for Snaplii A2M payments — browse, purchase gift cards, and pay bills"
 requires-python = ">=3.10"
 license = {text = "Apache-2.0"}
