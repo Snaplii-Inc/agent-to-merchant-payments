@@ -86,3 +86,43 @@ class ConfigError(SnapliiCliError):
 
     def to_dict(self) -> dict:
         return {"error": "Configuration error", "message": self.message}
+
+
+class TransferApiError(SnapliiCliError):
+    """Error from a /v2/transfers endpoint.
+
+    Those endpoints return their own envelope ({status, code, message,
+    retryable, upstream_code, details}) instead of the legacy rspMsgCd shape,
+    and the gateway's message is already the meaningful, human-readable one —
+    so the envelope is surfaced as-is.
+    """
+
+    def __init__(self, status_code: int, body: dict, endpoint: str):
+        self.status_code = status_code
+        self.body = body or {}
+        self.endpoint = endpoint
+        # Set by GatewayClient.transfer_create so a retry can reuse the key.
+        self.idempotency_key = None
+        super().__init__(f"Transfer API error {status_code} on {endpoint}")
+
+    def to_dict(self) -> dict:
+        message = (self.body.get("message") or self.body.get("raw")
+                   or f"Transfer request failed (HTTP {self.status_code}).")
+        out = {
+            "error": message,
+            "code": self.body.get("code", ""),
+            "retryable": bool(self.body.get("retryable", False)),
+            "endpoint": self.endpoint,
+        }
+        if self.body.get("upstream_code"):
+            out["upstream_code"] = self.body["upstream_code"]
+        if self.body.get("details"):
+            out["details"] = self.body["details"]
+        if self.idempotency_key:
+            out["idempotency_key"] = self.idempotency_key
+            if out["retryable"]:
+                out["retry_hint"] = (
+                    "If you retry, resend the IDENTICAL request with "
+                    f"--idempotency-key {self.idempotency_key} — never a fresh key."
+                )
+        return out

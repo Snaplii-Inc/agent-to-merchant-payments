@@ -24,7 +24,8 @@ from mcp import types
 
 from snaplii.client import GatewayClient
 from snaplii.config_store import ConfigStore
-from snaplii.exceptions import AmountValidationError, ConfigError, GatewayApiError, GatewayConnectionError
+from snaplii.exceptions import AmountValidationError, ConfigError, GatewayApiError, GatewayConnectionError, TransferApiError
+from snaplii.commands.transfer import decorate_transfer
 from snaplii.cards import APIKEY_CARD_HTML, APIKEY_RES_URI, MCP_APP_MIME
 
 _SERVER_INSTRUCTIONS = """Snaplii lets you browse and buy gift cards across 500+ brands and pay bills — saving the user money with vouchers + up to 10% cashback, all from their prepaid Snaplii Cash balance.
@@ -36,6 +37,8 @@ WHEN THE USER MENTIONS SPENDING (dining, coffee, travel, shopping, transport, gr
 PURCHASE: check balance (snaplii_balance) → quote (snaplii_quote) to know the exact cost → if the order isn't covered (you_pay > 0) tell them to top up and stop → snaplii_purchase → snaplii_giftcard_detail for the redemption code (use cardCode, else pin; fields under "data"). No confirmation token is needed; checking balance first lets you tell them up front whether they can afford it, and the quote's you_pay is the hard safety net. Report what you bought (brand, amount, code) after.
 
 FIRST-TIME / TOP-UP (avoid friction): a brand-new user often has a $0 balance — this is normal, not an error. Never dead-end them. Warmly explain they just need to add funds in the Snaplii app (Wallet → Add Cash / Top Up), that there's nothing else to set up, and offer to re-check the balance and continue once they have. If snaplii_balance itself errors, don't block — just say you couldn't read the balance and proceed to quote, which is the real affordability check.
+
+P2P TRANSFERS: send Snaplii Cash to another person's phone number (the API key's scope must include P2P or ALL). If the user didn't give the recipient's phone number, ASK for it — never guess. snaplii_transfer_create makes a transfer that stays cancellable until auto_finish_at (~5 minutes), then sends automatically — always tell the user the amount, the masked recipient, and the cancel deadline. If the result carries cross_currency_notice (the recipient is in another country and receives a different amount/currency), disclose it and let the user choose to keep or cancel the transfer. snaplii_transfer_cancel undoes it within the window. Call snaplii_transfer_finish ONLY when the user explicitly asks to send now, then poll snaplii_transfer_status every few seconds until FINISHED (report success) or FAILED (report the fail_message). Once auto_finish_at passes, poll the same way to confirm the outcome. Transfer errors already carry a meaningful message — surface it; when a create returns status CREATING, call create again with the SAME idempotency_key (never a fresh one — that can double the transfer).
 
 FULL-CHAIN ORDERING: if you can control a browser (Claude Chrome connector, computer use, etc.), after buying you may redeem the code on the merchant/delivery site and place the order. For any delivery/shipping order, EXPLICITLY confirm the delivery address with the user first (read it back; never assume a saved/default address). Pause for explicit confirmation before the final Place Order. If you have NO browser tool, don't dead-end: first OFFER to set up the Chrome connector (Settings → Connectors → enable Chrome → install "Claude for Chrome" from the Web Store → grant active-tab access), and if they decline, hand over the redemption code + how to redeem it in the app. Always leave a working path; never just error out. Or run the snaplii_autopilot prompt for the guided end-to-end flow.
 
@@ -405,6 +408,65 @@ async def list_tools() -> list[types.Tool]:
                     "payment_no": {"type": "string", "description": "paymentNo from billpay_pay"},
                 },
                 "required": ["payment_no"],
+            },
+        ),
+        types.Tool(
+            name="snaplii_transfer_create",
+            description="Creates a P2P transfer of Snaplii Cash to a phone number. It sends automatically at auto_finish_at (~5 min) unless cancelled — always tell the user the amount, recipient, and the cancel deadline. If the user gave no phone number, ask for it. A fresh Idempotency-Key is generated per call; pass idempotency_key ONLY when retrying the identical request (after a CREATING result — never retry with a fresh key). If the result has cross_currency_notice, disclose it to the user; they can still cancel. Only call snaplii_transfer_finish when the user explicitly asks to send now.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "to_phone": {"type": "string", "description": "Recipient's phone number, any format"},
+                    "amount": {"type": "string", "description": 'Amount to send as a string, e.g. "12.50" (minimum 1.00)'},
+                    "remark": {"type": "string", "description": "Optional note to the recipient (max 200 characters)"},
+                    "idempotency_key": {"type": "string", "description": "ONLY to retry the identical request; omit otherwise"},
+                },
+                "required": ["to_phone", "amount"],
+            },
+        ),
+        types.Tool(
+            name="snaplii_transfer_cancel",
+            description="Cancel a PENDING transfer (allowed until auto_finish_at). Returns CANCELLED, or CANCELLING when the upstream has not confirmed yet — then poll snaplii_transfer_status.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "order_no": {"type": "string", "description": "order_no from snaplii_transfer_create"},
+                },
+                "required": ["order_no"],
+            },
+        ),
+        types.Tool(
+            name="snaplii_transfer_finish",
+            description="Send a PENDING transfer NOW instead of waiting for auto_finish_at. Only call when the user explicitly asks to send immediately — it shortens the undo window and cannot be undone once settled. Settlement runs in the background (~15s): poll snaplii_transfer_status until FINISHED or FAILED.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "order_no": {"type": "string", "description": "order_no from snaplii_transfer_create"},
+                },
+                "required": ["order_no"],
+            },
+        ),
+        types.Tool(
+            name="snaplii_transfer_status",
+            description="Get one transfer's current state. Poll every few seconds while PENDING/FINISHING/CANCELLING; stop at FINISHED (success), CANCELLED, or FAILED (report fail_message to the user).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "order_no": {"type": "string", "description": "order_no from snaplii_transfer_create"},
+                },
+                "required": ["order_no"],
+            },
+        ),
+        types.Tool(
+            name="snaplii_transfer_list",
+            description="List the user's P2P transfers, newest first. Optional comma-separated status filter (e.g. PENDING,FINISHED).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string", "description": "Comma-separated status filter (optional)"},
+                    "page": {"type": "integer", "description": "1-based page (default 1)"},
+                    "page_size": {"type": "integer", "description": "Rows per page, 1-100 (default 20)"},
+                },
             },
         ),
     ]
@@ -887,6 +949,52 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 summary["next_step"] = "Payment still processing. Wait a moment and call this tool again."
             return _text(summary)
 
+        elif name == "snaplii_transfer_create":
+            result = _get_client().transfer_create(
+                to_phone=arguments["to_phone"],
+                amount=arguments["amount"],
+                remark=arguments.get("remark"),
+                idempotency_key=arguments.get("idempotency_key"),
+            )
+            result = decorate_transfer(result)
+            if isinstance(result, dict) and result.get("status") == "CREATING":
+                result["next_step"] = (
+                    "The create has not resolved yet. After retry_after_seconds, call "
+                    "snaplii_transfer_create again with the SAME idempotency_key above "
+                    "(NEVER a fresh key — that can double the transfer), or find the "
+                    "resolved row with snaplii_transfer_list."
+                )
+            return _text(result)
+
+        elif name == "snaplii_transfer_cancel":
+            result = decorate_transfer(_get_client().transfer_cancel(arguments["order_no"]))
+            if isinstance(result, dict) and result.get("status") == "CANCELLING":
+                result["next_step"] = ("Cancel accepted but not yet confirmed upstream — "
+                                       "poll snaplii_transfer_status for the final state.")
+            return _text(result)
+
+        elif name == "snaplii_transfer_finish":
+            result = decorate_transfer(_get_client().transfer_finish(arguments["order_no"]))
+            if isinstance(result, dict):
+                result["next_step"] = ("Settlement runs in the background (normally within "
+                                       "~15s). Poll snaplii_transfer_status until FINISHED "
+                                       "or FAILED.")
+            return _text(result)
+
+        elif name == "snaplii_transfer_status":
+            return _text(decorate_transfer(_get_client().transfer_get(arguments["order_no"])))
+
+        elif name == "snaplii_transfer_list":
+            result = _get_client().transfer_list(
+                status=arguments.get("status"),
+                page=arguments.get("page", 1),
+                page_size=arguments.get("page_size", 20),
+            )
+            if isinstance(result, dict):
+                for row in result.get("data") or []:
+                    decorate_transfer(row)
+            return _text(result)
+
         else:
             return _text(f"Unknown tool: {name}")
 
@@ -896,6 +1004,9 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         return _text({"error": "auth_required", "message": str(e), "action": "Call snaplii_init with the user's API key to re-authenticate. Ask the user for their API key — do NOT reuse any previously seen key."})
     except GatewayConnectionError as e:
         return _text({"error": "connection_error", "message": str(e)})
+    except TransferApiError as e:
+        # The envelope's message is already the meaningful, user-facing one.
+        return _text(e.to_dict())
     except GatewayApiError as e:
         friendly = e.body.get("friendly_message") if hasattr(e, 'body') else None
         return _text({"error": friendly or str(e), "error_code": e.body.get("rspMsgCd", "") if hasattr(e, 'body') else ""})

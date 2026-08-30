@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 import httpx
 
 from snaplii.config_store import ConfigStore
@@ -9,6 +11,7 @@ from snaplii.exceptions import (
     GatewayApiError,
     GatewayConnectionError,
     SnapliiCliError,
+    TransferApiError,
 )
 
 
@@ -360,6 +363,99 @@ class GatewayClient:
         return self._post("/v2/billpay/pay-result", json={"paymentNo": payment_no})
 
     # API keys are created and managed only in the Snaplii app, never via the CLI.
+
+    # ── P2P Transfers ─────────────────────────────────────────────
+
+    def transfer_create(self, to_phone: str, amount: str, remark: str | None = None,
+                        idempotency_key: str | None = None) -> dict:
+        """Create a P70 transfer. It stays cancellable until auto_finish_at
+        (~5 minutes), then the gateway sends it automatically.
+
+        Generates a fresh UUID Idempotency-Key when none is given. Pass the
+        SAME key only when retrying the identical request (after a 202 CREATING
+        or an indeterminate timeout) — a fresh key on retry can double the
+        transfer. The key used is echoed back in the result, and on errors it
+        rides on the raised TransferApiError.
+        """
+        key = idempotency_key or uuid.uuid4().hex
+        body: dict = {"to_phone": to_phone, "amount": amount}
+        if remark:
+            body["remark"] = remark
+        try:
+            resp = self._transfer_request("POST", "/v2/transfers", json_body=body,
+                                          extra_headers={"Idempotency-Key": key})
+        except TransferApiError as e:
+            e.idempotency_key = key
+            raise
+        if isinstance(resp, dict):
+            resp.setdefault("idempotency_key", key)
+        return resp
+
+    def transfer_cancel(self, order_no: str) -> dict:
+        """Cancel a PENDING transfer (allowed until auto_finish_at).
+
+        Returns status CANCELLED, or CANCELLING when the upstream has not
+        confirmed yet — poll transfer_get for the final state."""
+        return self._transfer_request("POST", f"/v2/transfers/{order_no}/cancel")
+
+    def transfer_finish(self, order_no: str) -> dict:
+        """Send the transfer now (moves auto_finish_at to now). The response is
+        still PENDING — the background sweeper settles it within ~15s; poll
+        transfer_get for the outcome."""
+        return self._transfer_request("POST", f"/v2/transfers/{order_no}/finish")
+
+    def transfer_get(self, order_no: str) -> dict:
+        """Get one transfer, with fail_code/fail_reason populated when FAILED."""
+        return self._transfer_request("GET", f"/v2/transfers/{order_no}")
+
+    def transfer_list(self, status: str | None = None, page: int = 1,
+                      page_size: int = 20) -> dict:
+        """List the caller's transfers, newest first. `status` is a
+        comma-separated filter, e.g. "PENDING,FINISHED"."""
+        params = {"page": str(page), "page_size": str(page_size)}
+        if status:
+            params["status"] = status
+        return self._transfer_request("GET", "/v2/transfers", params=params)
+
+    def _transfer_request(self, method: str, path: str, json_body: dict | None = None,
+                          params: dict | None = None,
+                          extra_headers: dict | None = None) -> dict:
+        """Call a /v2/transfers endpoint. These endpoints use their own error
+        envelope ({status, code, message, retryable, upstream_code, details})
+        rather than the legacy rspMsgCd shape, so errors raise TransferApiError
+        with the envelope intact instead of going through _parse_response."""
+        token = self._ensure_token()
+        url = self._base_url + path
+        headers = {"Authorization": f"Bearer {token}"}
+        if extra_headers:
+            headers.update(extra_headers)
+        try:
+            resp = self._http.request(method, url, json=json_body, params=params,
+                                      headers=headers)
+        except httpx.ConnectError as e:
+            raise GatewayConnectionError(url, e)
+        except httpx.TimeoutException:
+            # A timed-out create is indeterminate: the transfer may exist. Never
+            # auto-create again under a fresh key — surface it as retryable with
+            # the same-key instruction (transfer_create attaches the key).
+            raise TransferApiError(0, {
+                "code": "CLIENT_TIMEOUT",
+                "message": ("The request timed out before the gateway answered; "
+                            "the operation may or may not have gone through. "
+                            "Check 'snaplii transfer list' (or retry the identical "
+                            "request with the SAME Idempotency-Key) — never create "
+                            "again with a fresh key."),
+                "retryable": True,
+            }, path)
+        try:
+            body = resp.json()
+        except Exception:
+            body = {"raw": resp.text}
+        if resp.is_success:
+            return body if isinstance(body, dict) else {"data": body}
+        if not isinstance(body, dict):
+            body = {"raw": body}
+        raise TransferApiError(resp.status_code, body, path)
 
     # ── Internal ──────────────────────────────────────────────────
 

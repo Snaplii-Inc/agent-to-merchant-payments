@@ -1,3 +1,3 @@
-from snaplii.cli import main
+from snaplii.cli import _cli
 
-main()
+_cli()

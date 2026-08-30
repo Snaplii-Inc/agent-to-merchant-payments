@@ -1,6 +1,6 @@
 {
   "name": "snaplii-a2m-mcp",
   "displayName": "Snaplii AI Agent Cashback Payment MCP",
-  "description": "Agent-to-Merchant payments — 19 MCP tools for gift card browsing, purchasing with auto-applied vouchers, cashback balance, and bill pay across 500+ brands.",
+  "description": "Agent-to-Merchant payments — 24 MCP tools for gift card browsing, purchasing with auto-applied vouchers, cashback balance, bill pay, and P2P transfers across 500+ brands.",
   "version": "1.12.0"
 }

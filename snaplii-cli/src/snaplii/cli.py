@@ -14,6 +14,7 @@ from snaplii.commands.init import init_cmd
 from snaplii.commands.purchase import purchase_cmd
 from snaplii.commands.quote import quote_cmd
 from snaplii.commands.smart import smart_group
+from snaplii.commands.transfer import transfer_group
 from snaplii.config_store import ConfigStore
 from snaplii.exceptions import SnapliiCliError
 from snaplii.output import print_error, print_json
@@ -66,6 +67,7 @@ main.add_command(purchase_cmd)
 main.add_command(quote_cmd)
 main.add_command(smart_group)
 main.add_command(billpay_group)
+main.add_command(transfer_group)
 main.add_command(config_group)
 
 

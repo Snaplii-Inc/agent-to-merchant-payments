@@ -211,6 +211,20 @@ snaplii billpay result --payment-no PSP...                                   # C
 
 > Bill pay flow: **payees → detail → save (returns payCode) → quote → pay → result**. Payment draws from your prepaid Snaplii Cash balance — no checkout, no card sharing.
 
+### 7. Send Money (P2P Transfer)
+
+Send Snaplii Cash to another Snaplii user's phone number. Requires an API key whose scope includes `P2P` or `ALL`.
+
+```bash
+snaplii transfer create --to-phone 4165550006 --amount 12.50   # Cancellable ~5 min, then auto-sends
+snaplii transfer cancel --order-no ZZ...                       # Undo within the window
+snaplii transfer finish --order-no ZZ...                       # Send NOW instead of waiting
+snaplii transfer status --order-no ZZ... --wait                # Poll until FINISHED / CANCELLED / FAILED
+snaplii transfer list                                          # List transfers, newest first
+```
+
+> A new transfer stays **cancellable until `auto_finish_at`** (~5 minutes), then the gateway sends it automatically. Cross-currency transfers (recipient in another country) return the exact `received_amount` / `received_currency` / `conversion_rate` up front. Transfers are capped by a rolling 24-hour per-key limit set in the app.
+
 ---
 
 ## CLI Commands
@@ -234,6 +248,11 @@ snaplii billpay result --payment-no PSP...                                   # C
 | `snaplii billpay quote --pay-code PC --price P` | Preview bill price with voucher/cashback |
 | `snaplii billpay pay --pay-code PC --price P` | Pay the bill from Snaplii Cash |
 | `snaplii billpay result --payment-no NO` | Check bill payment status |
+| `snaplii transfer create --to-phone P --amount A` | Send Snaplii Cash to a phone number (cancellable ~5 min, then auto-sends) |
+| `snaplii transfer cancel --order-no NO` | Cancel a PENDING transfer within the undo window |
+| `snaplii transfer finish --order-no NO` | Send a PENDING transfer immediately |
+| `snaplii transfer status --order-no NO [--wait]` | Get a transfer's state; `--wait` polls until terminal |
+| `snaplii transfer list [--status S]` | List transfers, newest first |
 
 ---
 
@@ -291,7 +310,7 @@ curl -X POST https://aipayment.snaplii.com/v2/purchase \
 
 ### MCP Server (Claude, OpenClaw, Cursor)
 
-The MCP server exposes 21 tools via the [Model Context Protocol](https://modelcontextprotocol.io/). Works with any MCP-compatible client.
+The MCP server exposes 26 tools via the [Model Context Protocol](https://modelcontextprotocol.io/). Works with any MCP-compatible client.
 
 #### Step 1: Install dependencies
 
@@ -401,6 +420,7 @@ Configure your client to launch this command as an MCP stdio server.
 | `snaplii_cashback_calc` | Calculate cashback savings |
 | `snaplii_dashboard` | Owned card inventory summary |
 | `snaplii_billpay_*` | Bill pay: payees, detail, save, quote, pay, result |
+| `snaplii_transfer_*` | P2P transfers: create (cancellable ~5 min, then auto-sends), cancel, finish (send now), status, list |
 
 > API keys are created and managed **only in the Snaplii app** — there are no CLI/MCP tools to list, create, or delete them.
 
