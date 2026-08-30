@@ -74,10 +74,25 @@ class GatewayClient:
             "agent_id": agent_id,
             "api_key": api_key,
         })
-        token = resp.get("access_token")
-        expires_in = resp.get("expires_in", 3600)
-        if token:
-            self._config.cache_token(token, expires_in)
+        body = resp if isinstance(resp, dict) else {"raw": resp}
+        token = body.get("access_token")
+        if not token:
+            # A 2xx without a token is a failed login, not a success — e.g. the
+            # core rejected the key but the gateway answered 200 with a plain-text
+            # or rspMsgCd body. Surface the real reason and never let `init`
+            # report "authenticated" with nothing cached.
+            reason = (body.get("rspMsgInf") or body.get("rspMsgInfo")
+                      or body.get("message") or body.get("raw"))
+            body["friendly_message"] = (
+                "Login did not return an access token"
+                + (f": {reason}" if reason else "")
+                + ". Check that the API key is valid and active in the Snaplii app "
+                  "(More → Payment Methods → AI Payment Management), then run "
+                  "'snaplii init' again."
+            )
+            raise GatewayApiError(200, body, "/v2/auth/token")
+        expires_in = body.get("expires_in", 3600)
+        self._config.cache_token(token, expires_in)
         # The gateway knows the account's country at apiKeyLogin. When it returns
         # it here, cache it so balance/quote can label the local currency exactly
         # (CA=CAD, US=USD) instead of relying on an agent-supplied --country guess.

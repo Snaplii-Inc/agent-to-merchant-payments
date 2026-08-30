@@ -76,6 +76,45 @@ def test_error_envelope_surfaced_meaningfully(httpx_mock):
     assert out["idempotency_key"]
 
 
+def test_validation_400_field_errors_joined(httpx_mock):
+    # @Valid 400s use the common shape: message null, per-field messages in `errors`.
+    httpx_mock.add_response(
+        method="POST", url="https://gw.test/v2/transfers", status_code=400,
+        json={"status": "error", "message": None,
+              "errors": [{"field": "amount",
+                          "message": "amount must be a string with up to 8 digits and 2 decimals"}]},
+    )
+    with pytest.raises(TransferApiError) as exc:
+        _client().transfer_create("4165550006", "1.999")
+    out = exc.value.to_dict()
+    assert "amount" in out["error"]
+    assert "8 digits" in out["error"]
+
+
+def test_quote_expired_hints_fresh_key(httpx_mock):
+    httpx_mock.add_response(
+        method="POST", url="https://gw.test/v2/transfers", status_code=409,
+        json={"status": "error", "code": "QUOTE_EXPIRED", "retryable": True,
+              "message": "The quote expired before an order could be created."},
+    )
+    with pytest.raises(TransferApiError) as exc:
+        _client().transfer_create("4165550006", "2.00")
+    out = exc.value.to_dict()
+    assert "fresh key" in out["retry_hint"]
+
+
+def test_terminal_422_has_no_same_key_hint(httpx_mock):
+    httpx_mock.add_response(
+        method="POST", url="https://gw.test/v2/transfers", status_code=422,
+        json={"status": "error", "code": "INSUFFICIENT_BALANCE", "retryable": True,
+              "message": "The sending account balance is lower than the transfer amount."},
+    )
+    with pytest.raises(TransferApiError) as exc:
+        _client().transfer_create("4165550006", "2.00")
+    out = exc.value.to_dict()
+    assert "retry_hint" not in out
+
+
 def test_timeout_is_indeterminate_and_keeps_key(httpx_mock):
     httpx_mock.add_exception(httpx.ReadTimeout("timed out"))
     with pytest.raises(TransferApiError) as exc:

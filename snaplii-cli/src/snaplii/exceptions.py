@@ -106,8 +106,17 @@ class TransferApiError(SnapliiCliError):
         super().__init__(f"Transfer API error {status_code} on {endpoint}")
 
     def to_dict(self) -> dict:
-        message = (self.body.get("message") or self.body.get("raw")
-                   or f"Transfer request failed (HTTP {self.status_code}).")
+        message = self.body.get("message")
+        if not message and isinstance(self.body.get("errors"), list):
+            # Field-validation 400s use the common shape: message is null and
+            # the per-field messages live in `errors` — join them so the agent
+            # sees "amount: must be …" instead of a generic HTTP failure.
+            parts = [f"{e.get('field', '?')}: {e.get('message', '')}"
+                     for e in self.body["errors"] if isinstance(e, dict)]
+            message = "; ".join(p for p in parts if p) or None
+        if not message:
+            message = (self.body.get("raw")
+                       or f"Transfer request failed (HTTP {self.status_code}).")
         out = {
             "error": message,
             "code": self.body.get("code", ""),
@@ -120,7 +129,16 @@ class TransferApiError(SnapliiCliError):
             out["details"] = self.body["details"]
         if self.idempotency_key:
             out["idempotency_key"] = self.idempotency_key
-            if out["retryable"]:
+            code = out["code"]
+            if code == "QUOTE_EXPIRED":
+                # Spec: the quote is gone — create again with a NEW key.
+                out["retry_hint"] = "The quote expired before an order was created. Create again with a fresh key (just re-run the command without --idempotency-key)."
+            elif out["retryable"] and (self.status_code in (0, 502, 503, 504)
+                                       or code in ("TRANSFER_INDETERMINATE",
+                                                   "CLIENT_TIMEOUT",
+                                                   "CONCURRENT_DUPLICATE",
+                                                   "UPSTREAM_ERROR")):
+                # Indeterminate: the transfer may exist — only the SAME key is safe.
                 out["retry_hint"] = (
                     "If you retry, resend the IDENTICAL request with "
                     f"--idempotency-key {self.idempotency_key} — never a fresh key."
