@@ -50,7 +50,7 @@ If not configured or token expired, ask the user for their API key, then run:
 `snaplii init`
 The CLI will prompt for the API key via hidden stdin input — **never pass the API key as a command-line argument** (it would be visible in shell history and process listings). Agent ID is auto-derived from the API key.
 
-- Output is exactly `{}` → never configured. Ask the user for their API key, then run `snaplii init` (it prompts for the key via hidden stdin).
+- Output has **no `agent_id` field** → never configured. Don't match on the whole output: an unconfigured CLI may print `{}`, or just non-auth fields like `{"credential_storage": "system keychain"}`. Ask the user for their API key, then run `snaplii init` (it prompts for the key via hidden stdin).
 - Output contains `agent_id` → configured. Proceed.
 - A later call returns `401 / 403` → token expired or revoked. Re-run `init`.
 
@@ -210,7 +210,7 @@ Flow rules:
 2. **After `create`, always tell the user**: the amount, the masked recipient (`to_phone_masked`), and the cancel deadline (`auto_finish_at`, ~5 minutes away). Creating needs no pre-confirmation — the undo window is the safety net — but the user must know they can still cancel and until when.
 3. **Cross-currency disclosure is mandatory.** If the output contains `cross_currency_notice` — the recipient is in another country, so `received_amount`/`received_currency` differ from what the user sends — show it to the user (e.g. "You send 10.00 USD; they receive 13.30 CAD at rate 1.33") and ask whether to keep or cancel the transfer. If they opt out, run `transfer cancel`. Never let a cross-currency transfer auto-send undisclosed.
 4. **"Send it now":** only when the user explicitly asks to send immediately, run `transfer finish`, then `transfer status --order-no ... --wait` and report the outcome — FINISHED means the money went through; FAILED means it didn't, and you must tell the user the specific `fail_message`.
-5. **Otherwise let it auto-send:** once `auto_finish_at` passes, run `transfer status --order-no ... --wait` to confirm the outcome. `--wait` polls every 3s while the status is PENDING/FINISHING and stops at a terminal state (FINISHED / CANCELLED / FAILED). On FAILED, report the `fail_message` / `fail_reason` — never a generic "it failed".
+5. **Otherwise let it auto-send:** confirm the outcome with `transfer status --order-no ... --wait --timeout N`. `--wait` polls every 3s while the status is PENDING/FINISHING and stops at a terminal state (FINISHED / CANCELLED / FAILED). **`--timeout` defaults to 120s, which is shorter than the ~5-minute undo window** — so size it to cover the time remaining until `auto_finish_at` plus ~30s of settle (e.g. `--timeout 330` right after `create`). If you poll only after `auto_finish_at` has already passed, the default is fine. A non-terminal return is not an error: it comes back with `wait_timed_out: true` and a `next_step` hint, and you just run the same command again. On FAILED, report the `fail_message` / `fail_reason` — never a generic "it failed".
 6. **Cancel on request:** `transfer cancel` works while the transfer is PENDING. A `CANCELLING` response means accepted but not yet confirmed — poll status. After the window closes, cancel returns `TRANSFER_STATE` (too late to cancel) — explain that plainly.
 
 Error handling — every transfer error carries a meaningful `message` plus `code`, `retryable`, and `details`; surface the real message, not a summary:
@@ -262,7 +262,7 @@ This skill handles real financial operations. These safety rules always apply:
 | `snaplii transfer create --to-phone P --amount A` | Send Snaplii Cash to a phone number; cancellable ~5 min, then auto-sends |
 | `snaplii transfer cancel --order-no NO` | Cancel a PENDING transfer within the undo window |
 | `snaplii transfer finish --order-no NO` | Send NOW (only on the user's explicit ask) — then poll status |
-| `snaplii transfer status --order-no NO [--wait]` | One transfer's state; `--wait` polls until FINISHED/CANCELLED/FAILED |
+| `snaplii transfer status --order-no NO [--wait] [--timeout S]` | One transfer's state; `--wait` polls until FINISHED/CANCELLED/FAILED. `--timeout` defaults to 120s — raise it (e.g. `330`) to poll through the ~5-minute undo window |
 | `snaplii transfer list [--status S]` | List transfers, newest first |
 | `snaplii help [SUBCOMMAND]` | Built-in help — use as a fallback if a flag here looks wrong |
 

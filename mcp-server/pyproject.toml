@@ -11,7 +11,7 @@ license = {text = "Apache-2.0"}
 authors = [{name = "Snaplii Inc", email = "charles.zhang@snaplii.com"}]
 keywords = ["snaplii", "mcp", "gift-cards", "bill-pay", "ai-agent", "payments"]
 dependencies = [
-    "mcp>=1.0",
+    "mcp>=1.0,<2",
     "snaplii-cli>=0.12.1",
 ]
 
