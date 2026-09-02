@@ -3,10 +3,17 @@ name: Release
 # Tag-triggered publish to PyPI via Trusted Publishing (OIDC) — no API token stored.
 # Both projects must have a trusted publisher configured on PyPI pointing at this
 # repo, workflow file `release.yml`, and environment `pypi`.
+#
+# workflow_dispatch runs the build+test path only (publish jobs are tag-gated), so
+# the pipeline can be exercised without live-firing at an immutable registry.
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -16,7 +23,9 @@ jobs:
       - uses: astral-sh/setup-uv@v10
 
       # The tag is what users get; a mismatch would publish a version nobody asked for.
+      # Exact match is deliberate: it rules out prereleases (v0.15.0rc1) by design.
       - name: Tag must match both package versions
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           tag="${GITHUB_REF_NAME#v}"
           for f in snaplii-cli/pyproject.toml mcp-server/pyproject.toml; do
@@ -25,11 +34,11 @@ jobs:
             [ "$v" = "$tag" ] || { echo "::error file=$f::version is $v but the tag is $tag"; exit 1; }
           done
 
+      # Deps come from the packages themselves, so CI can't drift from what ships
+      # (the mcp<2 ceiling lives in mcp-server/pyproject.toml and nowhere else).
+      # Installing ./mcp-server also exercises its packaging and its snaplii-cli floor.
       - name: Test
-        run: >
-          uv run --with pytest --with pytest-httpx --with pytest-asyncio
-          --with "mcp<2" --with ./snaplii-cli
-          pytest tests -q
+        run: uv run --with "./snaplii-cli[dev]" --with ./mcp-server pytest tests -q
 
       - name: Build
         run: |
@@ -44,6 +53,7 @@ jobs:
   # snaplii-mcp requires snaplii-cli>=<same version>, so the CLI lands first.
   publish-cli:
     needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -53,12 +63,16 @@ jobs:
         with:
           name: dist
           path: dist/
+      # PyPI is immutable: skip-existing keeps a retry after a partial upload
+      # from dying on "File already exists" and burning the version number.
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/cli/
+          skip-existing: true
 
   publish-mcp:
     needs: publish-cli
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -71,3 +85,4 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/mcp/
+          skip-existing: true
