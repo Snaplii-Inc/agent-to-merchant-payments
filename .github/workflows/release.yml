@@ -1,0 +1,73 @@
+name: Release
+
+# Tag-triggered publish to PyPI via Trusted Publishing (OIDC) — no API token stored.
+# Both projects must have a trusted publisher configured on PyPI pointing at this
+# repo, workflow file `release.yml`, and environment `pypi`.
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+
+      # The tag is what users get; a mismatch would publish a version nobody asked for.
+      - name: Tag must match both package versions
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          for f in snaplii-cli/pyproject.toml mcp-server/pyproject.toml; do
+            v=$(python3 -c "import tomllib,sys; print(tomllib.load(open(sys.argv[1],'rb'))['project']['version'])" "$f")
+            echo "$f -> $v"
+            [ "$v" = "$tag" ] || { echo "::error file=$f::version is $v but the tag is $tag"; exit 1; }
+          done
+
+      - name: Test
+        run: >
+          uv run --with pytest --with pytest-httpx --with pytest-asyncio
+          --with "mcp<2" --with ./snaplii-cli
+          pytest tests -q
+
+      - name: Build
+        run: |
+          uv build snaplii-cli --out-dir dist/cli
+          uv build mcp-server  --out-dir dist/mcp
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+
+  # snaplii-mcp requires snaplii-cli>=<same version>, so the CLI lands first.
+  publish-cli:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/cli/
+
+  publish-mcp:
+    needs: publish-cli
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/mcp/
