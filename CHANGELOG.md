@@ -6,6 +6,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
+## [0.15.0] — 2026-09-02
+
+### Added
+- **P2P transfers — send Snaplii Cash to a phone number.** Backed by the gateway's `/v2/transfers` endpoints, with a 5-minute undo window before auto-send. CLI: `snaplii transfer create/cancel/finish/status/list`, where `status --wait` polls every 3s until FINISHED/CANCELLED/FAILED. MCP: `snaplii_transfer_*` tools plus P2P server instructions (**26 tools total**). Every request carries a UUID `Idempotency-Key` that is echoed back so a retry reuses the same key, and client-side timeouts map to a retryable `CLIENT_TIMEOUT`. Responses are decorated with `cross_currency_notice` (a recipient in another country receives a different amount/currency) and a human-readable `fail_message` for every `fail_reason`. The skill's Step 7 flow asks for the phone number when missing, discloses cross-currency and lets the user keep or cancel, finishes only on an explicit "send now", and polls status after `finish`/`auto_finish_at`. Verified end-to-end on staging: create/cancel/finish, idempotent replay and `IDEMPOTENCY_MISMATCH`, a cross-currency USD→CAD quote, a real balance debit, and meaningful errors.
+
+### Changed
+- **`snaplii-mcp` now requires `snaplii-cli>=0.15.0`.** The server imports `snaplii.commands.transfer`, which only exists from 0.15.0; the old `>=0.12.1` floor would have let a resolver pair the new server with a CLI that has no transfer module, failing at import.
+
+### Fixed
+- **`snaplii init` no longer reports success on a failed login.** A 2xx `/v2/auth/token` response with no `access_token` is a failed login, not a success. It now raises `GatewayApiError` carrying the body's real reason (`rspMsgInf` / `message` / plain-text raw) instead of printing "authenticated" with nothing cached — the gateway currently answers HTTP 200 plus plain text when the core withholds the `x-auth-token` header.
+- **Readable transfer validation errors.** `TransferApiError` parses the common validation shape (null `message`, per-field messages in `errors[]`), so a `@Valid` 400 reads as "amount: amount must be …" rather than "Transfer request failed (HTTP 400)".
+- **Retry hints only where a retry is safe.** Only indeterminate outcomes (client timeout, `TRANSFER_INDETERMINATE`, `CONCURRENT_DUPLICATE`, `UPSTREAM_ERROR`, 5xx) get the same-key retry hint. `QUOTE_EXPIRED` now says to create again with a fresh key per the API spec, and terminal 4xx such as `INSUFFICIENT_BALANCE` get no hint at all.
+- **Source and editable installs of `snaplii-cli` work again.** hatchling >= 1.32 rejects a readme path outside the project directory, so `readme = {file = "../README.md"}` broke `pip install -e ./snaplii-cli` and `uvx --from ./snaplii-cli`; older hatchling built an sdist with a `snaplii_cli-X/../README.md` member that pip refuses to extract. A CLI-focused `snaplii-cli/README.md` is now in-tree and the sdist carries it with no path traversal. PyPI wheel installs were unaffected either way.
+- **Pin `mcp>=1.0,<2`.** mcp 2.x dropped the `list_tools`/`call_tool` decorators from `mcp.server.Server`, so `server.py` died at import with an `AttributeError` and the MCP server could not start on a clean install.
+- **Two skill-instruction corrections.** Step 7 rule 5 told agents to confirm an auto-send with `transfer status --wait`, but `--timeout` defaults to 120s against a ~5-minute undo window, so that call always returned `wait_timed_out`; `--timeout` is now documented and a non-terminal return is called out as normal. Step 1 matched the whole `config show` output against `{}` to detect an unconfigured CLI, but a fresh machine now returns `{"credential_storage": ...}`, so the check never fired — it keys on a missing `agent_id` instead. The CLI's 120s default is deliberately unchanged: it is correct when polling after `auto_finish_at`, and raising it would block every caller for 5+ minutes.
+
+---
+
 ## [0.14.1] — 2026-06-23
 
 ### Fixed
