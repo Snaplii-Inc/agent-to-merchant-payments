@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.0.1
 
       # The tag is what users get; a mismatch would publish a version nobody asked for.
       # Exact match is deliberate: it rules out prereleases (v0.15.0rc1) by design.
