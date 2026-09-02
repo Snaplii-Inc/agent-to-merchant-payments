@@ -299,6 +299,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.15.0 | 2026-09-02 | P2P transfers to a phone number (26 MCP tools); `mcp<2` pin |
+| 0.14.1 | 2026-06-23 | Reject out-of-range gift-card amounts; capability-based connect |
+| 0.14.0 | 2026-06-19 | Off-model API-key entry via MCP Apps card; zero-confirmation flow |
+| 0.13.3 | 2026-06-16 | Region automatic — `--prov` / `locationProv` dropped |
+| 0.13.2 | 2026-06-09 | Balance currency follows the account country, never hardcoded CAD |
+| 0.13.1 | 2026-06-05 | Always `SNAPLII_CREDIT` — payment-method knob removed (MCA20004) |
+| 0.13.0 | 2026-06-04 | Balance query (`snaplii balance`); 19 MCP tools |
 | 0.12.1 | 2026-06-02 | Fix `No module named 'httpcore'` — explicit dep + clear error |
 | 0.12.0 | 2026-06-02 | Exact denominations, Claude Desktop setup script, editable-aware updates, address confirmation |
 | 0.11.1 | 2026-06-02 | Update reminder attached to every MCP tool response |
