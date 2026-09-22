@@ -1,35 +1,35 @@
 # Agent-to-Merchant Payments by Snaplii
 
-> Payments are broken for AI agents.
+> A separate spending account. Clear permissions. AI payments you control.
 
-Snaplii unlocks real-world commerce with a safe, tokenized payment layer — powered by 500+ merchant gift cards **and bill pay** (utilities, telecom, and more) — and is the only one that actually saves you money (up to 10% per transaction), on top of any existing deals or promotions.
-New users can unlock an exclusive welcome offer: **$10 off your first $30 transaction.**
+Snaplii is a prepaid account that isolates funds for AI spending, making it safer and easier to authorize an AI agent to pay on your behalf. You set aside money as **Snaplii Cash** and control the agent's access through scoped, revocable API keys and spending limits set in the Snaplii app. Agent payments draw only from that prepaid balance; the agent does not get direct access to your bank accounts or credit cards.
 
----
-## The Problem
-AI agents can already:
-- decide what to buy  
-- compare options  
-- navigate merchant platforms  
+This is the asset-isolation model: separate the funds available to the agent from access to your other payment sources, then grant only the permissions and spending allowance needed for the task.
 
-But they still can't safely pay.
-Payments require trust, compliance, and risk control — things AI agents are not designed to handle.
+## Availability by country
 
-Giving agents access to cards is not a solution. It's a risk.
+| Account country | Save on spending with gift cards | Bill payments | P2P transfers |
+|---|---|---|---|
+| Canada (CA / CAD) | Available | Available for supported billers | Available to other Snaplii users |
+| United States (US / USD) | Available | Not available | Available to other Snaplii users |
 
----
+Gift-card brands, denominations, redemption terms, and savings depend on the account's country and the current catalog/quote. P2P transfers require the appropriate API-key scope and available transfer allowance. **Bill pay is available in Canada only.**
 
-## The Solution
-Snaplii introduces a new model:
-**User → Agent → Snaplii → Merchant**
-- Users fund Snaplii  
-- Agents operate within a controlled boundary  
-- Each transaction is **pre-funded, isolated, and non-reusable**  
+## How authorization works
 
-No shared credentials. No persistent risk.
+1. **Set aside funds.** Add the amount you want to make available as Snaplii Cash in the app.
+2. **Define access.** Create an API key with the permissions and spending limits needed for the agent's task.
+3. **Let the agent execute within that boundary.** Agent payments draw from Snaplii Cash, without exposing your bank or card credentials. You can revoke the key in the app.
 
-In addition, Snaplii embeds **value directly into the payment layer** —  
-transactions can **save up to 10%** and stack seamlessly with existing merchant deals and promotions.
+Gift-card purchases can help users save through eligible offers and cashback. Available brands and savings vary by country, brand, and current quote; merchant offers can be combined only where their terms allow.
+
+## How Snaplii and agent tools work together
+
+Snaplii provides the gift card and redemption information needed for payment. Shopping, redeeming the card, and placing an order on a merchant website are carried out by agent tools with those capabilities.
+
+When the agent has **browser-control capability, the necessary merchant-account access, and user authorization**, it can connect Snaplii payment to a complete shopping flow: select items → obtain the appropriate gift card → redeem it with the merchant → place the order using the applicable confirmation steps. Check the merchant's acceptance and redemption terms before purchasing a card for that order.
+
+When those conditions are missing or the merchant flow is blocked, provide the user with the redemption information and clear next steps to finish in the merchant app or website. Describe this as the fallback for the current session, rather than the limit of all Snaplii-enabled workflows. Distinguish a successful gift-card purchase from a completed merchant order.
 
 ---
 
@@ -50,6 +50,9 @@ Whether you're building with **Claude, ChatGPT, GPT-4, Gemini, LLaMA, Mistral, O
 
 ## Table of Contents
 
+- [Availability by country](#availability-by-country)
+- [How authorization works](#how-authorization-works)
+- [How Snaplii and agent tools work together](#how-snaplii-and-agent-tools-work-together)
 - [Requirements](#requirements)
 - [Quick Start](#quick-start)
 - [CLI Commands](#cli-commands)
@@ -196,9 +199,9 @@ snaplii purchase --item-id CB...-CT... --price 50    # Buy a card
 >
 > `--price` must be within the brand's denomination range — `browse brand` shows each card's min/max (variable) or fixed amount. `quote` and `purchase` reject an out-of-range price up front (e.g. \$10 on a \$20-minimum card) so you never pay for a card that can't be issued.
 
-### 6. Pay a Bill
+### 6. Pay a Bill — Canada only
 
-Pay utility bills, telecom, and more — from your Snaplii Cash balance, with the same cashback and vouchers as gift cards.
+Canadian accounts can pay supported utility, telecom, and other bills from Snaplii Cash. Bill pay is not available for US accounts. Check the account country before starting; use the live biller list and quote for availability and any applicable savings.
 
 ```bash
 snaplii billpay payees                                                       # Find your biller
@@ -209,11 +212,11 @@ snaplii billpay pay --pay-code PC... --price 75.25                          # Pa
 snaplii billpay result --payment-no PSP...                                   # Check status
 ```
 
-> Bill pay flow: **payees → detail → save (returns payCode) → quote → pay → result**. Payment draws from your prepaid Snaplii Cash balance — no checkout, no card sharing.
+> Bill pay flow: **payees → detail → save (returns payCode) → quote → pay → result**. Payment draws from your prepaid Snaplii Cash balance without giving the agent access to your bank accounts or credit cards.
 
 ### 7. Send Money (P2P Transfer)
 
-Send Snaplii Cash to another Snaplii user's phone number. Requires an API key whose scope includes `P2P` or `ALL`.
+Available in Canada and the United States: send Snaplii Cash to another Snaplii user's phone number. Requires an API key whose scope includes `P2P` or `ALL`.
 
 ```bash
 snaplii transfer create --to-phone 4165550006 --amount 12.50   # Cancellable ~5 min, then auto-sends
@@ -242,11 +245,11 @@ snaplii transfer list                                          # List transfers,
 | `snaplii purchase --item-id ID --price P` | Purchase a gift card |
 | `snaplii smart cashback --brand-id ID --amount A` | Calculate cashback savings |
 | `snaplii smart dashboard` | View card inventory summary |
-| `snaplii billpay payees` | List available billers (electricity, gas, telecom) |
+| `snaplii billpay payees` | Canada only: list available billers (electricity, gas, telecom) |
 | `snaplii billpay detail --payee-code CODE` | View biller account validation rules |
 | `snaplii billpay save --payee-code CODE --first-name F --last-name L --amount A --account NO` | Save a bill pay instruction |
 | `snaplii billpay quote --pay-code PC --price P` | Preview bill price with voucher/cashback |
-| `snaplii billpay pay --pay-code PC --price P` | Pay the bill from Snaplii Cash |
+| `snaplii billpay pay --pay-code PC --price P` | Canada only: pay the bill from Snaplii Cash |
 | `snaplii billpay result --payment-no NO` | Check bill payment status |
 | `snaplii transfer create --to-phone P --amount A` | Send Snaplii Cash to a phone number (cancellable ~5 min, then auto-sends) |
 | `snaplii transfer cancel --order-no NO` | Cancel a PENDING transfer within the undo window |
@@ -419,7 +422,7 @@ Configure your client to launch this command as an MCP stdio server.
 | `snaplii_purchase` | Buy a gift card (no per-transaction confirmation; capped by the daily limit) |
 | `snaplii_cashback_calc` | Calculate cashback savings |
 | `snaplii_dashboard` | Owned card inventory summary |
-| `snaplii_billpay_*` | Bill pay: payees, detail, save, quote, pay, result |
+| `snaplii_billpay_*` | Canada only: bill pay — payees, detail, save, quote, pay, result |
 | `snaplii_transfer_*` | P2P transfers: create (cancellable ~5 min, then auto-sends), cancel, finish (send now), status, list |
 
 > API keys are created and managed **only in the Snaplii app** — there are no CLI/MCP tools to list, create, or delete them.
@@ -499,7 +502,7 @@ Your JWT token has expired. Call `/v2/auth/token` again with your API key to get
 
 ## Security
 
-- **Limited authorization:** agents can only spend from Snaplii Cash, your prepaid balance.
+- **Isolated spending access:** agents can spend only the prepaid Snaplii Cash available within their permissions and limits. They do not receive direct access to your bank accounts or credit cards.
 - **Scoped API keys:** keys can be restricted to `PAY_READ` view-only or `PAY_WRITE` view + purchase.
 - **Spending limits:** strict per-key consumption caps are set via the mobile app.
 - **Consent is the daily limit, set once.** You authorize spending when you create the key and set its per-day cap in the app; within that cap the agent buys and pays **without a per-transaction confirmation**, so the flow stays smooth. Spending is prepaid-only and the key is revocable, so the daily limit is the blast radius. On connect, the agent surfaces this once.
