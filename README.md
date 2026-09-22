@@ -12,13 +12,12 @@ Today, Snaplii supports payment use cases across Canada and the US, including me
 ## Why AI Agents Need a New Payment Layer
 
 AI agents are increasingly capable of:
-
-discovering products and services
-comparing options
-navigating merchant websites
-filling out forms
-completing checkout flows
-taking actions on behalf of users
+* discovering products and services
+* comparing options
+* navigating merchant websites
+* filling out forms
+* completing checkout flows
+* taking actions on behalf of users
 
 But payment remains a critical gap.
 
