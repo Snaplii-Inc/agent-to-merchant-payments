@@ -1,11 +1,14 @@
 # Agent-to-Merchant Payments by Snaplii
 
-> A separate spending account. Clear permissions. AI payments you control.
+> Snaplii is a secure, tokenized payment layer for AI agents, designed to let users authorize agents to transact without exposing their traditional payment credentials.
 
-Snaplii is a prepaid account that isolates funds for AI spending, making it safer and easier to authorize an AI agent to pay on your behalf. You set aside money as **Snaplii Cash** and control the agent's access through scoped, revocable API keys and spending limits set in the Snaplii app. Agent payments draw only from that prepaid balance; the agent does not get direct access to your bank accounts or credit cards.
+Instead of giving an AI agent direct access to a credit or debit card, users can fund and authorize a dedicated Snaplii payment account with defined permissions and spending limits.
 
-This is the asset-isolation model: separate the funds available to the agent from access to your other payment sources, then grant only the permissions and spending allowance needed for the task.
+User → AI Agent → Snaplii → Merchant
 
+Snaplii provides the payment credentials, authorization boundary, and transaction execution layer required to connect AI agents with real-world commerce.
+
+Today, Snaplii supports payment use cases across Canada and the US, including merchant purchases, bill payments, and peer-to-peer transfers.
 ## Availability by country
 
 | Account country | Save on spending with gift cards | Bill payments | P2P transfers |
