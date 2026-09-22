@@ -52,12 +52,12 @@ For merchant purchases, Snaplii provides the payment information required for th
 
 An agent can:
 
-Understand the user's intent
-Navigate the merchant website
-Select the product or service
-Reach checkout
-Use Snaplii's authorized payment capability
-Complete the transaction
+* Understand the user's intent
+* Navigate the merchant website
+S* elect the product or service
+* Reach checkout
+* Use Snaplii's authorized payment capability
+* Complete the transaction
 
 When the agent has the required browser capabilities, account access, and user authorization, Snaplii can become part of the full shopping-to-payment workflow.
 
