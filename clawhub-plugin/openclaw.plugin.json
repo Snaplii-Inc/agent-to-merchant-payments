@@ -1,6 +1,6 @@
 {
   "name": "snaplii-a2m-mcp",
   "displayName": "Snaplii AI Agent Cashback Payment MCP",
-  "description": "Agent-to-Merchant payments — 24 MCP tools for gift card browsing, purchasing with auto-applied vouchers, cashback balance, bill pay, and P2P transfers across 500+ brands.",
+  "description": "Snaplii isolates prepaid funds for safer, easier AI spending authorization with scoped access and app-set limits. Canada: gift-card savings, bill pay, and P2P transfers. US: gift-card savings and P2P transfers. Capable, authorized agent tools handle merchant shopping, redemption, and ordering.",
   "version": "1.12.0"
 }

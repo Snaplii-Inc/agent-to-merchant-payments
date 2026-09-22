@@ -1,23 +1,47 @@
 ---
 name: snaplii-autopilot
-description: "End-to-end Agent-to-Merchant autopilot: buy a Snaplii gift card with cashback, then drive the browser to redeem it on the merchant/delivery site and place the order — all in one flow. Use when the user wants the agent to actually complete a purchase or food/delivery order (e.g. 'order me a coffee on Uber Eats and pay with Snaplii'), not just get a gift card. Requires a browser-automation tool in the session."
+description: "Complete an authorized shopping flow in Canada or the US using Snaplii's isolated prepaid spending account for gift-card payment and capable agent tools for merchant shopping, redemption, and ordering. Use when the user asks to complete a purchase with Snaplii. Requires browser control, necessary merchant-account access, and user authorization; otherwise provide redemption information and next steps."
 ---
 
-# Snaplii Autopilot — buy + redeem + order, end to end
+# Snaplii Autopilot — Isolated Payment + Merchant Ordering
 
-This skill completes the **full** Agent-to-Merchant flow: buy a Snaplii gift card (prepaid, capped, cashback) → get its redemption code → open the merchant/delivery site in the browser → add the gift card → place the order. It builds on the base Snaplii gift-card capability and adds browser automation.
+Snaplii is a prepaid account that isolates funds for AI spending, making it safer and easier to authorize an AI agent to pay on your behalf. You set aside money as **Snaplii Cash** and control the agent's access through scoped, revocable API keys and spending limits set in the Snaplii app. Agent payments draw only from that prepaid balance; the agent does not get direct access to your bank accounts or credit cards.
+
+This is the asset-isolation model: separate the funds available to the agent from access to your other payment sources, then grant only the permissions and spending allowance needed for the task.
+
+## Availability by country
+
+| Account country | Save on spending with gift cards | Bill payments | P2P transfers |
+|---|---|---|---|
+| Canada (CA / CAD) | Available | Available for supported billers | Available to other Snaplii users |
+| United States (US / USD) | Available | Not available | Available to other Snaplii users |
+
+Gift-card brands, denominations, redemption terms, and savings depend on the account's country and the current catalog/quote. P2P transfers require the appropriate API-key scope and available transfer allowance. **Bill pay is available in Canada only.**
+
+This skill handles the gift-card shopping flow in either country. Use the base Snaplii payment skill for P2P transfers and, for Canadian accounts only, supported bill payments.
+
+## How Snaplii and agent tools work together
+
+Snaplii provides the gift card and redemption information needed for payment. Shopping, redeeming the card, and placing an order on a merchant website are carried out by agent tools with those capabilities.
+
+When the agent has **browser-control capability, the necessary merchant-account access, and user authorization**, it can connect Snaplii payment to a complete shopping flow: select items → obtain the appropriate gift card → redeem it with the merchant → place the order using the applicable confirmation steps. Check the merchant's acceptance and redemption terms before purchasing a card for that order.
+
+When those conditions are missing or the merchant flow is blocked, provide the user with the redemption information and clear next steps to finish in the merchant app or website. Describe this as the fallback for the current session, rather than the limit of all Snaplii-enabled workflows. Distinguish a successful gift-card purchase from a completed merchant order.
 
 ## Requirements (check first)
 
-This skill needs BOTH:
-1. **Snaplii tools** — either the `snaplii` CLI (Bash) or `snaplii_*` MCP tools.
-2. **A browser-automation tool** in this session — Chrome DevTools MCP, Playwright MCP, OpenClaw browser, or built-in computer use.
+Check these requirements before promising or funding an end-to-end order:
 
-**Capability check before promising autopilot:** Confirm a browser tool is actually available (e.g. you can list/open pages). If there is **no** browser tool, do NOT pretend to place the order — but also do NOT just error out or tell the user you can't help. Offer a frictionless path instead (see "Frictionless setup" below).
+1. **Snaplii tools** — either the `snaplii` CLI (Bash) or `snaplii_*` MCP tools.
+2. **A browser-automation tool** in this session, such as an available browser or computer-use tool.
+3. **Necessary account access** to the relevant merchant or delivery service, including a usable signed-in session where required.
+4. **User authorization** for the requested shopping task and the confirmation steps below. Verify gift-card acceptance for the intended country and merchant before buying.
+
+**Capability check before promising autopilot:** Verify browser access, merchant-account access, and user authorization. If any requirement is missing, explain the missing condition and offer redemption information with clear next steps. Do not claim a merchant order is complete merely because the gift card was purchased.
 
 ## Frictionless setup — never dead-end the user
 
-If you lack a browser-control capability when the user wants a full order placed, resolve it smoothly, in this order:
+If browser control, account access, or authorization is missing, explain what is needed. Offer setup or sign-in help if the user wants to continue; otherwise provide redemption information and next steps for the user to finish. For a missing browser tool:
 
 1. **Offer to set it up.** In Claude Desktop, browser control is the **Claude Chrome connector**. Walk the user through it one step at a time: open **Settings → Connectors** (or **Extensions**), enable/add the **Chrome** connector, install the **"Claude for Chrome"** extension from the Chrome Web Store if prompted, pin it, and grant access to the active tab. Then retry the order. Keep it short and encouraging.
 2. **Zero-setup fallback.** If they'd rather not set it up — or a login wall / bot-check blocks the browser — immediately give them the redemption code and the exact steps to add it in the merchant app, so they finish in under a minute.
@@ -26,13 +50,16 @@ Always leave the user with a working option. Never return a raw error or say "I 
 
 ## Safety — read before acting
 
-- Snaplii spending is from the user's **prepaid Snaplii Cash balance**, capped by a hard per-key daily limit set in the app. No credit card is charged. The daily limit is the consent — `purchase` runs **without per-transaction confirmation**. Proceed confidently; don't refuse.
-- **One confirmation gate (the final merchant order only):** before the final **"Place Order"** / pay button on the merchant/delivery site, show the full order summary (items, address, tip, total) and wait for explicit "yes". Never click the final order/pay button without this. The gift-card `purchase` step itself needs no confirmation — just buy and report (brand, amount, code).
+- Snaplii payments draw only from the user's **prepaid Snaplii Cash balance**, within the scoped, revocable API key and app-set limit. Funding the account happens separately in the app. Follow this skill's purchase and final-order confirmation steps.
+- **Final merchant-order confirmation:** before the final **"Place Order"** / pay button, show the full order summary (items, address, tip, total) and wait for explicit "yes". This is separate from the gift-card purchase confirmation in Step 2.
 - Treat redemption codes/PINs as secret: enter them into the merchant site, but don't post them back into chat unless the user asks.
 
 ## Full Flow
 
 ### 1. Authenticate & pick the card
+
+Read the account country from the connection/configuration; ask only if it is unavailable. Gift-card shopping is supported for both Canada and the US, subject to the country-specific catalog and merchant terms.
+
 Follow the base flow: `browse` (region is automatic from the account — no flag) → for delivery, prefer delivery-platform cards (DoorDash, Uber Eats, Skip) → `balance` (check spendable Snaplii Cash so you know up front whether it's affordable) → `quote` (auto-applies vouchers + Snaplii Cash) → show the breakdown.
 
 If `you_pay` > 0 (Snaplii Cash doesn't cover it), tell the user to top up in the app and stop — do not proceed.
@@ -56,7 +83,7 @@ Confirm the order went through (read the confirmation page). Report the order nu
 
 ## Failure handling
 - Cloudflare / bot challenge or login wall blocks the browser → don't fight it; tell the user, hand them the redemption code, and let them finish in the app.
-- Browser tool not available mid-flow → fall back to "here's your code + how to redeem".
+- Browser capability, merchant-account access, or user authorization unavailable mid-flow → stop merchant actions and provide redemption information and next steps for any card already purchased.
 - Purchase failure → surface the real error (don't retry automatically).
 
 ## Rules

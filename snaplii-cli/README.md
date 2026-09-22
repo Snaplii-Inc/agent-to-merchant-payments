@@ -1,6 +1,27 @@
 # snaplii-cli
 
-Command-line client for [Snaplii Agent-to-Merchant (A2M) payments](https://github.com/Snaplii-Inc/agent-to-merchant-payments). It lets AI agents and scripts buy gift cards from 500+ brands, pay bills, and send P2P transfers — all from a prepaid Snaplii Cash balance, with cashback on every purchase and no checkout or card sharing.
+Command-line client for [Snaplii Agent-to-Merchant (A2M) payments](https://github.com/Snaplii-Inc/agent-to-merchant-payments).
+
+Snaplii is a prepaid account that isolates funds for AI spending, making it safer and easier to authorize an AI agent to pay on your behalf. You set aside money as **Snaplii Cash** and control the agent's access through scoped, revocable API keys and spending limits set in the Snaplii app. Agent payments draw only from that prepaid balance; the agent does not get direct access to your bank accounts or credit cards.
+
+This is the asset-isolation model: separate the funds available to the agent from access to your other payment sources, then grant only the permissions and spending allowance needed for the task.
+
+## Availability by country
+
+| Account country | Save on spending with gift cards | Bill payments | P2P transfers |
+|---|---|---|---|
+| Canada (CA / CAD) | Available | Available for supported billers | Available to other Snaplii users |
+| United States (US / USD) | Available | Not available | Available to other Snaplii users |
+
+Gift-card brands, denominations, redemption terms, and savings depend on the account's country and the current catalog/quote. P2P transfers require the appropriate API-key scope and available transfer allowance. **Bill pay is available in Canada only.**
+
+## How Snaplii and agent tools work together
+
+Snaplii provides the gift card and redemption information needed for payment. Shopping, redeeming the card, and placing an order on a merchant website are carried out by agent tools with those capabilities.
+
+When the agent has **browser-control capability, the necessary merchant-account access, and user authorization**, it can connect Snaplii payment to a complete shopping flow: select items → obtain the appropriate gift card → redeem it with the merchant → place the order using the applicable confirmation steps. Check the merchant's acceptance and redemption terms before purchasing a card for that order.
+
+When those conditions are missing or the merchant flow is blocked, provide the user with the redemption information and clear next steps to finish in the merchant app or website. Describe this as the fallback for the current session, rather than the limit of all Snaplii-enabled workflows. Distinguish a successful gift-card purchase from a completed merchant order.
 
 Every command prints JSON, so any agent that can run a shell command can use it.
 
@@ -44,7 +65,7 @@ snaplii quote --item-id CB...-CT... --price 50       # price after voucher/cashb
 snaplii purchase --item-id CB...-CT... --price 50    # buy; pays from Snaplii Cash
 snaplii giftcard list                                # owned cards
 
-# Bill pay
+# Bill pay — Canada only; not available for US accounts
 snaplii billpay payees
 snaplii billpay save --payee-code PE... --first-name Alex --last-name Chen --amount 75.25 --account 1234567890
 snaplii billpay quote --pay-code PC... --price 75.25
@@ -57,7 +78,7 @@ snaplii transfer list
 ```
 
 - `--item-id` is `{cardBrandId}-{cardTemplateId}`; both come from `snaplii browse brand`.
-- Bill pay flow: `payees → detail → save (returns payCode) → quote → pay → result`.
+- For Canadian accounts only, bill pay flow: `payees → detail → save (returns payCode) → quote → pay → result`.
 - A new transfer stays cancellable (`transfer cancel`) for about 5 minutes, then sends automatically; `transfer finish` sends it immediately. `transfer status --wait` polls for the outcome, but its `--timeout` defaults to 120s — pass a larger value (e.g. `--timeout 330`) to poll through the whole cancellable window.
 - `snaplii help` and `snaplii <command> --help` list every flag.
 
@@ -70,7 +91,7 @@ snaplii transfer list
 | Balance & quotes | `balance [--country CA\|US]`, `quote --item-id ID --price P` |
 | Purchases | `purchase --item-id ID --price P`, `giftcard list`, `giftcard detail --card-no NO` |
 | Smart | `smart cashback --brand-id ID --amount A`, `smart dashboard` |
-| Bill pay | `billpay payees`, `billpay detail`, `billpay save`, `billpay vouchers`, `billpay quote`, `billpay pay`, `billpay result`, `billpay history` |
+| Bill pay (Canada only) | `billpay payees`, `billpay detail`, `billpay save`, `billpay vouchers`, `billpay quote`, `billpay pay`, `billpay result`, `billpay history` |
 | Transfers | `transfer create`, `transfer cancel`, `transfer finish`, `transfer status [--wait] [--timeout S]`, `transfer list` |
 | Maintenance | `update`, `help` |
 

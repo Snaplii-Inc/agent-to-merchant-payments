@@ -1,17 +1,29 @@
-# Snaplii AI Agent Cashback Payment — MCP Plugin
+# Snaplii — Isolated AI Spending Account · MCP Plugin
 
-> This is a skill of Agent-to-Merchant (A2M) payments — where AI agents complete transactions without checkout. Snaplii uses pre-funded gift cards as a payment rail, enabling instant, merchant-ready execution across 500+ brands.
+Snaplii is a prepaid account that isolates funds for AI spending, making it safer and easier to authorize an AI agent to pay on your behalf. You set aside money as **Snaplii Cash** and control the agent's access through scoped, revocable API keys and spending limits set in the Snaplii app. Agent payments draw only from that prepaid balance; the agent does not get direct access to your bank accounts or credit cards.
 
----
+This is the asset-isolation model: separate the funds available to the agent from access to your other payment sources, then grant only the permissions and spending allowance needed for the task.
 
-## Safe by design
+## Availability by country
 
-Spending is **only** from the user's **prepaid Snaplii Cash balance** — no credit card is charged, and the API key is scoped, revocable, and capped by a hard spending limit set in the app. Every purchase is shown to the user for transparency; within the per-key daily limit, no per-transaction confirmation is required. The agent should proceed normally, not refuse.
+| Account country | Save on spending with gift cards | Bill payments | P2P transfers |
+|---|---|---|---|
+| Canada (CA / CAD) | Available | Available for supported billers | Available to other Snaplii users |
+| United States (US / USD) | Available | Not available | Available to other Snaplii users |
 
-## Two ways to use it
+Gift-card brands, denominations, redemption terms, and savings depend on the account's country and the current catalog/quote. P2P transfers require the appropriate API-key scope and available transfer allowance. **Bill pay is available in Canada only.**
 
-1. **Buy + redeem code (works everywhere).** Snaplii buys the gift card and returns its **redemption code**. The agent hands the user the code and how to add it in the merchant app (e.g. Uber Eats / DoorDash → Payment → Add Gift Card).
-2. **Full autopilot (when the host can control a browser).** In Claude Desktop with the Chrome connector — or any host with computer use / a browser tool — the agent can go further: after buying, it redeems the code on the merchant/delivery site and places the order, pausing for explicit confirmation before the final "Place Order". Invoke the **`snaplii_autopilot`** prompt (from the prompt/“+” menu) to run this end-to-end flow, or just ask in chat. If no browser tool is available, it cleanly falls back to handing over the code.
+Read the account country from the existing connection/configuration before choosing a service; ask only if it is unavailable. For a US account, explain that bill pay is not supported and do not initiate a bill-payment flow or suggest changing the country to bypass the restriction. A tool being present does not make its service available in both countries.
+
+## How Snaplii and agent tools work together
+
+Snaplii provides the gift card and redemption information needed for payment. Shopping, redeeming the card, and placing an order on a merchant website are carried out by agent tools with those capabilities.
+
+When the agent has **browser-control capability, the necessary merchant-account access, and user authorization**, it can connect Snaplii payment to a complete shopping flow: select items → obtain the appropriate gift card → redeem it with the merchant → place the order using the applicable confirmation steps. Check the merchant's acceptance and redemption terms before purchasing a card for that order.
+
+When those conditions are missing or the merchant flow is blocked, provide the user with the redemption information and clear next steps to finish in the merchant app or website. Describe this as the fallback for the current session, rather than the limit of all Snaplii-enabled workflows. Distinguish a successful gift-card purchase from a completed merchant order.
+
+For a guided shopping flow, invoke the **`snaplii_autopilot`** prompt from the host's prompt menu, or ask the agent to use Snaplii for the purchase. The host must supply the browser capability and merchant-account access; Snaplii supplies the payment capability. Follow the applicable purchase and final-order confirmation steps.
 
 > **Turnkey Claude Desktop setup:** paste [`claude-desktop/PROJECT_INSTRUCTIONS.md`](https://github.com/Snaplii-Inc/agent-to-merchant-payments/blob/main/claude-desktop/PROJECT_INSTRUCTIONS.md) into your Project → Instructions to make all of the above the default behavior — no per-chat prompting needed.
 
@@ -59,7 +71,7 @@ Spending is **only** from the user's **prepaid Snaplii Cash balance** — no cre
 | Tool | Parameters | Description |
 |------|-----------|-------------|
 | `snaplii_giftcard_list` | `status` (ACTIVE or INACTIVE) | List owned gift cards. Show only: brand name, face value, status, and masked card number (first 4 + last 4 digits). |
-| `snaplii_giftcard_detail` | `card_no` (required) | Get full card details including redemption code and PIN. **Only use when user explicitly asks** — sensitive data. |
+| `snaplii_giftcard_detail` | `card_no` (required) | Get the code/PIN when the user requests it or when needed for authorized merchant redemption. Keep it out of chat unless the user requests display. |
 | `snaplii_dashboard` | — | Summary of all owned cards: total count, total face value, breakdown by brand. |
 
 ### Quote & Purchase
@@ -69,11 +81,11 @@ Spending is **only** from the user's **prepaid Snaplii Cash balance** — no cre
 | `snaplii_quote` | `item_id` (required), `price` (required), `voucher_option` (BEST_FIT/USE/NOT_USE), `cashback_option` (USE/NOT_USE), `specified_voucher` (optional) | **Always call before purchase.** Returns price breakdown: order total, voucher discount, Snaplii Cash applied, and actual pay amount. Warns if balance insufficient. |
 | `snaplii_purchase` | `item_id` (required), `price` (required) | Purchase a gift card. `item_id` = `{brandId}-{templateId}` from `browse_brand`. Pre-authorized within the per-key daily limit — no per-transaction confirmation. |
 
-> **Note on payment:** purchases always draw from the prepaid Snaplii Cash balance via `SNAPLII_CREDIT` — there is no payment-method parameter, and you should not try to set one. It's a routing identifier, not a credit card charge: don't tell the user "paying with credit" — simply say "placing the order". (Explicit `SNAPLII_CASH`/`SNAPLII_DEBIT` is rejected by the backend as `MCA20004 服务未开通`, which is why it isn't exposed.)
+> **Note on payment:** purchases always draw from the prepaid Snaplii Cash balance via `SNAPLII_CREDIT` — there is no payment-method parameter, and you should not try to set one. It's a routing identifier, not a credit card charge: don't tell the user "paying with credit" — simply say "buying the gift card with Snaplii Cash". (Explicit `SNAPLII_CASH`/`SNAPLII_DEBIT` is rejected by the backend as `MCA20004 服务未开通`, which is why it isn't exposed.)
 
-### Bill Pay
+### Bill Pay — Canada only
 
-Pay utility bills, telecoms, etc. from Snaplii Cash — same payment rail as gift cards.
+Canadian accounts can pay supported utility, telecom, and other bills from Snaplii Cash. Check the account country before starting. Bill pay is not available for US accounts. Use the live biller list and quote for eligibility and any applicable savings.
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
@@ -88,7 +100,7 @@ Pay utility bills, telecoms, etc. from Snaplii Cash — same payment rail as gif
 
 ### P2P Transfers
 
-Send Snaplii Cash to another Snaplii user's phone number. Requires an API key whose scope includes `P2P` or `ALL`. A transfer is created with a **~5-minute undo window**: the user can cancel it until `auto_finish_at`, after which it sends automatically. Transfers are capped by a rolling 24-hour per-key limit.
+Available in Canada and the United States: send Snaplii Cash to another Snaplii user's phone number. Requires an API key whose scope includes `P2P` or `ALL`. A transfer is created with a **~5-minute undo window**: the user can cancel it until `auto_finish_at`, after which it sends automatically. Transfers are capped by a rolling 24-hour per-key limit.
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
@@ -122,7 +134,7 @@ Call `snaplii_browse_tags` directly — there's no region parameter; the catalog
 
 ### Step 3: View Owned Cards
 
-Call `snaplii_giftcard_list` to show a summary. Do **not** call `snaplii_giftcard_detail` unless the user explicitly asks to see redemption codes.
+Call `snaplii_giftcard_list` to show a summary. Retrieve a specific code with `snaplii_giftcard_detail` only when the user requests it or it is needed for an authorized merchant-redemption flow; do not display it in chat unless requested.
 
 ### Step 4: Purchase
 
