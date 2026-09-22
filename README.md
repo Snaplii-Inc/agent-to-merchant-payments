@@ -9,14 +9,35 @@ User → AI Agent → Snaplii → Merchant
 Snaplii provides the payment credentials, authorization boundary, and transaction execution layer required to connect AI agents with real-world commerce.
 
 Today, Snaplii supports payment use cases across Canada and the US, including merchant purchases, bill payments, and peer-to-peer transfers.
+## Why AI Agents Need a New Payment Layer
+
+AI agents are increasingly capable of:
+
+discovering products and services
+comparing options
+navigating merchant websites
+filling out forms
+completing checkout flows
+taking actions on behalf of users
+
+But payment remains a critical gap.
+
+Giving an agent direct access to a user's credit card, debit card, or bank account creates unnecessary exposure of sensitive financial credentials.
+The question is no longer:
+> Can AI agents shop?
+
+It's:
+How can AI agents pay safely?
+> Snaplii is built to solve that problem.
+
 ## Availability by country
 
-| Account country | Save on spending with gift cards | Bill payments | P2P transfers |
+| Account country | Merchant purchases| Bill payments | P2P transfers |
 |---|---|---|---|
 | Canada (CA / CAD) | Available | Available for supported billers | Available to other Snaplii users |
 | United States (US / USD) | Available | Not available | Available to other Snaplii users |
 
-Gift-card brands, denominations, redemption terms, and savings depend on the account's country and the current catalog/quote. P2P transfers require the appropriate API-key scope and available transfer allowance. **Bill pay is available in Canada only.**
+The underlying payment capabilities can be accessed through APIs, MCP, CLI tools, and agent skills.
 
 ## How authorization works
 
@@ -26,15 +47,22 @@ Gift-card brands, denominations, redemption terms, and savings depend on the acc
 
 Gift-card purchases can help users save through eligible offers and cashback. Available brands and savings vary by country, brand, and current quote; merchant offers can be combined only where their terms allow.
 
-## How Snaplii and agent tools work together
+## Completing a Merchant Purchase
 
-Snaplii provides the gift card and redemption information needed for payment. Shopping, redeeming the card, and placing an order on a merchant website are carried out by agent tools with those capabilities.
+For merchant purchases, Snaplii provides the payment information required for the transaction while keeping the underlying payment credentials separated from the AI model.
 
-When the agent has **browser-control capability, the necessary merchant-account access, and user authorization**, it can connect Snaplii payment to a complete shopping flow: select items → obtain the appropriate gift card → redeem it with the merchant → place the order using the applicable confirmation steps. Check the merchant's acceptance and redemption terms before purchasing a card for that order.
+An agent can:
 
-When those conditions are missing or the merchant flow is blocked, provide the user with the redemption information and clear next steps to finish in the merchant app or website. Describe this as the fallback for the current session, rather than the limit of all Snaplii-enabled workflows. Distinguish a successful gift-card purchase from a completed merchant order.
+Understand the user's intent
+Navigate the merchant website
+Select the product or service
+Reach checkout
+Use Snaplii's authorized payment capability
+Complete the transaction
 
----
+When the agent has the required browser capabilities, account access, and user authorization, Snaplii can become part of the full shopping-to-payment workflow.
+
+When those conditions are not available, Snaplii can instead provide the agent with the payment or exchange information needed for the user to complete the next step.
 
 ## Works With Any LLM
 
