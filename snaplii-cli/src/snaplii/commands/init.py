@@ -14,16 +14,39 @@ def _derive_agent_id(api_key: str) -> str:
 
 @click.command("init")
 @click.option("--agent-id", default=None, help="Agent ID (optional — auto-derived from API key if omitted)")
+@click.option("--vault-auth", is_flag=True, default=False,
+              help="Authenticate with the API key stored in Muse's Secure Vault "
+                   "(custom.snaplii) via the Authorization header. Never prompts "
+                   "for the key, and the key itself is never visible to this process.")
 @click.pass_context
-def init_cmd(ctx, agent_id):
+def init_cmd(ctx, agent_id, vault_auth):
     """Login with API key and store credentials.
 
     API key is read from hidden stdin input — never passed as a CLI argument
     to avoid exposure in shell history and process listings.
     The API key is used only to obtain a token and is NOT stored.
+    With --vault-auth the key comes from the Secure Vault instead (via
+    Authorization header); agent_id must then be passed explicitly on first
+    run, or already be stored from a previous init.
     """
     client: GatewayClient = ctx.obj["client"]
     store = ctx.obj["config_store"]
+
+    if vault_auth:
+        agent_id = agent_id or store.get("agent_id")
+        if not agent_id:
+            raise click.ClickException(
+                "Vault auth needs an agent ID on first run: re-run with "
+                "--agent-id <id> (the agent-xxxxxxxx shown in the Snaplii app "
+                "under AI Payment Management).")
+        resp = client.login_via_vault(agent_id)
+        store.set("agent_id", agent_id)
+        safe = {k: v for k, v in resp.items() if k not in ("access_token", "token_type", "expires_in")}
+        safe["status"] = "authenticated"
+        safe["agent_id"] = agent_id
+        safe["auth_method"] = "vault"
+        print_json(safe)
+        return
 
     try:
         api_key = click.prompt("API key", hide_input=True)

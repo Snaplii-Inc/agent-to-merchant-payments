@@ -6,13 +6,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
-## [0.15.1] — 2026-09-23
+## [0.16.0] — 2026-09-23
 
 ### Added
+- **Secure Vault authentication.** `snaplii init --vault-auth --agent-id <id>` exchanges the API key stored as `custom.snaplii` through the vault's Authorization-header helper. The process handles a credential surrogate instead of the raw API key. Subsequent logins can reuse the stored agent ID; `SNAPLII_VAULT_HELPER_PATH` configures the helper directory.
 - **OpenAPI 3.1 specification.** `openapi.yaml` documents 19 gateway HTTP operations for API-key authentication, catalog browsing, owned gift cards, balance, checkout, bill payments, and P2P transfers. Includes request schemas, partial response schemas, examples, and transfer idempotency guidance.
 
 ### Fixed
-- **Package version consistency.** The CLI's `__version__` now matches its package metadata; the MCP package requires `snaplii-cli>=0.15.1`.
+- **Vault login error handling.** Vault login uses the existing token validation and business-error messages, reports transport and helper failures through the CLI's structured errors, and restores the Python import path after loading the helper. Failed authentication does not cache a token or persist the agent ID.
+- **Package version consistency.** The CLI's `__version__` now matches its package metadata; the MCP package requires `snaplii-cli>=0.16.0`.
 
 ---
 
@@ -309,7 +311,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 | Version | Date | Highlights |
 |---------|------|------------|
-| 0.15.1 | 2026-09-23 | OpenAPI specification for 19 gateway operations; package version consistency |
+| 0.16.0 | 2026-09-23 | Secure Vault authentication; OpenAPI specification for 19 gateway operations |
 | 0.15.0 | 2026-09-02 | P2P transfers to a phone number (26 MCP tools); `mcp<2` pin |
 | 0.14.1 | 2026-06-23 | Reject out-of-range gift-card amounts; capability-based connect |
 | 0.14.0 | 2026-06-19 | Off-model API-key entry via MCP Apps card; zero-confirmation flow |

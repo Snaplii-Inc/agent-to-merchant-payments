@@ -74,6 +74,76 @@ class GatewayClient:
             "agent_id": agent_id,
             "api_key": api_key,
         })
+        return self._finish_login(resp)
+
+    def login_via_vault(self, agent_id: str) -> dict:
+        """Exchange the Secure Vault API key for an access token without ever
+        handling the raw key.
+
+        The gateway accepts the API key in the Authorization header on
+        POST /v2/auth/token (verified 2026-09-23: body carries only agent_id).
+        We place authd's surrogate (hsurr:...) in the header via the
+        dynamic_credentials helper; the egress proxy swaps it for the real
+        vault value at request time, so this process never sees the key.
+        """
+        import json as _json
+        import os as _os
+        import sys as _sys
+        import urllib.error as _urlerror
+        import urllib.request as _urlrequest
+        from urllib.parse import urlparse as _urlparse
+
+        helper_path = _os.environ.get(
+            "SNAPLII_VAULT_HELPER_PATH", "/opt/hatch/skills/skill-creator/bin")
+        added_helper_path = helper_path not in _sys.path
+        if added_helper_path:
+            _sys.path.insert(0, helper_path)
+        try:
+            from dynamic_credentials import (
+                DynamicCredentialError,
+                add_surrogate_to_request,
+            )
+        except ImportError as e:
+            raise ConfigError(
+                "Vault auth needs the dynamic_credentials helper "
+                f"({helper_path}/dynamic_credentials.py). Set "
+                "SNAPLII_VAULT_HELPER_PATH to its directory, or run "
+                "'snaplii init' with an API key instead."
+            ) from e
+        finally:
+            # The helper directory is needed only while importing it.
+            if added_helper_path:
+                _sys.path.remove(helper_path)
+
+        url = f"{self._base_url}/v2/auth/token"
+        host = _urlparse(self._base_url).hostname or ""
+        req = _urlrequest.Request(
+            url,
+            data=_json.dumps({"agent_id": agent_id}).encode(),
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            add_surrogate_to_request(req, "custom.snaplii", allowed_hosts=(host,))
+        except DynamicCredentialError as e:
+            raise ConfigError(f"Secure Vault credential unavailable: {e}") from e
+
+        try:
+            with _urlrequest.urlopen(req, timeout=30) as resp:
+                raw = resp.read().decode("utf-8", "replace")
+                status = resp.status
+        except _urlerror.HTTPError as e:
+            raw = e.read().decode("utf-8", "replace")
+            status = e.code
+        except _urlerror.URLError as e:
+            raise GatewayConnectionError(url, e) from e
+        # Keep normalization and business-error messages shared with API-key login.
+        body = self._parse_response(
+            httpx.Response(status, text=raw), "/v2/auth/token")
+        return self._finish_login(body)
+
+    def _finish_login(self, resp: dict) -> dict:
+        """Shared tail of every login path: validate the token and cache it."""
         body = resp if isinstance(resp, dict) else {"raw": resp}
         token = body.get("access_token")
         if not token:
@@ -97,10 +167,10 @@ class GatewayClient:
         # it here, cache it so balance/quote can label the local currency exactly
         # (CA=CAD, US=USD) instead of relying on an agent-supplied --country guess.
         # Falls back gracefully: older gateways omit it and the flag still works.
-        country = resp.get("country")
+        country = body.get("country")
         if country:
             self._config.set("country", str(country).upper())
-        return resp
+        return body
 
     def poll_connect_token(self, eid: str) -> dict | None:
         """Take the token the gateway parked under `eid` after the user submitted

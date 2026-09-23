@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Snaplii Agent-to-Merchant Payments Gateway API
-  version: 0.15.1
+  version: 0.16.0
   description: |-
     Browse gift cards, make purchases, pay bills, and transfer funds.
     Exchange an API key for an access token to call protected operations.
