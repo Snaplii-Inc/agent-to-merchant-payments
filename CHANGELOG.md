@@ -6,6 +6,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
+## [0.15.1] — 2026-09-23
+
+### Added
+- **OpenAPI 3.1 specification.** `openapi.yaml` documents 19 gateway HTTP operations for API-key authentication, catalog browsing, owned gift cards, balance, checkout, bill payments, and P2P transfers. Includes request schemas, partial response schemas, examples, and transfer idempotency guidance.
+
+### Fixed
+- **Package version consistency.** The CLI's `__version__` now matches its package metadata; the MCP package requires `snaplii-cli>=0.15.1`.
+
+---
+
 ## [0.15.0] — 2026-09-02
 
 ### Added
@@ -299,6 +309,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.15.1 | 2026-09-23 | OpenAPI specification for 19 gateway operations; package version consistency |
 | 0.15.0 | 2026-09-02 | P2P transfers to a phone number (26 MCP tools); `mcp<2` pin |
 | 0.14.1 | 2026-06-23 | Reject out-of-range gift-card amounts; capability-based connect |
 | 0.14.0 | 2026-06-19 | Off-model API-key entry via MCP Apps card; zero-confirmation flow |

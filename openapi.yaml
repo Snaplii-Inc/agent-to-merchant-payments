@@ -1,0 +1,1254 @@
+openapi: 3.1.0
+info:
+  title: Snaplii Agent-to-Merchant Payments Gateway API
+  version: 0.15.1
+  description: |-
+    Browse gift cards, make purchases, pay bills, and transfer funds.
+    Exchange an API key for an access token to call protected operations.
+  x-source-files:
+  - snaplii-cli/src/snaplii/client.py
+  - snaplii-cli/src/snaplii/commands/
+  - mcp-server/server.py
+  - tests/
+  - README.md
+servers:
+- url: https://aipayment.snaplii.com
+  description: Gateway URL configured by default in the client
+security:
+- BearerAuth: []
+tags:
+- name: Authentication
+  description: API-key exchange for session tokens.
+- name: Catalog
+  description: Account-scoped gift-card brands and denominations.
+- name: Gift cards
+  description: Owned gift cards and redemption details.
+- name: Balance
+  description: Spendable Snaplii Cash in the account currency.
+- name: Checkout
+  description: Shared quote and purchase operations for gift cards and bills.
+- name: Bill payments
+  description: Canadian billers, saved instructions, vouchers, and payment results.
+- name: Transfers
+  description: P2P transfers; the API key needs P2P or ALL scope.
+paths:
+  /v2/auth/token:
+    post:
+      tags:
+      - Authentication
+      operationId: createAccessToken
+      summary: Exchange an API key for a session token
+      description: 'Send agent_id in JSON and the API key as api_key in JSON or Authorization: Bearer <api key>.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRequest'
+            examples:
+              bodyKey:
+                summary: API key in JSON
+                value:
+                  agent_id: my-agent
+                  api_key: snp_sk_live_REPLACE_ME
+              headerKey:
+                summary: API key in header
+                description: 'Authorization: Bearer snp_sk_live_REPLACE_ME'
+                value:
+                  agent_id: my-agent
+      responses:
+        '200':
+          description: Gateway response. Inspect business error fields even when HTTP status is 200.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                - $ref: '#/components/schemas/TokenResponse'
+                - $ref: '#/components/schemas/GatewayError'
+            text/plain:
+              schema:
+                type: string
+                description: Authentication failure text; no token was issued.
+        default:
+          $ref: '#/components/responses/GatewayError'
+      security:
+      - {}
+      - ApiKeyAuthorization: []
+  /v2/card-brands:
+    get:
+      tags:
+      - Catalog
+      operationId: listCardBrands
+      summary: Browse card categories and brands
+      description: Catalog is scoped to the authenticated account country. No locationProv parameter is
+        sent.
+      parameters:
+      - name: channel
+        in: query
+        description: Catalog channel; client default is HOME_PAGE.
+        schema:
+          type: string
+          default: HOME_PAGE
+      responses:
+        '200':
+          description: Gateway response. Inspect business error fields even when HTTP status is 200.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogResponse'
+        default:
+          $ref: '#/components/responses/GatewayError'
+  /v2/card-brands/{card_brand_id}:
+    get:
+      tags:
+      - Catalog
+      operationId: getCardBrand
+      summary: Get brand details and denominations
+      description: Before quote/purchase, check the selected template denomination. FIXED requires the
+        exact priceStart; VARIABLE requires an amount between priceStart and priceEnd. The repository
+        documents orders failing after payment when clients skip this check; do not rely on quote success
+        as denomination validation.
+      parameters:
+      - name: card_brand_id
+        in: path
+        required: true
+        description: Card brand identifier.
+        schema:
+          type: string
+      - name: showDetail
+        in: query
+        description: The client explicitly sends showDetail=true.
+        schema:
+          type: boolean
+          default: true
+      responses:
+        '200':
+          description: Gateway response. Inspect business error fields even when HTTP status is 200.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CardBrandResponse'
+        default:
+          $ref: '#/components/responses/GatewayError'
+  /v2/cards:
+    get:
+      tags:
+      - Gift cards
+      operationId: listOwnedCards
+      summary: List owned gift cards
+      parameters:
+      - name: status
+        in: query
+        description: Card status filter.
+        schema:
+          type: string
+          default: ACTIVE
+          enum:
+          - ACTIVE
+          - INACTIVE
+      - name: page
+        in: query
+        description: Page number; client starts at 1.
+        schema:
+          type: integer
+          default: 1
+      - name: pageSize
+        in: query
+        description: Rows per page. Uses camelCase, unlike transfer pagination.
+        schema:
+          type: integer
+          default: 20
+      responses:
+        '200':
+          description: Gateway response. Inspect business error fields even when HTTP status is 200.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnedCardList'
+        default:
+          $ref: '#/components/responses/GatewayError'
+  /v2/cards/{card_no}:
+    get:
+      tags:
+      - Gift cards
+      operationId: getOwnedCard
+      summary: Get gift-card redemption details
+      description: May contain redemption code and PIN. This repository forwards the raw response without
+        defining its field names. The MCP _sensitive wrapper is added locally.
+      parameters:
+      - name: card_no
+        in: path
+        required: true
+        description: Owned card number.
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Gateway response. Inspect business error fields even when HTTP status is 200.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayObject'
+        default:
+          $ref: '#/components/responses/GatewayError'
+  /v2/balance:
+    get:
+      tags:
+      - Balance
+      operationId: getBalance
+      summary: Get spendable Snaplii Cash balance
+      description: The balance is in the account currency (CA=CAD, US=USD). The CLI country flag labels
+        the output locally; there is no country query parameter on this request.
+      responses:
+        '200':
+          description: Gateway response. Inspect business error fields even when HTTP status is 200.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceResponse'
+        default:
+          $ref: '#/components/responses/GatewayError'
+  /v2/quote:
+    post:
+      tags:
+      - Checkout
+      operationId: quoteOrder
+      summary: Quote a gift card or bill payment
+      description: Supports GIFT_CARD and BILL_PAY. For bills, save the instruction first and use its
+        payCode as itemId. Bills are Canada-only. For gift cards, validate the amount against the brand
+        denomination before quoting. A positive primaryPayAmount means Snaplii Cash did not fully cover
+        the order.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuoteRequest'
+            examples:
+              giftCard:
+                value:
+                  orderInfo:
+                    orderType: GIFT_CARD
+                    item:
+                      itemId: CB_EXAMPLE-CT_EXAMPLE
+                      price: '50.00'
+                    orderContext:
+                      giftOrder: 'false'
+                    businessChannel: APP
+                  paymentContext:
+                    specifiedPrimaryPaymentMethod: SNAPLII_CREDIT
+                    voucherOption: BEST_FIT
+                    cashbackOption: USE
+              billPayment:
+                value:
+                  orderInfo:
+                    orderType: BILL_PAY
+                    item:
+                      itemId: PAY_EXAMPLE
+                      price: '50.00'
+                    orderContext:
+                      giftOrder: 'false'
+                    businessChannel: APP
+                  paymentContext:
+                    specifiedPrimaryPaymentMethod: SNAPLII_CREDIT
+                    voucherOption: BEST_FIT
+                    cashbackOption: USE
+      responses:
+        '200':
+          description: Gateway response. Inspect business error fields even when HTTP status is 200.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuoteResponse'
+        default:
+          $ref: '#/components/responses/GatewayError'
+  /v2/purchase:
+    post:
+      tags:
+      - Checkout
+      operationId: purchaseOrder
+      summary: Create and pay for a gift card or bill
+      description: Spends Snaplii Cash within API-key permissions and limits. Check the quote and gift-card
+        denomination before purchasing. Use delivery.immediateSend="true" for GIFT_CARD and "false" for
+        BILL_PAY. Bills are Canada-only. The client sends no idempotency header on this operation. After
+        an ambiguous failure, inspect owned cards or bill payment status before submitting another purchase.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseRequest'
+            examples:
+              giftCard:
+                value:
+                  orderInfo:
+                    orderType: GIFT_CARD
+                    item:
+                      itemId: CB_EXAMPLE-CT_EXAMPLE
+                      price: '50.00'
+                    orderContext:
+                      giftOrder: 'false'
+                    businessChannel: APP
+                  paymentContext:
+                    specifiedPrimaryPaymentMethod: SNAPLII_CREDIT
+                    voucherOption: BEST_FIT
+                    cashbackOption: USE
+                  delivery:
+                    type: WALLET
+                    immediateSend: 'true'
+              billPayment:
+                value:
+                  orderInfo:
+                    orderType: BILL_PAY
+                    item:
+                      itemId: PAY_EXAMPLE
+                      price: '50.00'
+                    orderContext:
+                      giftOrder: 'false'
+                    businessChannel: APP
+                  paymentContext:
+                    specifiedPrimaryPaymentMethod: SNAPLII_CREDIT
+                    voucherOption: BEST_FIT
+                    cashbackOption: USE
+                  delivery:
+                    type: WALLET
+                    immediateSend: 'false'
+      responses:
+        '200':
+          description: Gateway response. Inspect business error fields even when HTTP status is 200.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseResponse'
+        default:
+          $ref: '#/components/responses/GatewayError'
+  /v2/billpay/payees:
+    get:
+      tags:
+      - Bill payments
+      operationId: listBillPayees
+      summary: List available billers
+      responses:
+        '200':
+          description: Gateway response. Inspect business error fields even when HTTP status is 200.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayeeList'
+        default:
+          $ref: '#/components/responses/GatewayError'
+  /v2/billpay/payees/{payee_code}:
+    get:
+      tags:
+      - Bill payments
+      operationId: getBillPayee
+      summary: Get biller details and account validation rules
+      parameters:
+      - name: payee_code
+        in: path
+        required: true
+        description: Biller code from the payee list.
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Gateway response. Inspect business error fields even when HTTP status is 200.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payee'
+        default:
+          $ref: '#/components/responses/GatewayError'
+  /v2/billpay/payees/{payee_code}/history:
+    get:
+      tags:
+      - Bill payments
+      operationId: getBillPayeeHistory
+      summary: Get previous bill instruction details for autofill
+      description: The client forwards this response unchanged; history fields are not defined in this
+        repository.
+      parameters:
+      - name: payee_code
+        in: path
+        required: true
+        description: Biller code from the payee list.
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Gateway response. Inspect business error fields even when HTTP status is 200.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayObject'
+        default:
+          $ref: '#/components/responses/GatewayError'
+  /v2/billpay/save:
+    post:
+      tags:
+      - Bill payments
+      operationId: saveBillInstruction
+      summary: Save a bill payment instruction
+      description: Returns payCode for voucher lookup, quote, and purchase. Saving an instruction does
+        not pay the bill.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillInstructionRequest'
+      responses:
+        '200':
+          description: Gateway response. Inspect business error fields even when HTTP status is 200.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillInstructionResponse'
+        default:
+          $ref: '#/components/responses/GatewayError'
+  /v2/billpay/vouchers:
+    post:
+      tags:
+      - Bill payments
+      operationId: listBillVouchers
+      summary: List vouchers for a saved bill instruction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillVoucherRequest'
+      responses:
+        '200':
+          description: Gateway response. Inspect business error fields even when HTTP status is 200.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillVoucherResponse'
+        default:
+          $ref: '#/components/responses/GatewayError'
+  /v2/billpay/pay-result:
+    post:
+      tags:
+      - Bill payments
+      operationId: getBillPaymentResult
+      summary: Check bill payment status
+      description: Read-only status lookup using POST. Use paymentNo from purchase; poll again while paySts
+        is 3.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillResultRequest'
+      responses:
+        '200':
+          description: Gateway response. Inspect business error fields even when HTTP status is 200.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillResultResponse'
+        default:
+          $ref: '#/components/responses/GatewayError'
+  /v2/transfers:
+    get:
+      tags:
+      - Transfers
+      operationId: listTransfers
+      summary: List transfers, newest first
+      parameters:
+      - name: status
+        in: query
+        description: Optional comma-separated status filter.
+        schema:
+          type: string
+          examples:
+          - PENDING,FINISHED
+      - name: page
+        in: query
+        description: One-based page number.
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+      - name: page_size
+        in: query
+        description: Rows per page; uses snake_case.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      responses:
+        '200':
+          description: Transfer list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferList'
+        default:
+          $ref: '#/components/responses/TransferError'
+    post:
+      tags:
+      - Transfers
+      operationId: createTransfer
+      summary: Create a cancellable P2P transfer
+      description: New transfers remain cancellable until auto_finish_at (normally about five minutes),
+        then send automatically. Disclose the recipient amount/currency if conversion applies. Use a fresh
+        Idempotency-Key for each new intent; after 202 CREATING or an indeterminate timeout, retry only
+        the identical request with the SAME key. Wait retry_after_seconds if supplied, or inspect the
+        transfer list. A fresh key in this case can duplicate the transfer. QUOTE_EXPIRED is a distinct
+        error for which the client advises a new request with a fresh key. The CLI generates and echoes
+        a key locally; direct HTTP callers must supply and retain their own.
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        description: Unique key per new transfer; reuse only for the identical retry. The client generates
+          a 32-character UUID hex value.
+        schema:
+          type: string
+        example: a8d82770bf5742e3911709bbd5d9a730
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferCreateRequest'
+      responses:
+        '200':
+          description: Existing transfer returned on idempotent replay.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transfer'
+        '201':
+          description: Transfer created; normally PENDING.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transfer'
+        '202':
+          description: Creation unresolved (CREATING). Retry the identical request with the same key after
+            the indicated delay.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transfer'
+        default:
+          $ref: '#/components/responses/TransferError'
+        '400':
+          description: Invalid request; errors may contain field-specific messages.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferError'
+        '403':
+          description: Transfer permission or spending limit rejected.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferError'
+        '409':
+          description: Conflict, including IDEMPOTENCY_MISMATCH or QUOTE_EXPIRED. Inspect code before
+            choosing a retry strategy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferError'
+        '422':
+          description: Business rejection, such as insufficient balance. Inspect code and message.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferError'
+  /v2/transfers/{order_no}:
+    get:
+      tags:
+      - Transfers
+      operationId: getTransfer
+      summary: Get transfer status
+      description: Poll while nonterminal; FINISHED, CANCELLED, and FAILED are terminal. Inspect fail_code
+        and fail_reason on failure.
+      parameters:
+      - name: order_no
+        in: path
+        required: true
+        description: Transfer order number.
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Current transfer state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transfer'
+        default:
+          $ref: '#/components/responses/TransferError'
+  /v2/transfers/{order_no}/cancel:
+    post:
+      tags:
+      - Transfers
+      operationId: cancelTransfer
+      summary: Cancel a pending transfer
+      description: Allowed until auto_finish_at. No request body is sent. A CANCELLING status means upstream
+        cancellation is not yet confirmed; poll GET /v2/transfers/{order_no} for the final state.
+      parameters:
+      - name: order_no
+        in: path
+        required: true
+        description: Transfer order number.
+        schema:
+          type: string
+      responses:
+        2XX:
+          description: Cancellation result (CANCELLED or CANCELLING). The precise success HTTP status
+            is not specified by the client.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transfer'
+        default:
+          $ref: '#/components/responses/TransferError'
+  /v2/transfers/{order_no}/finish:
+    post:
+      tags:
+      - Transfers
+      operationId: finishTransfer
+      summary: Request immediate settlement of a pending transfer
+      description: 'Moves auto_finish_at to now, shortening the undo window. Call when the user explicitly
+        asks to send now. No request body is sent. The response can remain PENDING: settlement runs in
+        the background, normally within about 15 seconds. Poll GET /v2/transfers/{order_no} for the outcome.'
+      parameters:
+      - name: order_no
+        in: path
+        required: true
+        description: Transfer order number.
+        schema:
+          type: string
+      responses:
+        2XX:
+          description: Settlement requested; this is not confirmation of a finished transfer. The exact
+            success HTTP status is unspecified.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transfer'
+        default:
+          $ref: '#/components/responses/TransferError'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: access_token returned by POST /v2/auth/token.
+    ApiKeyAuthorization:
+      type: http
+      scheme: bearer
+      bearerFormat: API key
+      description: API key for token exchange.
+  responses:
+    GatewayError:
+      description: Gateway HTTP error. Legacy business codes can also appear in a 2xx response. Plain-text
+        errors are possible; the client-created raw/friendly_message fields are not wire fields.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/GatewayError'
+        text/plain:
+          schema:
+            type: string
+    TransferError:
+      description: Transfer error or per-field validation failure. Inspect code, message, retryable, and
+        errors; retryable alone does not mean to create another transfer.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TransferError'
+  schemas:
+    GatewayObject:
+      type: object
+      description: Partial gateway object. Its complete fields are not defined in this repository.
+      additionalProperties: true
+    Amount:
+      type: string
+      examples:
+      - '50.00'
+      description: Decimal amount sent as a JSON string in the account currency.
+    AmountValue:
+      type:
+      - string
+      - number
+      - 'null'
+      description: Amount or rate read by the client; the gateway representation is not fully specified.
+      examples:
+      - '12.50'
+    GatewayError:
+      type: object
+      description: Partial legacy error body; some failures use only message or return plain text.
+      properties:
+        rspMsgCd:
+          type: string
+          description: Nonempty business codes not ending in 00000 are failures.
+        rspMsgInf:
+          type: string
+        rspMsgInfo:
+          type: string
+        message:
+          type:
+          - string
+          - 'null'
+      additionalProperties: true
+    TokenRequest:
+      type: object
+      required:
+      - agent_id
+      properties:
+        agent_id:
+          type: string
+          examples:
+          - my-agent
+          description: Caller-defined agent identifier.
+        api_key:
+          type: string
+          writeOnly: true
+          description: Required unless supplied in the Authorization header.
+      additionalProperties: true
+    TokenResponse:
+      type: object
+      required:
+      - access_token
+      properties:
+        access_token:
+          type: string
+          description: Session bearer token.
+        expires_in:
+          type: integer
+          description: Token lifetime in seconds. If omitted, the client uses 3600 seconds.
+        country:
+          type: string
+          examples:
+          - CA
+          - US
+          description: Account country; older gateways may omit it.
+      additionalProperties: true
+    FaceValueRules:
+      type: object
+      description: FIXED uses priceStart as the exact denomination. VARIABLE uses priceStart and priceEnd
+        as inclusive bounds.
+      properties:
+        type:
+          type: string
+          enum:
+          - FIXED
+          - VARIABLE
+        priceStart:
+          $ref: '#/components/schemas/AmountValue'
+        priceEnd:
+          $ref: '#/components/schemas/AmountValue'
+      additionalProperties: true
+    CardTemplate:
+      type: object
+      description: Known template fields; discount values are cashback percentages.
+      properties:
+        cardTemplateId:
+          type: string
+        faceValueRules:
+          $ref: '#/components/schemas/FaceValueRules'
+        discount:
+          $ref: '#/components/schemas/AmountValue'
+        regularDiscount:
+          $ref: '#/components/schemas/AmountValue'
+      additionalProperties: true
+    CardBrand:
+      type: object
+      properties:
+        cardBrandId:
+          type: string
+        cards:
+          type: array
+          items:
+            $ref: '#/components/schemas/CardTemplate'
+      additionalProperties: true
+    CardBrandResponse:
+      anyOf:
+      - $ref: '#/components/schemas/CardBrand'
+      - type: object
+        properties:
+          data:
+            $ref: '#/components/schemas/CardBrand'
+        additionalProperties: true
+      description: The client accepts a direct brand object or an existing data envelope.
+    CatalogResponse:
+      anyOf:
+      - type: array
+        items:
+          $ref: '#/components/schemas/GatewayObject'
+      - type: object
+        properties:
+          data:
+            type: array
+            items:
+              $ref: '#/components/schemas/GatewayObject'
+        additionalProperties: true
+      description: The gateway can return a raw array; the client wraps it under data. Category/brand
+        entry fields are unspecified.
+    OwnedCard:
+      type: object
+      description: Partial card summary consumed by the dashboard. Redemption-detail field names are not
+        defined in this repository.
+      properties:
+        cardBrandId:
+          type: string
+        faceValue:
+          $ref: '#/components/schemas/AmountValue'
+        cardTemplate:
+          type: object
+          properties:
+            desc:
+              type: object
+              properties:
+                name:
+                  type: string
+              additionalProperties: true
+          additionalProperties: true
+      additionalProperties: true
+    OwnedCardList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OwnedCard'
+      additionalProperties: true
+    BalanceResponse:
+      anyOf:
+      - type: object
+        properties:
+          balance:
+            $ref: '#/components/schemas/AmountValue'
+        additionalProperties: true
+      - type: object
+        properties:
+          data:
+            type: object
+            properties:
+              balance:
+                $ref: '#/components/schemas/AmountValue'
+            additionalProperties: true
+        additionalProperties: true
+      description: Direct balance or data.balance, as accepted by the CLI. Currency is inferred locally
+        from account country, not returned by this endpoint.
+    OrderItem:
+      type: object
+      required:
+      - itemId
+      - price
+      properties:
+        itemId:
+          type: string
+          description: For GIFT_CARD use {cardBrandId}-{cardTemplateId}; for BILL_PAY use payCode from
+            /v2/billpay/save.
+        price:
+          $ref: '#/components/schemas/Amount'
+      additionalProperties: true
+    OrderContext:
+      type: object
+      required:
+      - giftOrder
+      properties:
+        giftOrder:
+          type: string
+          enum:
+          - 'false'
+          description: The client sends the string false, not a JSON boolean.
+      additionalProperties: true
+    OrderInfo:
+      type: object
+      required:
+      - orderType
+      - item
+      - orderContext
+      - businessChannel
+      properties:
+        orderType:
+          type: string
+          enum:
+          - GIFT_CARD
+          - BILL_PAY
+        item:
+          $ref: '#/components/schemas/OrderItem'
+        orderContext:
+          $ref: '#/components/schemas/OrderContext'
+        businessChannel:
+          type: string
+          enum:
+          - APP
+      additionalProperties: true
+    PaymentContext:
+      type: object
+      required:
+      - specifiedPrimaryPaymentMethod
+      - voucherOption
+      - cashbackOption
+      properties:
+        specifiedPrimaryPaymentMethod:
+          type: string
+          default: SNAPLII_CREDIT
+          examples:
+          - SNAPLII_CREDIT
+          description: Client-supported payment method is Snaplii Cash.
+        specifiedPrimaryPaymentToken:
+          type: string
+          writeOnly: true
+          description: Optional payment token accepted by the gift-card client method.
+        voucherOption:
+          type: string
+          enum:
+          - BEST_FIT
+          - USE
+          - NOT_USE
+          default: BEST_FIT
+        cashbackOption:
+          type: string
+          enum:
+          - USE
+          - NOT_USE
+          default: USE
+        specifiedVoucher:
+          type: string
+          description: Specific voucher ID. Set voucherOption to USE when selecting a voucher; purchase
+            and bill-pay helpers do this automatically.
+      additionalProperties: true
+    QuoteRequest:
+      type: object
+      required:
+      - orderInfo
+      - paymentContext
+      properties:
+        orderInfo:
+          $ref: '#/components/schemas/OrderInfo'
+        paymentContext:
+          $ref: '#/components/schemas/PaymentContext'
+      additionalProperties: true
+    Delivery:
+      type: object
+      required:
+      - type
+      - immediateSend
+      properties:
+        type:
+          type: string
+          enum:
+          - WALLET
+        immediateSend:
+          type: string
+          enum:
+          - 'true'
+          - 'false'
+          description: String true for gift cards, string false for bill payments.
+      additionalProperties: true
+    PurchaseRequest:
+      type: object
+      required:
+      - orderInfo
+      - paymentContext
+      - delivery
+      properties:
+        orderInfo:
+          $ref: '#/components/schemas/OrderInfo'
+        paymentContext:
+          $ref: '#/components/schemas/PaymentContext'
+        delivery:
+          $ref: '#/components/schemas/Delivery'
+      additionalProperties: true
+    QuoteResponse:
+      type: object
+      properties:
+        orderAmount:
+          $ref: '#/components/schemas/AmountValue'
+        primaryPayAmount:
+          $ref: '#/components/schemas/AmountValue'
+        voucherAmount:
+          $ref: '#/components/schemas/AmountValue'
+        cashbackUseAmount:
+          $ref: '#/components/schemas/AmountValue'
+        subsidyAmount:
+          $ref: '#/components/schemas/AmountValue'
+        commissionAmount:
+          $ref: '#/components/schemas/AmountValue'
+        voucherName:
+          type: string
+      additionalProperties: true
+      description: Known raw quote fields. primaryPayAmount is the remainder after applied funds/discounts;
+        zero does not mean the order is free.
+    PurchaseResponse:
+      type: object
+      properties:
+        orderNo:
+          type: string
+        paymentNo:
+          type: string
+        orderStatus:
+          type: string
+          description: Known values include SUCCESS, WAIT_DELIVER, and APPLY_REFUND; not an exhaustive
+            enum.
+        h5PayUrl:
+          type: string
+          description: An external payment URL may be returned when Snaplii Cash does not cover the order.
+      additionalProperties: true
+    Payee:
+      type: object
+      properties:
+        payeeCode:
+          type: string
+        payeeNameEn:
+          type: string
+        payeeNameBillPay:
+          type: string
+        payeeMcc:
+          type: string
+        accountTypeEn:
+          type: string
+        accountRegex:
+          type: string
+        payeeTipsEn:
+          type: string
+      additionalProperties: true
+    PayeeList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Payee'
+      additionalProperties: true
+    BillInstructionRequest:
+      type: object
+      required:
+      - payeeCode
+      - userFirstName
+      - userLastName
+      - payAmount
+      - userAccount
+      - picUrlList
+      properties:
+        payeeCode:
+          type: string
+        userFirstName:
+          type: string
+        userLastName:
+          type: string
+        payAmount:
+          $ref: '#/components/schemas/Amount'
+        userAccount:
+          type: string
+          description: Biller account number; validate against the payee accountRegex.
+        picUrlList:
+          type: array
+          items:
+            type: string
+          description: The client always sends an empty array. Attachment behavior is not defined here.
+        userPhone:
+          type: string
+        userEmail:
+          type: string
+        remark:
+          type: string
+      additionalProperties: true
+    BillInstructionResponse:
+      type: object
+      properties:
+        payCode:
+          type: string
+          description: Use as orderInfo.item.itemId for bill checkout.
+        payFeeAmount:
+          $ref: '#/components/schemas/AmountValue'
+      additionalProperties: true
+    BillVoucherRequest:
+      type: object
+      required:
+      - orderInfo
+      properties:
+        orderInfo:
+          allOf:
+          - $ref: '#/components/schemas/OrderInfo'
+          - type: object
+            properties:
+              orderType:
+                type: string
+                enum:
+                - BILL_PAY
+            additionalProperties: true
+      additionalProperties: true
+    Voucher:
+      type: object
+      properties:
+        voucherId:
+          type: string
+        voucherName:
+          type: string
+        voucherPrice:
+          $ref: '#/components/schemas/AmountValue'
+        expiredTime:
+          description: Expiry value forwarded by the gateway; encoding is not specified in this repository.
+      additionalProperties: true
+    BillVoucherResponse:
+      type: object
+      properties:
+        rec:
+          type: array
+          items:
+            $ref: '#/components/schemas/Voucher'
+      additionalProperties: true
+    BillResultRequest:
+      type: object
+      required:
+      - paymentNo
+      properties:
+        paymentNo:
+          type: string
+      additionalProperties: true
+    BillResultResponse:
+      type: object
+      properties:
+        paySts:
+          type: string
+          examples:
+          - '0'
+          - '1'
+          - '3'
+          description: 'Known codes: 0 = success, 1 = failed, 3 = processing. Other codes are passed through.'
+        payErrMsg:
+          type: string
+        payErrTitle:
+          type: string
+      additionalProperties: true
+    TransferCreateRequest:
+      type: object
+      required:
+      - to_phone
+      - amount
+      properties:
+        to_phone:
+          type: string
+          examples:
+          - '4165550006'
+          description: Recipient phone number; the client accepts any format.
+        amount:
+          type: string
+          pattern: ^[0-9]{1,8}(\.[0-9]{1,2})?$
+          examples:
+          - '12.50'
+          description: Amount in sender account currency; minimum 1.00. Up to eight integer digits and
+            two decimal places.
+        remark:
+          type: string
+          maxLength: 200
+          description: Optional note to the recipient.
+      additionalProperties: true
+    TransferStatus:
+      type: string
+      enum:
+      - CREATING
+      - PENDING
+      - FINISHING
+      - CANCELLING
+      - FINISHED
+      - CANCELLED
+      - FAILED
+      description: States understood by the client. FINISHED, CANCELLED, and FAILED are terminal.
+    Transfer:
+      type: object
+      description: Partial raw transfer response. The client adds idempotency_key, cross_currency_notice,
+        fail_message, and next_step locally; they are not guaranteed gateway fields.
+      properties:
+        order_no:
+          type: string
+        status:
+          $ref: '#/components/schemas/TransferStatus'
+        amount:
+          $ref: '#/components/schemas/AmountValue'
+        currency:
+          type: string
+          examples:
+          - CAD
+          - USD
+        received_amount:
+          $ref: '#/components/schemas/AmountValue'
+        received_currency:
+          type: string
+          examples:
+          - CAD
+          - USD
+        conversion_rate:
+          $ref: '#/components/schemas/AmountValue'
+        auto_finish_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: Undo deadline; automatic settlement starts after this time, normally about five
+            minutes after creation.
+        finished_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        retry_after_seconds:
+          type: integer
+          description: Delay before retrying an unresolved create with the same key and identical body.
+        fail_code:
+          type:
+          - string
+          - 'null'
+        fail_reason:
+          type:
+          - string
+          - 'null'
+      additionalProperties: true
+    TransferList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transfer'
+      additionalProperties: true
+    TransferError:
+      type: object
+      description: Raw error envelope, including validation errors. CLIENT_TIMEOUT and retry_hint are
+        synthesized locally, not HTTP responses.
+      properties:
+        status:
+          type: string
+          examples:
+          - error
+        code:
+          type:
+          - string
+          - 'null'
+        message:
+          type:
+          - string
+          - 'null'
+        retryable:
+          type: boolean
+        upstream_code:
+          type:
+          - string
+          - 'null'
+        details: {}
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+            additionalProperties: true
+      additionalProperties: true
