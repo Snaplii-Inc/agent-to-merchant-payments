@@ -64,6 +64,23 @@ When the agent has the required browser capabilities, account access, and user a
 
 When those conditions are not available, Snaplii can instead provide the agent with the payment or exchange information needed for the user to complete the next step.
 
+## Built for Agentic Commerce
+
+Traditional payments were designed for humans holding cards and entering credentials.
+
+Agentic commerce introduces a different model:
+> Intent → Agent → Authorization → Payment → Merchant
+
+The payment layer needs to understand not only who is paying, but also:
+* which agent is acting
+* what the agent is authorized to do
+* how much it can spend
+* which payment method it can access
+* whether the transaction can be reused
+* when authorization should expire
+
+Snaplii is building this infrastructure for the emerging AI agent economy.
+
 ## Works With Any LLM
 
 Snaplii is **model-agnostic**. It works with any AI agent or LLM platform:
