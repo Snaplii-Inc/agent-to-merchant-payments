@@ -15,6 +15,7 @@ AI agents are increasingly capable of:
 * discovering products and services
 * comparing options
 * navigating merchant websites
+* Select the product or service
 * filling out forms
 * completing checkout flows
 * taking actions on behalf of users
