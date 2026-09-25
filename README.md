@@ -14,6 +14,7 @@ With Snaplii, agents can access authorized payment capabilities while users keep
 And because Snaplii is built for commerce, agents can also unlock additional payment value — including 5–10% discounts at supported merchants and support for **multiple currencies including CAD, USD, and RMB**.
 
 Today, Snaplii supports payment use cases across Canada and the US, including merchant purchases, bill payments, and peer-to-peer transfers.
+
 ## Why AI Agents Need a New Payment Layer
 
 AI agents are increasingly capable of:
@@ -34,6 +35,54 @@ The question is no longer:
 It's:
 How can AI agents pay safely?
 > Snaplii is built to solve that problem.
+
+## Three Reasons to Pay Through Snaplii
+1. Get More Value From Every Payment
+
+AI agents shouldn't just make transactions possible.
+
+They should make them **better**.
+
+At supported merchants, Snaplii can provide 5–10% additional discounts when users pay through Snaplii.
+
+This means an agent can potentially:
+
+> Find the right product → choose the right payment method → complete the purchase at a better price.
+
+The payment layer becomes part of the shopping decision.
+
+2. Pay Across Multiple Currencies
+
+The real world isn't denominated in a single currency.
+
+Snaplii supports payment experiences across multiple currencies, including:
+* 🇨🇦 CAD
+* 🇺🇸 USD
+* 🇨🇳 RMB
+* 🪙 USDT/USDC
+* and more
+This allows AI agents to operate across different markets and payment contexts without forcing users into a single currency.
+
+**One payment layer. Multiple currencies.**
+
+3. Keep Your Credit Card Away From the Agent
+
+This is one of the core principles behind Snaplii.
+> Don't give your AI agent your credit card. Give it a payment account with controlled authorization.
+
+Snaplii provides a dedicated payment environment between the user and the agent.
+
+The agent doesn't need to see or store the user's underlying card credentials.
+
+Instead, it interacts with the payment capabilities that Snaplii makes available.
+
+This creates an additional security boundary between:
+
+**User's financial credentials**
+and
+**AI agent actions.**
+
+Combined with tokenized payment infrastructure and scoped authorization, this creates a more controlled way for AI agents to spend on behalf of users.
 
 ## Availability by country
 
