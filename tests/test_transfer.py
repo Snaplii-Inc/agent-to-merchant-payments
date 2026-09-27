@@ -22,7 +22,7 @@ class _FakeStore:
     def get(self, key, default=None):
         return default
 
-    def get_cached_token(self):
+    def get_cached_token(self, *, origin=None):
         return "tok-123"
 
 

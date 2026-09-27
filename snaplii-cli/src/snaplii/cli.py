@@ -16,7 +16,7 @@ from snaplii.commands.quote import quote_cmd
 from snaplii.commands.smart import smart_group
 from snaplii.commands.transfer import transfer_group
 from snaplii.config_store import ConfigStore
-from snaplii.exceptions import SnapliiCliError
+from snaplii.exceptions import ConfigError, SnapliiCliError
 from snaplii.output import print_error, print_json
 from snaplii.version_check import check_for_update
 
@@ -41,14 +41,21 @@ def main(ctx, base_url):
     """
     ctx.ensure_object(dict)
     store = ConfigStore()
-    resolved_url = base_url or store.get("base_url", _DEFAULT_BASE_URL)
+    store.runtime = "cli"  # a one-shot process cannot keep a memory-only session
     ctx.obj["config_store"] = store
-    ctx.obj["client"] = GatewayClient(resolved_url, store)
+    ctx.obj["base_url"] = base_url
+    if ctx.invoked_subcommand not in ("config", "help", "update"):
+        # Repair commands must run even when the stored configuration is
+        # unreadable or holds an invalid gateway URL.
+        ctx.obj["client"] = GatewayClient(base_url or store.get("base_url", _DEFAULT_BASE_URL), store)
 
-    # Daily, fail-silent check for a newer release. Notice goes to stderr so it
-    # never pollutes the JSON on stdout that agents parse.
-    if ctx.invoked_subcommand != "update":
-        update = check_for_update(store)
+    # Human-terminal notices only: machine consumers need one JSON document on
+    # stderr when authentication fails, with no notice or background cache write.
+    if ctx.invoked_subcommand != "update" and sys.stderr.isatty():
+        try:
+            update = check_for_update(store)
+        except ConfigError:
+            update = None  # an unreadable config must not block `config clear`
         if update:
             from snaplii.version_check import is_editable_install
             how = ("git pull in your checkout" if is_editable_install("snaplii-cli")

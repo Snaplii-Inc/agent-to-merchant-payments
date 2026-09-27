@@ -284,6 +284,19 @@ snaplii init
 
 The CLI will prompt for your API key via hidden input (like a password prompt). The key is used only to obtain a session token and is **never stored on disk**. Agent ID is auto-derived from the key.
 
+#### Meta Muse secure credential store
+
+To authenticate with an API key already saved in Muse's secure credential store:
+
+```bash
+snaplii init --vault-auth
+snaplii config show
+```
+
+`--agent-id` is optional: Snaplii reuses a saved ID or generates one on successful login. Before using Snaplii, check that `has_valid_token` is `true`; the status output does not display credentials.
+
+If secure credential authentication is unavailable, you can choose `snaplii init` and enter your API key at the terminal's hidden prompt.
+
 ### 5. Use the CLI
 
 ```bash
@@ -336,8 +349,10 @@ snaplii transfer list                                          # List transfers,
 
 | Command | Purpose |
 |---|---|
-| `snaplii init` | Authenticate with your Snaplii API key |
+| `snaplii init [--agent-id ID] [--vault-auth]` | Authenticate with your API key; `--vault-auth` uses Muse's secure credential store |
 | `snaplii config show` | Show current config and auth status |
+| `snaplii config set --base-url URL` | Set the gateway URL |
+| `snaplii config clear` | Clear local configuration and session; does not delete the host-stored API key |
 | `snaplii browse tags` | Browse card categories and brands |
 | `snaplii browse brand --id ID` | View brand details, denominations, and cashback |
 | `snaplii giftcard list` | List owned gift cards |
@@ -350,14 +365,18 @@ snaplii transfer list                                          # List transfers,
 | `snaplii billpay payees` | Canada only: list available billers (electricity, gas, telecom) |
 | `snaplii billpay detail --payee-code CODE` | View biller account validation rules |
 | `snaplii billpay save --payee-code CODE --first-name F --last-name L --amount A --account NO` | Save a bill pay instruction |
+| `snaplii billpay vouchers --pay-code PC --price P` | List eligible bill-payment vouchers |
+| `snaplii billpay history --payee-code CODE` | List payment history for a biller |
 | `snaplii billpay quote --pay-code PC --price P` | Preview bill price with voucher/cashback |
 | `snaplii billpay pay --pay-code PC --price P` | Canada only: pay the bill from Snaplii Cash |
 | `snaplii billpay result --payment-no NO` | Check bill payment status |
 | `snaplii transfer create --to-phone P --amount A` | Send Snaplii Cash to a phone number (cancellable ~5 min, then auto-sends) |
 | `snaplii transfer cancel --order-no NO` | Cancel a PENDING transfer within the undo window |
 | `snaplii transfer finish --order-no NO` | Send a PENDING transfer immediately |
-| `snaplii transfer status --order-no NO [--wait]` | Get a transfer's state; `--wait` polls until terminal |
+| `snaplii transfer status --order-no NO [--wait] [--timeout S]` | Get a transfer's state; polling defaults to a 120-second timeout |
 | `snaplii transfer list [--status S]` | List transfers, newest first |
+| `snaplii update` | Check for and install a CLI update |
+| `snaplii help` | Show top-level help; use `snaplii <command> --help` for command flags |
 
 ---
 
@@ -608,7 +627,7 @@ Your JWT token has expired. Call `/v2/auth/token` again with your API key to get
 - **Scoped API keys:** keys can be restricted to `PAY_READ` view-only or `PAY_WRITE` view + purchase.
 - **Spending limits:** strict per-key consumption caps are set via the mobile app.
 - **Consent is the daily limit, set once.** You authorize spending when you create the key and set its per-day cap in the app; within that cap the agent buys and pays **without a per-transaction confirmation**, so the flow stays smooth. Spending is prepaid-only and the key is revocable, so the daily limit is the blast radius. On connect, the agent surfaces this once.
-- **Off-model key entry.** The API key is entered through a secure MCP Apps card rendered by the host — it never passes through the chat or the model. Clients that can't render the card fall back to `snaplii init` in a terminal (still off-model); the key is never accepted in plain chat. The access token is held in process memory rather than written to disk in plaintext unless you explicitly opt in.
+- **Off-model key entry.** The API key is entered through a secure MCP Apps card rendered by the host — it never passes through the chat or the model. Clients that can't render the card fall back to `snaplii init` in a terminal (still off-model); the key is never accepted in plain chat. The access token is kept in the OS keychain (or, for a long-lived MCP server, in process memory); it is written to a private plaintext file only when you explicitly opt in with `SNAPLII_ALLOW_INSECURE=1`, which a keychain-less CLI requires.
 - **Charges are sent once.** Charges are not auto-retried. On an ambiguous bill-pay failure, query `billpay result` by `paymentNo` before retrying rather than re-paying.
 - **No credential storage:** API keys are used once to obtain a token and are never saved to disk.
 - **Data protection:** card redemption codes and PINs are strictly masked and never exposed without explicit user consent.

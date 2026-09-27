@@ -21,6 +21,9 @@ class FakeClient:
         self.logged_in = (agent_id, api_key)
         return {"access_token": "jwt", "country": "CA"}
 
+    def auth_status(self):
+        return {"has_valid_token": True, "agent_id": self.logged_in[0], "auth_method": "api_key"}
+
 
 class FakeStore:
     def set(self, key, value):
@@ -139,9 +142,13 @@ def test_init_and_submit_share_one_auth_path(monkeypatch):
 
 def test_auth_fails_when_gateway_returns_no_token(monkeypatch):
     # A bogus key the gateway rejects (no access_token) must NOT report success.
+    # GatewayClient.login() raises for a 2xx without a token; mirror that contract.
+    from snaplii.exceptions import GatewayApiError
+
     class NoTokenClient:
         def login(self, agent_id, api_key):
-            return {"rspMsgCd": "MCA20101", "rspMsgInf": "Invalid API key"}
+            raise GatewayApiError(200, {"friendly_message": "Login did not return an access token."},
+                                  "/v2/auth/token")
     monkeypatch.setattr(server, "_get_client", lambda: NoTokenClient())
     monkeypatch.setattr(server, "ConfigStore", FakeStore)
     out = _call(SUBMIT_TOOL, {"api_key": "1"})
@@ -244,7 +251,8 @@ class _FakeApp:
 class _DisconnectedStore:
     """ConfigStore stub with NO cached token, so the already-connected guard in
     snaplii_connect passes through to the routing/flow under test."""
-    def get_cached_token(self): return None
+    def get_cached_token(self, *, origin=None): return None
+    def auth_status(self, *, origin): return {"has_valid_token": False, "host": "unknown"}
     def get(self, k, d=None): return d
     def set(self, k, v): pass
     def cache_token(self, token, expires_in): pass
@@ -270,6 +278,13 @@ def test_connect_elicit_opens_page_polls_and_caches_token(monkeypatch):
             captured["polled_eid"] = eid
             return {"access_token": "jwt-x", "expires_in": 1800, "country": "ca"}
 
+        def accept_connect_token(self, response):
+            cached.update(token=response["access_token"], exp=response["expires_in"],
+                          country=response["country"].upper())
+
+        def auth_status(self):
+            return {"has_valid_token": bool(cached.get("token")), "auth_method": "url"}
+
     cached = {}
 
     class FakeStore:
@@ -277,6 +292,7 @@ def test_connect_elicit_opens_page_polls_and_caches_token(monkeypatch):
         def cache_token(self, token, expires_in): cached["token"] = token; cached["exp"] = expires_in
         def set(self, k, v): cached[k] = v
         def get(self, k, d=None): return d
+        def auth_status(self, *, origin): return {"has_valid_token": False, "host": "unknown"}
 
     monkeypatch.setattr(server, "_get_client", lambda: FakeClient())
     monkeypatch.setattr(server, "ConfigStore", FakeStore)
@@ -349,6 +365,7 @@ def test_connect_short_circuits_when_already_connected(monkeypatch):
         def get_cached_token(self): return "cached-jwt"
         def get(self, k, d=None): return d
         def set(self, k, v): pass
+        def auth_status(self, *, origin): return {"has_valid_token": True, "host": "unknown"}
     monkeypatch.setattr(server, "ConfigStore", ConnectedStore)
     # The guard must return BEFORE routing — record any route call to prove it didn't.
     calls = []

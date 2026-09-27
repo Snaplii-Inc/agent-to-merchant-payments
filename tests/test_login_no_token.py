@@ -3,11 +3,15 @@
 letting `snaplii init` print "authenticated" with nothing cached."""
 
 import pytest
+import keyring
+from keyring.backends.fail import Keyring
 from click.testing import CliRunner
 
 from snaplii.client import GatewayClient
 from snaplii.commands.init import init_cmd
 from snaplii.exceptions import GatewayApiError
+from snaplii.config_store import ConfigStore
+from snaplii.exceptions import AuthError
 
 
 class _RecordingStore:
@@ -24,7 +28,14 @@ class _RecordingStore:
     def cache_token(self, token, expires_in):
         self.cached = (token, expires_in)
 
-    def get_cached_token(self):
+    def commit_session(self, token, expires_in, **metadata):
+        self.cached = (token, expires_in)
+        self.values.update(metadata)
+
+    def auth_status(self, *, origin):
+        return {"host": "unknown", "auth_method": self.values.get("auth_method")}
+
+    def get_cached_token(self, *, origin=None):
         return self.cached[0] if self.cached else None
 
 
@@ -45,7 +56,7 @@ def test_200_without_token_raises_and_caches_nothing(httpx_mock):
         _client(store).login("agent-1", "snp_sk_bogus")
     out = exc.value.to_dict()
     assert "did not return an access token" in out["error"]
-    assert "x-auth-token header" in out["error"]  # the gateway's reason is kept
+    assert "x-auth-token header" not in out["error"]  # no raw upstream text
     assert store.cached is None
 
 
@@ -102,3 +113,39 @@ def test_init_does_not_print_authenticated_without_token():
     assert result.exit_code != 0
     assert "authenticated" not in result.output
     assert isinstance(result.exception, GatewayApiError)
+
+
+@pytest.mark.parametrize("ttl", [None, True, "600", 0, -1, 90, 3600.5])
+def test_invalid_expiry_does_not_replace_existing_identity(httpx_mock, tmp_path, monkeypatch, ttl):
+    monkeypatch.setattr(keyring, "get_keyring", lambda: Keyring())
+    store = ConfigStore(tmp_path / "config.json")
+    store.set("agent_id", "previous-agent")
+    httpx_mock.add_response(method="POST", url="https://gw.test/v2/auth/token",
+                            json={"access_token": "new-token", "expires_in": ttl})
+    with pytest.raises(AuthError) as exc:
+        _client(store).login("new-agent", "synthetic-api-key")
+    assert exc.value.auth_state == "auth_response_invalid"
+    assert store.get("agent_id") == "previous-agent"
+    assert store.get_cached_token() is None
+
+
+def test_login_commits_identity_method_and_origin_together(httpx_mock, tmp_path, monkeypatch):
+    monkeypatch.setattr(keyring, "get_keyring", lambda: Keyring())
+    store = ConfigStore(tmp_path / "config.json")
+    httpx_mock.add_response(method="POST", url="https://gw.test/v2/auth/token",
+                            json={"access_token": "new-token", "expires_in": 604800, "country": "US"})
+    _client(store).login("new-agent", "synthetic-api-key")
+    status = store.auth_status(origin="https://gw.test")
+    assert status["agent_id"] == "new-agent"
+    assert status["auth_method"] == "api_key"
+    assert status["has_valid_token"] is True
+    assert store.get_cached_token(origin="https://other.test") is None
+
+
+@pytest.mark.parametrize("code", [["synthetic-secret"], {"synthetic-secret": True}, 42])
+def test_invalid_auth_error_code_is_still_safe_json(httpx_mock, tmp_path, monkeypatch, code):
+    monkeypatch.setattr(keyring, "get_keyring", lambda: Keyring())
+    httpx_mock.add_response(status_code=500, json={"rspMsgCd": code, "friendly_message": "synthetic-secret"})
+    with pytest.raises(GatewayApiError) as exc:
+        _client(ConfigStore(tmp_path / "config.json")).login("agent-1", "synthetic-key")
+    assert "synthetic-secret" not in str(exc.value.to_dict())

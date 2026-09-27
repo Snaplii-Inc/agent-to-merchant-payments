@@ -24,7 +24,7 @@ from mcp import types
 
 from snaplii.client import GatewayClient
 from snaplii.config_store import ConfigStore
-from snaplii.exceptions import AmountValidationError, ConfigError, GatewayApiError, GatewayConnectionError, TransferApiError
+from snaplii.exceptions import AmountValidationError, AuthError, ConfigError, GatewayApiError, GatewayConnectionError, TransferApiError
 from snaplii.commands.transfer import decorate_transfer
 from snaplii.cards import APIKEY_CARD_HTML, APIKEY_RES_URI, MCP_APP_MIME
 
@@ -65,8 +65,14 @@ def _base_url() -> str:
     return os.environ.get("SNAPLII_BASE_URL") or ConfigStore().get("base_url", _DEFAULT_BASE_URL)
 
 
+def _store() -> ConfigStore:
+    store = ConfigStore()
+    store.runtime = "mcp"  # a long-lived process may keep a memory-only session
+    return store
+
+
 def _get_client() -> GatewayClient:
-    return GatewayClient(_base_url(), ConfigStore())
+    return GatewayClient(_base_url(), _store())
 
 
 def _authenticate(api_key: str, agent_id: str | None = None) -> dict:
@@ -81,23 +87,18 @@ def _authenticate(api_key: str, agent_id: str | None = None) -> dict:
         agent_id = f"agent-{hashlib.md5(api_key.encode()).hexdigest()[:8]}"
     # Verify the key actually authenticates before reporting success — the gateway
     # must return a token. Otherwise a bogus key (e.g. "1") would look "connected".
+    client = _get_client()
     try:
-        resp = _get_client().login(agent_id, api_key)  # exchanges key for token; key not stored
-    except GatewayApiError as e:
-        body = getattr(e, "body", {}) or {}
-        return {"error": "auth_failed",
-                "message": body.get("friendly_message") or body.get("rspMsgInf")
-                or "That API key wasn't accepted. Check the key and try again."}
-    except GatewayConnectionError:
-        return {"error": "auth_failed",
-                "message": "Couldn't reach Snaplii to verify the key. Check your connection and try again."}
-    if not (isinstance(resp, dict) and resp.get("access_token")):
-        return {"error": "auth_failed",
-                "message": "That API key wasn't accepted. Check the key and try again."}
-    ConfigStore().set("agent_id", agent_id)
+        # login() raises on every failure: a rejected key, a 2xx without a token,
+        # a transport error, or a session that could not be cached and read back.
+        client.login(agent_id, api_key)  # exchanges key for token; key not stored
+    except (GatewayApiError, AuthError) as e:
+        details = e.to_dict()
+        return {**details, "error": "auth_failed",
+                "message": details.get("message") or details["error"]}
     return {
         "status": "authenticated",
-        "agent_id": agent_id,
+        **client.auth_status(),
         # One-time consent notice: this is the only moment we surface the spending
         # model, since there is no per-transaction confirmation. Generic by design —
         # the gateway does not return the actual daily-limit number to a2m.
@@ -137,7 +138,7 @@ def _connect_route() -> str:
     try:
         client_params = app.request_context.session.client_params
         caps = client_params.capabilities
-    except Exception:
+    except (LookupError, AttributeError):
         return "text"
     client_info = getattr(client_params, "clientInfo", None)
     return _route_for_caps(caps, client_info)
@@ -527,13 +528,8 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
     try:
         if name == "snaplii_config_show":
-            store = ConfigStore()
-            data = store.load()
-            safe = {k: v for k, v in data.items()
-                    if k not in ("access_token", "token_expires_at") and not k.startswith("_")}
-            safe["has_valid_token"] = bool(store.get_cached_token())
             # update_available (if any) is injected by _text for every tool result.
-            return _text(safe)
+            return _text(_store().auth_status(origin=_base_url()))
 
         elif name == "snaplii_init":
             return _text(_authenticate(arguments["api_key"], arguments.get("agent_id")))
@@ -545,7 +541,8 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             # _meta.ui card may still render on tool-call; the real prevention is the
             # model not calling connect when already connected — see the connect tool
             # description.) To switch accounts, the user clears the connection first.
-            if ConfigStore().get_cached_token():
+            auth_status = _store().auth_status(origin=_base_url())
+            if auth_status["has_valid_token"]:
                 return _text({
                     "status": "already_connected",
                     "message": (
@@ -556,6 +553,10 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                     ),
                 })
 
+            if auth_status["host"] == "muse":
+                # Static UI metadata is unchanged. The agent should select the
+                # CLI action before calling this card-bearing tool in Muse.
+                return _text(auth_status)
             route = _connect_route()
 
             if route == "elicit":
@@ -592,7 +593,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                             ("This client doesn't support URL-mode elicitation, so the "
                              "secure web page can't open here. "
                              if unsupported
-                             else f"Couldn't start secure web connect: {e}. ")
+                             else "Couldn't start secure web connect. ")
                             + "Offer the user two ways to finish connecting and let them pick: "
                             "(1) run 'snaplii init' in a terminal and enter the API key when "
                             "prompted; or (2) paste their Snaplii API key (snp_sk_live_…) here "
@@ -616,19 +617,14 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                         token_data = client.poll_connect_token(eid)
                     except GatewayConnectionError:
                         token_data = None
-                    if token_data and token_data.get("access_token"):
+                    if isinstance(token_data, dict) and token_data.get("access_token"):
                         break
                     await asyncio.sleep(_ELICIT_POLL_INTERVAL_S)
-                if token_data and token_data.get("access_token"):
-                    # Cache exactly like login(): token + expiry + account country.
-                    store = ConfigStore()
-                    store.cache_token(token_data["access_token"],
-                                      token_data.get("expires_in", 3600))
-                    country = token_data.get("country")
-                    if country:
-                        store.set("country", str(country).upper())
+                if isinstance(token_data, dict) and token_data.get("access_token"):
+                    client.accept_connect_token(token_data)
                     return _text({
                         "status": "authenticated",
+                        **client.auth_status(),
                         "message": (
                             "✅ Connected via the secure Snaplii page. Purchases come only "
                             "from your prepaid Snaplii Cash, capped by your daily limit — I "
@@ -1000,18 +996,19 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
     except AmountValidationError as e:
         return _text(e.to_dict())
+    except AuthError as e:
+        return _text(e.to_dict())
     except ConfigError as e:
-        return _text({"error": "auth_required", "message": str(e), "action": "Call snaplii_init with the user's API key to re-authenticate. Ask the user for their API key — do NOT reuse any previously seen key."})
+        return _text(e.to_dict())
     except GatewayConnectionError as e:
-        return _text({"error": "connection_error", "message": str(e)})
+        return _text(e.to_dict())
     except TransferApiError as e:
         # The envelope's message is already the meaningful, user-facing one.
         return _text(e.to_dict())
     except GatewayApiError as e:
-        friendly = e.body.get("friendly_message") if hasattr(e, 'body') else None
-        return _text({"error": friendly or str(e), "error_code": e.body.get("rspMsgCd", "") if hasattr(e, 'body') else ""})
-    except Exception as e:
-        return _text({"error": "unexpected_error", "message": str(e)})
+        return _text(e.to_dict())
+    except Exception:
+        return _text({"error": "unexpected_error", "message": "The request could not be completed."})
 
 
 _AUTOPILOT_WORKFLOW = """You are running the Snaplii end-to-end autopilot: buy a gift card with cashback, then (if you can control a browser) redeem it and place the order on the merchant/delivery site.

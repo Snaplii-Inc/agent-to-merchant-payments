@@ -7,6 +7,7 @@ class GatewayApiError(SnapliiCliError):
         self.status_code = status_code
         self.body = body
         self.endpoint = endpoint
+        self.auth_fields = {}
         super().__init__(f"API error {status_code} on {endpoint}")
 
     def to_dict(self) -> dict:
@@ -22,26 +23,47 @@ class GatewayApiError(SnapliiCliError):
             elif error_code:
                 friendly = f"Request failed with code {error_code}. Check the gateway logs for details."
             else:
-                raw = self.body.get("rspMsgInf") or self.body.get("message") or self.body.get("raw", "")
-                friendly = f"Request failed (HTTP {self.status_code}). {raw}".strip()
+                friendly = f"Request failed (HTTP {self.status_code})."
+                reason = (self.body.get("rspMsgInf") or self.body.get("rspMsgInfo")
+                          or self.body.get("message") or self.body.get("raw"))
+                # Login responses are sanitized before they get here; other
+                # endpoints carry the business reason the agent needs.
+                if self.endpoint != "/v2/auth/token" and isinstance(reason, str) and reason.strip():
+                    friendly += " " + reason.strip()[:500]
         return {
             "error": friendly,
             "error_code": error_code,
             "endpoint": self.endpoint,
+            **self.auth_fields,
         }
 
 
 class GatewayConnectionError(SnapliiCliError):
-    def __init__(self, url: str, cause: Exception):
+    def __init__(self, url: str, cause: Exception, *, indeterminate: bool = False):
         self.url = url
         self.cause = cause
+        # True when the request may already have been sent and processed (read
+        # timeout, reset, protocol error), so a blind retry could double a charge.
+        self.indeterminate = indeterminate
         super().__init__(f"Connection failed: {url}")
 
     def to_dict(self) -> dict:
+        if self.indeterminate:
+            return {
+                "error": ("The request was sent but no response arrived; it may or may "
+                          "not have been processed."),
+                "url": self.url,
+                "cause": "transport_error",
+                "outcome": "indeterminate",
+                "retry_hint": ("Do not retry blindly: check the outcome first (owned gift "
+                               "cards, bill pay result, or transfer list) before sending "
+                               "the request again."),
+            }
         return {
             "error": "Connection failed",
             "url": self.url,
-            "cause": str(self.cause),
+            "cause": "transport_error",
+            "outcome": "not_sent",
         }
 
 
@@ -88,6 +110,20 @@ class ConfigError(SnapliiCliError):
         return {"error": "Configuration error", "message": self.message}
 
 
+class AuthError(ConfigError):
+    """Fixed, secret-free authentication state; never copy upstream text here."""
+
+    def __init__(self, message: str, *, auth_state: str, reason_code: str, next_action: dict):
+        self.auth_state = auth_state
+        self.reason_code = reason_code
+        self.next_action = next_action
+        super().__init__(message)
+
+    def to_dict(self) -> dict:
+        return {**super().to_dict(), "auth_state": self.auth_state,
+                "reason_code": self.reason_code, "next_action": self.next_action}
+
+
 class TransferApiError(SnapliiCliError):
     """Error from a /v2/transfers endpoint.
 
@@ -103,9 +139,19 @@ class TransferApiError(SnapliiCliError):
         self.endpoint = endpoint
         # Set by GatewayClient.transfer_create so a retry can reuse the key.
         self.idempotency_key = None
+        self.auth_fields = {}
         super().__init__(f"Transfer API error {status_code} on {endpoint}")
 
     def to_dict(self) -> dict:
+        if self.auth_fields:
+            code = self.body.get("code", "")
+            out = {"error": "Session rejected. Authenticate before continuing.",
+                   "code": code if code in ("MCAP9999", "USR_NOT_EXIST", "UNAUTHORIZED", "AUTH_REQUIRED") else "",
+                   "retryable": False, "endpoint": self.endpoint, **self.auth_fields}
+            if self.idempotency_key:
+                out["idempotency_key"] = self.idempotency_key
+                out["retry_hint"] = "Check the transfer status before retrying. If a retry is appropriate, reuse the SAME idempotency key and identical request; never replay automatically."
+            return out
         message = self.body.get("message")
         if not message and isinstance(self.body.get("errors"), list):
             # Field-validation 400s use the common shape: message is null and

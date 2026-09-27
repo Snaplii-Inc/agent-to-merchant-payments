@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import uuid
+from urllib.parse import urlsplit
 
 import httpx
 
 from snaplii.config_store import ConfigStore
+from snaplii import auth
 from snaplii.exceptions import (
     AmountValidationError,
+    AuthError,
     ConfigError,
     GatewayApiError,
     GatewayConnectionError,
@@ -50,8 +53,10 @@ def summarize_denominations(brand_resp: dict) -> list:
 
 class GatewayClient:
     def __init__(self, base_url: str, config_store: ConfigStore):
-        self._base_url = base_url.rstrip("/")
-        if not self._base_url.startswith("https://") and "localhost" not in self._base_url and "127.0.0.1" not in self._base_url:
+        self._base_url = auth.normalize_base_url(base_url)
+        self._origin = auth.normalize_origin(base_url)
+        parsed = urlsplit(self._origin)
+        if parsed.scheme != "https" and parsed.hostname not in ("localhost", "127.0.0.1"):
             raise ConfigError("Gateway URL must use HTTPS for non-local connections.")
         # httpx needs httpcore at request time; a partial install raises a cryptic
         # "No module named 'httpcore'". Fail early with an actionable message.
@@ -74,103 +79,132 @@ class GatewayClient:
             "agent_id": agent_id,
             "api_key": api_key,
         })
-        return self._finish_login(resp)
+        return self._finish_login(resp, agent_id=agent_id, auth_method="api_key")
 
     def login_via_vault(self, agent_id: str) -> dict:
-        """Exchange the Secure Vault API key for an access token without ever
-        handling the raw key.
+        """Exchange a host-managed API key without exposing it to this process.
 
-        The gateway accepts the API key in the Authorization header on
-        POST /v2/auth/token (verified 2026-09-23: body carries only agent_id).
-        We place authd's surrogate (hsurr:...) in the header via the
-        dynamic_credentials helper; the egress proxy swaps it for the real
-        vault value at request time, so this process never sees the key.
+        Keeps the existing explicit --vault-auth entry point. Automatic Muse
+        discovery and literal secure-input instructions remain gated by T1/G1.
         """
-        import json as _json
-        import os as _os
-        import sys as _sys
-        import urllib.error as _urlerror
-        import urllib.request as _urlrequest
-        from urllib.parse import urlparse as _urlparse
+        import importlib.util
+        import json
+        import os
+        import sys
+        import urllib.error
+        import urllib.request
+        from pathlib import Path
 
-        helper_path = _os.environ.get(
-            "SNAPLII_VAULT_HELPER_PATH", "/opt/hatch/skills/skill-creator/bin")
-        added_helper_path = helper_path not in _sys.path
-        if added_helper_path:
-            _sys.path.insert(0, helper_path)
+        origin = auth.validate_vault_origin(self._base_url)
+        helper_file = Path(os.environ.get(
+            "SNAPLII_VAULT_HELPER_PATH", "/opt/hatch/skills/skill-creator/bin"
+        )) / "dynamic_credentials.py"
+        module_name = "_snaplii_credentials_" + uuid.uuid4().hex
         try:
-            from dynamic_credentials import (
-                DynamicCredentialError,
-                add_surrogate_to_request,
-            )
-        except ImportError as e:
-            raise ConfigError(
-                "Vault auth needs the dynamic_credentials helper "
-                f"({helper_path}/dynamic_credentials.py). Set "
-                "SNAPLII_VAULT_HELPER_PATH to its directory, or run "
-                "'snaplii init' with an API key instead."
-            ) from e
+            # An explicit file avoids cwd/module-cache substitution, without
+            # adding a credential helper directory to the global import path.
+            spec = importlib.util.spec_from_file_location(module_name, helper_file)
+            if spec is None or spec.loader is None:
+                raise ImportError
+            helper = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = helper
+            spec.loader.exec_module(helper)
+        except Exception:
+            raise self._auth_error("secure_entry_unavailable", "credential_helper_unavailable",
+                                   "The secure credential store helper is unavailable.", "vault") from None
         finally:
-            # The helper directory is needed only while importing it.
-            if added_helper_path:
-                _sys.path.remove(helper_path)
+            sys.modules.pop(module_name, None)
 
-        url = f"{self._base_url}/v2/auth/token"
-        host = _urlparse(self._base_url).hostname or ""
-        req = _urlrequest.Request(
-            url,
-            data=_json.dumps({"agent_id": agent_id}).encode(),
-            method="POST",
-            headers={"Content-Type": "application/json"},
-        )
+        url = origin + "/v2/auth/token"
+        payload = json.dumps({"agent_id": agent_id}).encode()
+        req = urllib.request.Request(url, data=payload, method="POST",
+                                     headers={"Content-Type": "application/json"})
         try:
-            add_surrogate_to_request(req, "custom.snaplii", allowed_hosts=(host,))
-        except DynamicCredentialError as e:
-            raise ConfigError(f"Secure Vault credential unavailable: {e}") from e
+            helper.add_surrogate_to_request(req, "custom.snaplii",
+                                             allowed_hosts=(urlsplit(origin).hostname,))
+        except Exception:
+            # T1 must establish stable missing/denied/cancelled error codes.
+            # Unknown helper failures are not evidence that an input is needed.
+            raise self._auth_error("secure_entry_unavailable", "credential_helper_failed",
+                                   "The secure credential store could not provide a credential.", "vault") from None
+        if req.full_url != url or req.get_method() != "POST" or req.data != payload:
+            raise self._auth_error("secure_entry_unavailable", "credential_request_modified",
+                                   "The credential request was changed unexpectedly.", "vault")
 
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, request, fp, code, msg, headers, newurl):
+                return None
+
+        opener = urllib.request.build_opener(NoRedirect())
         try:
-            with _urlrequest.urlopen(req, timeout=30) as resp:
-                raw = resp.read().decode("utf-8", "replace")
-                status = resp.status
-        except _urlerror.HTTPError as e:
-            raw = e.read().decode("utf-8", "replace")
-            status = e.code
-        except _urlerror.URLError as e:
-            raise GatewayConnectionError(url, e) from e
-        # Keep normalization and business-error messages shared with API-key login.
-        body = self._parse_response(
-            httpx.Response(status, text=raw), "/v2/auth/token")
-        return self._finish_login(body)
+            with opener.open(req, timeout=30) as response:
+                raw = response.read().decode("utf-8", "replace")
+                status = response.status
+        except urllib.error.HTTPError as exc:
+            raw = exc.read().decode("utf-8", "replace")
+            status = exc.code
+        except (urllib.error.URLError, TimeoutError, OSError):
+            raise self._auth_error("temporary_gateway_error", "auth_transport_failed",
+                                   "Could not reach Snaplii to authenticate. Retry authentication later.", "vault") from None
+        if 300 <= status < 400:
+            raise self._auth_error("secure_entry_unavailable", "credential_redirect_blocked",
+                                   "A redirect was blocked during secure credential authentication.", "vault")
+        body = self._parse_login_response(httpx.Response(status, text=raw), "vault")
+        return self._finish_login(body, agent_id=agent_id, auth_method="vault")
 
-    def _finish_login(self, resp: dict) -> dict:
+    def _parse_login_response(self, response, method):
+        try:
+            return self._parse_response(response, "/v2/auth/token")
+        except GatewayApiError as exc:
+            code = exc.body.get("rspMsgCd")
+            code = code if isinstance(code, str) and code in self._ERROR_MESSAGES else ""
+            safe = {"rspMsgCd": code}
+            if code:
+                safe["friendly_message"] = self._ERROR_MESSAGES[code]
+            error = GatewayApiError(exc.status_code, safe, "/v2/auth/token")
+            state = ("invalid_key" if exc.status_code in (401, 403) or code.startswith("MCA201")
+                     else "temporary_gateway_error" if exc.status_code >= 500 else "auth_response_invalid")
+            error.auth_fields = self._auth_fields(state, "auth_gateway_rejected", method)
+            raise error from None
+
+    def _finish_login(self, resp: dict, *, agent_id, auth_method: str) -> dict:
         """Shared tail of every login path: validate the token and cache it."""
-        body = resp if isinstance(resp, dict) else {"raw": resp}
+        body = resp if isinstance(resp, dict) else {}
         token = body.get("access_token")
         if not token:
-            # A 2xx without a token is a failed login, not a success — e.g. the
-            # core rejected the key but the gateway answered 200 with a plain-text
-            # or rspMsgCd body. Surface the real reason and never let `init`
-            # report "authenticated" with nothing cached.
-            reason = (body.get("rspMsgInf") or body.get("rspMsgInfo")
-                      or body.get("message") or body.get("raw"))
-            body["friendly_message"] = (
-                "Login did not return an access token"
-                + (f": {reason}" if reason else "")
-                + ". Check that the API key is valid and active in the Snaplii app "
-                  "(More → Payment Methods → AI Payment Management), then run "
-                  "'snaplii init' again."
-            )
-            raise GatewayApiError(200, body, "/v2/auth/token")
+            error = GatewayApiError(200, {"friendly_message": "Login did not return an access token."}, "/v2/auth/token")
+            error.auth_fields = self._auth_fields("auth_response_invalid", "missing_access_token", auth_method)
+            raise error
         expires_in = body.get("expires_in", 3600)
-        self._config.cache_token(token, expires_in)
-        # The gateway knows the account's country at apiKeyLogin. When it returns
-        # it here, cache it so balance/quote can label the local currency exactly
-        # (CA=CAD, US=USD) instead of relying on an agent-supplied --country guess.
-        # Falls back gracefully: older gateways omit it and the flag still works.
-        country = body.get("country")
-        if country:
-            self._config.set("country", str(country).upper())
+        self._config.commit_session(token, expires_in, agent_id=agent_id,
+                                    auth_method=auth_method, token_origin=self._origin,
+                                    country=body.get("country"))
+        if self._config.get_cached_token(origin=self._origin) != token:
+            raise self._auth_error("session_cache_failed", "session_readback_failed",
+                                   "The session could not be verified. Authentication is incomplete.", auth_method)
         return body
+
+    def accept_connect_token(self, response: dict) -> dict:
+        """Commit the URL-elicitation result through the same login boundary."""
+        agent_id = response.get("agent_id") if isinstance(response, dict) else None
+        return self._finish_login(response, agent_id=agent_id, auth_method="url")
+
+    def auth_status(self) -> dict:
+        return self._config.auth_status(origin=self._base_url)
+
+    def _auth_fields(self, state, reason, method=None):
+        status = self.auth_status()
+        if state == status.get("auth_state") and (method is None or method == status.get("auth_method")):
+            # The store already applied its runtime policy (e.g. an MCP process
+            # recovers through snaplii_connect, not a separate CLI).
+            action = status["next_action"]
+        else:
+            action = auth.build_auth_action(state, host=status["host"],
+                                            auth_method=method or status["auth_method"], origin=self._base_url)
+        return {"auth_state": state, "reason_code": reason, "next_action": action}
+
+    def _auth_error(self, state, reason, message, method=None):
+        return AuthError(message, **self._auth_fields(state, reason, method))
 
     def poll_connect_token(self, eid: str) -> dict | None:
         """Take the token the gateway parked under `eid` after the user submitted
@@ -536,6 +570,10 @@ class GatewayClient:
             body = resp.json()
         except Exception:
             body = {"raw": resp.text}
+        if self._session_rejected(resp.status_code, body):
+            error = TransferApiError(resp.status_code, body if isinstance(body, dict) else {}, path)
+            self._reject_session(error, token)
+            raise error
         if resp.is_success:
             return body if isinstance(body, dict) else {"data": body}
         if not isinstance(body, dict):
@@ -545,12 +583,46 @@ class GatewayClient:
     # ── Internal ──────────────────────────────────────────────────
 
     def _ensure_token(self) -> str:
-        token = self._config.get_cached_token()
+        token = self._config.get_cached_token(origin=self._origin)
         if token:
             return token
-        raise ConfigError(
-            "Token expired or missing. Run 'snaplii init' to re-authenticate with your API key."
-        )
+        status = self.auth_status()
+        raise AuthError("Authentication is required before this request can be sent.",
+                        auth_state=status["auth_state"], reason_code="no_usable_session",
+                        next_action=status["next_action"])
+
+    @staticmethod
+    def _session_rejected(status_code, body):
+        return status_code == 401 or (isinstance(body, dict) and any(
+            body.get(key) in ("MCAP9999", "USR_NOT_EXIST")
+            for key in ("rspMsgCd", "code", "upstream_code")))
+
+    def _reject_session(self, error, token):
+        try:
+            self._config.clear_token(expected_token=token)
+            error.auth_fields = self._auth_fields("reauth_required", "session_rejected")
+        except ConfigError:
+            # Neither clearing nor reading recovery metadata may replace the
+            # request error (especially a transfer's idempotency information).
+            # These fields require no further access to the broken config.
+            error.auth_fields = {
+                "auth_state": "session_cache_failed", "reason_code": "session_clear_failed",
+                "next_action": {"type": "stop", "reason": "session_cache_failed"},
+            }
+
+    def _protected_response(self, response, path, token):
+        try:
+            body = response.json()
+        except ValueError:
+            body = {}
+        if self._session_rejected(response.status_code, body):
+            code = body.get("rspMsgCd", "") if isinstance(body, dict) else ""
+            safe = {"friendly_message": "Session rejected. Authenticate before continuing.",
+                    "rspMsgCd": code if code in ("MCAP9999", "USR_NOT_EXIST") else ""}
+            error = GatewayApiError(response.status_code, safe, path)
+            self._reject_session(error, token)
+            raise error
+        return self._parse_response(response, path)
 
     def _get(self, path: str, params: dict | None = None) -> dict:
         token = self._ensure_token()
@@ -560,7 +632,7 @@ class GatewayClient:
             resp = self._http.get(url, params=params, headers=headers)
         except httpx.ConnectError as e:
             raise GatewayConnectionError(url, e)
-        return self._parse_response(resp, path)
+        return self._protected_response(resp, path, token)
 
     def _post(self, path: str, json: dict | None = None, params: dict | None = None) -> dict:
         url = self._base_url + path
@@ -570,9 +642,18 @@ class GatewayClient:
             headers = {"Authorization": f"Bearer {token}"}
         try:
             resp = self._http.post(url, json=json, params=params, headers=headers)
-        except httpx.ConnectError as e:
-            raise GatewayConnectionError(url, e)
-        return self._parse_response(resp, path)
+        except httpx.RequestError as e:
+            if path == "/v2/auth/token":
+                raise self._auth_error("temporary_gateway_error", "auth_transport_failed",
+                                       "Could not reach Snaplii to authenticate. Retry authentication later.", "api_key") from None
+            # Connect and pool failures happen before anything is sent; any other
+            # transport error (read timeout, reset, protocol error) may follow a
+            # request the gateway already processed, which matters for a purchase.
+            sent = not isinstance(e, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout))
+            raise GatewayConnectionError(url, e, indeterminate=sent)
+        if path == "/v2/auth/token":
+            return self._parse_login_response(resp, "api_key")
+        return self._protected_response(resp, path, token)
 
     def _delete(self, path: str) -> dict:
         token = self._ensure_token()
@@ -582,7 +663,7 @@ class GatewayClient:
             resp = self._http.delete(url, headers=headers)
         except httpx.ConnectError as e:
             raise GatewayConnectionError(url, e)
-        return self._parse_response(resp, path)
+        return self._protected_response(resp, path, token)
 
     # Human-readable error messages for common error codes
     _ERROR_MESSAGES = {
@@ -612,6 +693,8 @@ class GatewayClient:
         if resp.is_success:
             if isinstance(body, dict):
                 rsp_code = body.get("rspMsgCd", "")
+                if not isinstance(rsp_code, str):
+                    raise GatewayApiError(resp.status_code, {}, path)
                 if rsp_code and not rsp_code.endswith("00000"):
                     cls._attach_friendly_message(body, rsp_code)
                     raise GatewayApiError(resp.status_code, body, path)
@@ -622,6 +705,8 @@ class GatewayClient:
         if not isinstance(body, dict):
             body = {"raw": body}
         rsp_code = body.get("rspMsgCd", "")
+        if not isinstance(rsp_code, str):
+            raise GatewayApiError(resp.status_code, {}, path)
         if rsp_code:
             cls._attach_friendly_message(body, rsp_code)
         raise GatewayApiError(resp.status_code, body, path)

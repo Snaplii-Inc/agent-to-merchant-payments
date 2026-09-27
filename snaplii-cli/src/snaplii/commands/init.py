@@ -1,8 +1,12 @@
 import hashlib
+import secrets
+import sys
 
 import click
 
+from snaplii import auth
 from snaplii.client import GatewayClient
+from snaplii.exceptions import AuthError, ConfigError
 from snaplii.output import print_json
 
 
@@ -12,12 +16,17 @@ def _derive_agent_id(api_key: str) -> str:
     return f"agent-{digest[:8]}"
 
 
+def _require_valid_agent_id(agent_id: str) -> None:
+    # Validate before any network exchange, so a bad ID never mints a token
+    # that is then discarded locally.
+    if not auth.valid_agent_id(agent_id):
+        raise ConfigError("Invalid agent ID.")
+
+
 @click.command("init")
-@click.option("--agent-id", default=None, help="Agent ID (optional — auto-derived from API key if omitted)")
+@click.option("--agent-id", default=None, help="Agent ID (optional; generated or reused when omitted)")
 @click.option("--vault-auth", is_flag=True, default=False,
-              help="Authenticate with the API key stored in Muse's Secure Vault "
-                   "(custom.snaplii) via the Authorization header. Never prompts "
-                   "for the key, and the key itself is never visible to this process.")
+              help="Authenticate using Muse's secure credential store. Does not prompt for a raw API key.")
 @click.pass_context
 def init_cmd(ctx, agent_id, vault_auth):
     """Login with API key and store credentials.
@@ -25,46 +34,39 @@ def init_cmd(ctx, agent_id, vault_auth):
     API key is read from hidden stdin input — never passed as a CLI argument
     to avoid exposure in shell history and process listings.
     The API key is used only to obtain a token and is NOT stored.
-    With --vault-auth the key comes from the Secure Vault instead (via
-    Authorization header); agent_id must then be passed explicitly on first
-    run, or already be stored from a previous init.
+    With --vault-auth the key comes from the secure credential store instead.
+    The agent ID is reused, or generated on first successful initialization.
     """
     client: GatewayClient = ctx.obj["client"]
     store = ctx.obj["config_store"]
 
     if vault_auth:
-        agent_id = agent_id or store.get("agent_id")
-        if not agent_id:
-            raise click.ClickException(
-                "Vault auth needs an agent ID on first run: re-run with "
-                "--agent-id <id> (the agent-xxxxxxxx shown in the Snaplii app "
-                "under AI Payment Management).")
-        resp = client.login_via_vault(agent_id)
-        store.set("agent_id", agent_id)
-        safe = {k: v for k, v in resp.items() if k not in ("access_token", "token_type", "expires_in")}
-        safe["status"] = "authenticated"
-        safe["agent_id"] = agent_id
-        safe["auth_method"] = "vault"
-        print_json(safe)
+        agent_id = agent_id or store.get("agent_id") or "agent-" + secrets.token_hex(4)
+        _require_valid_agent_id(agent_id)
+        client.login_via_vault(agent_id)
+        print_json({"status": "authenticated", **client.auth_status()})
         return
 
     try:
-        api_key = click.prompt("API key", hide_input=True)
+        if sys.stdin.isatty():
+            api_key = click.prompt("API key", hide_input=True, err=True)
+        else:
+            # Explicit stdin input remains supported without echoing a secret or
+            # mixing a prompt into the JSON result consumed by an agent.
+            api_key = sys.stdin.readline()
     except (click.Abort, EOFError):
-        # Fallback for terminals that don't support hidden input
-        api_key = click.prompt("API key (input will be visible)")
+        raise AuthError("Authentication was cancelled.", auth_state="cancelled",
+                        reason_code="cancelled", next_action={"type": "stop", "reason": "cancelled"}) from None
 
     api_key = api_key.strip()
     if not api_key:
-        raise click.ClickException("API key cannot be empty.")
+        raise AuthError("API key cannot be empty.", auth_state="auth_required",
+                        reason_code="api_key_missing", next_action={"type": "stop", "reason": "api_key_missing"})
 
     if not agent_id:
         agent_id = _derive_agent_id(api_key)
+    _require_valid_agent_id(agent_id)
 
-    store.set("agent_id", agent_id)
     # API key is NOT stored — only used to obtain a token
-    resp = client.login(agent_id, api_key)
-    safe = {k: v for k, v in resp.items() if k not in ("access_token", "token_type", "expires_in")}
-    safe["status"] = "authenticated"
-    safe["agent_id"] = agent_id
-    print_json(safe)
+    client.login(agent_id, api_key)
+    print_json({"status": "authenticated", **client.auth_status()})

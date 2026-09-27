@@ -13,6 +13,87 @@ This skill spends **only** from the user's **prepaid Snaplii Cash balance** — 
 
 **What this skill does and doesn't do:** Snaplii buys a gift card and gives you its **redemption code**. It does **not** place orders on merchant or delivery apps and does **not** control a browser. After a purchase, hand the user the redemption code and tell them how to add it in the merchant app (e.g. Uber Eats / DoorDash → Payment → Add Gift Card). The user completes the order themselves.
 
+<!-- muse-auth:begin -->
+## Auth
+
+### When to connect
+
+Installing, updating, or reading this skill alone does not authorize credential
+collection or login: do not open credential input, exchange tokens, or probe a
+protected endpoint. Report installation separately from connection. A request to
+connect, including "install and connect", or to perform a protected Snaplii task
+starts the authentication gate below.
+
+### Authentication gate
+
+1. Meta Muse uses the CLI path below. Other agents prefer available Snaplii MCP
+   tools; otherwise use the CLI. Check `snaplii config show` for CLI operations or
+   `snaplii_config_show` for MCP operations, using the same gateway as the task.
+2. Continue to browse, balance, quote, purchase, bill pay, or transfer only when
+   `has_valid_token=true` (the JSON boolean). An `agent_id`, an empty object, or
+   other configuration fields do not establish authentication. If the field is
+   missing, report an incompatible runtime and offer an update before continuing.
+3. A valid session needs no `init` or `connect`. Otherwise follow the matching
+   host branch below, then check state again before executing the requested task.
+
+### Meta Muse
+
+Use the CLI for Meta Muse, before calling any card-bearing MCP connect tool.
+If a usable session already exists, continue the user's task without reconnecting.
+Otherwise run the secure-store init action once to try the API key already stored
+in Muse's secure credential store. The store holds the API key, not the session.
+
+For credential_required or invalid_key, use only the secure-input invocation
+documented below and supplied by a muse_secure_entry action. Invoke it as a native
+Muse tool, not Python or shell code; wait for a successful submission before
+running after_success. Collect the key through secure input, never through chat.
+If no secure-input invocation is supplied, treat secure entry as unavailable.
+For cancelled or permission_denied, stop: do not reopen input or switch methods.
+For secure_entry_unavailable, explain the limitation and offer the existing login
+method only after the user explicitly chooses it. Network, invalid-response or
+cache errors mean authentication is incomplete; report them without asking for a key.
+
+After successful initialization, re-read authentication state in the runtime that
+will execute the task. Continue only when has_valid_token=true. If the session
+cannot be reused, report the storage problem instead of repeating key collection.
+Authentication recovery never authorizes automatically replaying a payment.
+
+For the Snaplii production gateway, the secure-store init action is:
+
+```bash
+snaplii --base-url https://aipayment.snaplii.com init --vault-auth
+```
+
+Use this command only for that gateway; for another gateway, stop and explain
+that secure credential authentication is unavailable there. `--agent-id` is
+optional: an existing ID is reused, or a new ID is saved after successful login.
+
+Automatic secure-input invocation is unavailable in this version. A missing or
+rejected stored key requires the unavailable-path handling above; do not guess a
+Muse tool name or its arguments, or claim that a dialog was opened.
+
+### Other agents
+
+Keep authentication in the runtime that will use it. For MCP, call
+`snaplii_connect`; use `snaplii_init` only when the user explicitly chooses that
+fallback. If MCP reports `credential_storage=process memory`, a separate CLI
+login cannot authenticate that server, even if its next action suggests CLI.
+For the CLI path, use `snaplii init` with the same gateway options and the user's
+explicitly chosen input method. Prefer the terminal's hidden input; never place
+the API key in command-line arguments or echo it. Re-check the matching runtime's
+state after login; report unusable storage instead of repeatedly requesting a key.
+
+### Reauthentication
+
+On `auth_required`, `reauth_required`, HTTP 401, or an explicit session-rejection
+code, return to this gate. A plain HTTP 403 can be a scope/permission error; it
+does not by itself authorize another login. Honor stop and retry-later actions.
+Report cache/configuration errors as such. Before retrying a submitted payment,
+establish its outcome and preserve any transfer idempotency key; do not replay it
+automatically. Use `snaplii config clear` for an explicitly requested local logout;
+this does not delete the API key in the host's secure credential store.
+<!-- muse-auth:end -->
+
 ## Prerequisites
 
 1. **Download the Snaplii App** ([iOS](https://apps.apple.com/app/snaplii/id1596924498) / [Android](https://play.google.com/store/apps/details?id=com.snaplii.app)) — register and load Snaplii Cash balance
@@ -21,7 +102,7 @@ This skill spends **only** from the user's **prepaid Snaplii Cash balance** — 
 
 You help users browse, purchase, and manage gift cards through Snaplii.
 
-**Runtime selection.** If `snaplii_*` MCP tools are available in this session (e.g. Claude Desktop with the Snaplii MCP server installed), prefer them — they wrap the same gateway. Otherwise, use the **Bash tool** to invoke the `snaplii` CLI. Never just print commands without executing them.
+**Runtime selection.** Follow [Auth](#auth) before executing the requested task: Meta Muse uses the CLI; other agents prefer available Snaplii MCP tools. In CLI mode, use the Bash tool to execute commands, not just print them.
 
 **PATH handling (Bash mode).** The first `snaplii` call in a session may fail with `command not found` because the script is in a directory not on PATH (typical with `pip --user` / system-Python installs). When that happens:
 
@@ -45,16 +126,9 @@ If you see this notice, run `snaplii update` once, then continue. It self-instal
 
 ### Step 1: Check authentication state
 
-Run `snaplii config show` to verify the CLI has a valid token.
-If not configured or token expired, ask the user for their API key, then run:
-`snaplii init`
-The CLI will prompt for the API key via hidden stdin input — **never pass the API key as a command-line argument** (it would be visible in shell history and process listings). Agent ID is auto-derived from the API key.
-
-- Output is exactly `{}` → never configured. Ask the user for their API key, then run `snaplii init` (it prompts for the key via hidden stdin).
-- Output contains `agent_id` → configured. Proceed.
-- A later call returns `401 / 403` → token expired or revoked. Re-run `init`.
-
-Credentials live at `~/.snaplii/config.json`. To log out, run `snaplii config clear` (or delete that file).
+Complete [Auth](#auth) in the runtime that will execute the task. Proceed only
+when its status reports `has_valid_token=true`; otherwise follow that section's
+host-specific connection and recovery rules.
 
 ### Step 2: Browse & recommend
 
@@ -158,7 +232,7 @@ If purchase fails, **do not retry automatically**. Show the user the error and a
 
 - `MACP6005` → payment service error. May be temporary — ask the user to wait a moment and retry. If it persists, check Snaplii Cash balance in the app. Do NOT assume it's always "insufficient balance".
 - `502 Bad Gateway` → gateway may be cold-starting. Ask the user to wait a moment and try again.
-- `401 / 403` → re-run `init`, or check that the API key has scope `PAY_WRITE`.
+- Authentication rejection → follow [Auth](#auth), without replaying the purchase. A plain `403` may mean the key lacks `PAY_WRITE`; check the error before requesting another login.
 - network / 5xx → ask the user before retrying.
 
 ### Step 5: API keys
@@ -238,7 +312,7 @@ This skill handles real financial operations. These safety rules always apply:
 
 - `command not found` → see PATH handling above.
 - `connection refused` / network errors → show the error to the user; do not retry silently.
-- `401 / 403` → suggest `snaplii init` again, or check API key scope.
+- Authentication rejection → follow [Auth](#auth). A plain `403` may be a scope error, not an expired session.
 - `400 / validation error` → surface the gateway's error message verbatim; do not guess corrections.
 - If a flag listed in the Command Reference below appears unsupported by the installed CLI version, run `snaplii help` or `snaplii <subcommand> --help` to discover the current syntax instead of guessing.
 
@@ -246,8 +320,8 @@ This skill handles real financial operations. These safety rules always apply:
 
 | Command | Purpose |
 |---|---|
-| `snaplii init` | Login (prompts for API key via hidden input) |
-| `snaplii config show` | Show config (secrets auto-masked) |
+| `snaplii init [--agent-id ID] [--vault-auth]` | Authenticate using the host-specific method in Auth; agent ID is optional |
+| `snaplii config show` | Show safe authentication state, including `has_valid_token` |
 | `snaplii config set --base-url URL` | Switch gateway (e.g. staging vs prod) |
 | `snaplii config clear` | Log out / wipe local credentials |
 | `snaplii browse tags [--channel CH]` | List card categories + brand summaries for the account's country (region is automatic — no flag). |
@@ -264,7 +338,7 @@ This skill handles real financial operations. These safety rules always apply:
 | `snaplii transfer finish --order-no NO` | Send NOW (only on the user's explicit ask) — then poll status |
 | `snaplii transfer status --order-no NO [--wait]` | One transfer's state; `--wait` polls until FINISHED/CANCELLED/FAILED |
 | `snaplii transfer list [--status S]` | List transfers, newest first |
-| `snaplii help [SUBCOMMAND]` | Built-in help — use as a fallback if a flag here looks wrong |
+| `snaplii help` / `snaplii <command> --help` | Top-level / command-specific help |
 
 ## Important Rules
 
@@ -277,5 +351,5 @@ This skill handles real financial operations. These safety rules always apply:
 - **If the user asks to send money but gave no phone number, ask for it** — never guess the recipient.
 - **To report the user's Snaplii Cash balance, run `snaplii balance`** — it returns the real, current spendable balance (the same pool that pays for gift cards and bills). Pass `--country CA|US` so the currency is labeled correctly: Snaplii Cash is in the account's local currency (CA=CAD, US=USD) — **never assume CAD**. Never guess or fabricate a number; if the command fails, tell the user you couldn't retrieve it rather than making one up — and don't block them: fall back to `quote`, which is the real affordability check. Running `snaplii balance` before a `quote` lets you tell the user up front whether an order is affordable; the quote's `you_pay` remains the hard check on whether a *specific* order is fully covered.
 - **A $0 balance is normal for a new account — never dead-end first-time users.** When the balance is $0 (or doesn't cover the order), warmly explain they just need to add funds in the Snaplii app (Wallet → Add Cash / Top Up), reassure them there's nothing else to set up, and offer to re-check the balance and continue once they've topped up. Keep it encouraging, not a hard stop.
-- **Token is NOT auto-refreshed.** When any command returns a token-expired or 401 error, immediately run `snaplii init` to re-authenticate. Tell the user: "Your session has expired. Please re-enter your API key." Then pipe the user's API key input into init. Do NOT ask the user to run the command themselves — handle it seamlessly.
+- **Token is NOT auto-refreshed.** Follow [Auth](#auth) on expiry or authentication rejection. Reuse the host's stored credential when available; never automatically switch to raw-key input or replay a payment.
 - Parse JSON output and present in human-friendly format. Do not surface internal IDs (brandId / templateId / cardNo / keyId) into user-facing text unless the user specifically asks.
