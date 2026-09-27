@@ -1,9 +1,14 @@
 import json
+from importlib.metadata import version
 
 from click.testing import CliRunner
 
-from snaplii import cli, version_check
+from snaplii import __version__, cli, version_check
 from snaplii.config_store import ConfigStore
+
+
+def test_cli_version_matches_installed_distribution():
+    assert __version__ == version("snaplii-cli")
 
 
 def test_candidate_update_never_replaces_the_bundle_with_pypi(tmp_path, monkeypatch, httpx_mock):

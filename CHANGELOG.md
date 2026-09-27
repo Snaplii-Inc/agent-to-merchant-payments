@@ -6,6 +6,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
+## [0.17.0] — 2026-09-27
+
+### Added
+- **Muse secure credential store integration.** In Muse, Snaplii guides the agent to open Muse's secure API-key dialog, explains how to create a key in the Snaplii app, and initializes a session before any Snaplii business operation. Existing credentials and valid sessions are reused.
+- **Connect during first skill installation in Muse.** When Muse installs the Snaplii skill at the user's request, it also connects the account unless the user asks to connect later. Installation finishes after connection, without querying balances or making payments. Updates, reinstalls, and non-Muse hosts do not trigger this installation-time flow.
+- **Authentication diagnostics.** `snaplii config doctor` and structured next actions help agents identify missing, expired, or rejected sessions and guide users through recovery.
+
+### Changed
+- **Session caching in Muse works without a system keychain.** Recognized Muse environments automatically cache session tokens in an owner-only configuration file; API keys remain in Muse's secure credential store. Other environments retain their existing storage choices.
+- **Consistent CLI, MCP, and skill authentication guidance.** Agents check `has_valid_token` before proceeding. Secure-input cancellation stops the current connection attempt; when secure input is unavailable, the original login method remains available through an explicitly chosen fallback.
+- **Matched local candidate bundles.** CLI, MCP, and skill candidates can be installed together with checksum verification. Prerelease installs do not replace themselves through the stable update channel.
+
+### Fixed
+- **MCP reauthentication without a keychain.** Memory-backed sessions recover inside the MCP process instead of sending users to a separate CLI process that cannot refresh that session.
+- **Gateway configuration and session safety.** Configured gateway path prefixes are preserved, sessions are bound to their login context, and concurrent configuration updates no longer overwrite newer session state.
+- **Transfer recovery information.** Authentication rejection preserves the transfer's idempotency key even when the local session cache cannot be updated.
+- **CLI and package version consistency.** CLI and MCP distributions now use `0.17.0`, and MCP requires `snaplii-cli>=0.17.0`.
+
+---
+
 ## [0.16.0] — 2026-09-23
 
 ### Added
@@ -311,6 +331,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.17.0 | 2026-09-27 | Muse secure credential store and first-install connection; session caching and recovery |
 | 0.16.0 | 2026-09-23 | Secure Vault authentication; OpenAPI specification for 19 gateway operations |
 | 0.15.0 | 2026-09-02 | P2P transfers to a phone number (26 MCP tools); `mcp<2` pin |
 | 0.14.1 | 2026-06-23 | Reject out-of-range gift-card amounts; capability-based connect |
