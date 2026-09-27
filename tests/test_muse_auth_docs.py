@@ -58,6 +58,25 @@ def test_muse_input_action_requires_host_capability_without_inventing_a_tool():
     assert auth.build_auth_action("credential_required", host="muse", origin="https://other.example")["type"] == "stop"
 
 
+@pytest.mark.parametrize("state", ["credential_required", "invalid_key", "credential_lookup_failed"])
+def test_muse_key_requests_carry_the_documented_app_creation_route(state):
+    action = auth.build_auth_action(state, host="muse")
+    # A standalone runtime action must guide key creation without relying on
+    # the user or agent having read the repository's Quick Start first.
+    instruction = " ".join(action["instruction"].split())
+    route = "More → Payment Methods → AI Payment Management → + New API Key"
+    assert route in instruction
+    # Keep the actual App labels/order aligned with the public setup guide.
+    quick_start = (ROOT / "README.md").read_text().split("### 1. Get Your API Key via Snaplii App", 1)[1]
+    quick_start = quick_start.split("### 2.", 1)[0]
+    positions = [quick_start.index(label) for label in route.split(" → ")]
+    assert positions == sorted(positions)
+    assert action["after_success"]["instruction"] == action["instruction"]
+    # Existing sessions need no input request, and this guide is Muse-specific.
+    assert auth.build_auth_action("ready", host="muse") is None
+    assert "instruction" not in auth.build_auth_action("auth_required", host="unknown")
+
+
 def test_all_distributed_skills_have_the_current_auth_gate():
     result = run_sync("--check")
     assert result.returncode == 0, result.stdout + result.stderr

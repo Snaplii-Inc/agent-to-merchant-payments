@@ -16,6 +16,11 @@ MUSE_HELPER = Path("/opt/hatch/skills/skill-creator/bin/dynamic_credentials.py")
 MUSE_SOCKET = Path("/run/hatch/auth/authd.sock")
 
 MUSE_AUTH_INSTRUCTION = """Use the CLI for Meta Muse, before calling any card-bearing MCP connect tool.
+Every Snaplii business operation, including read-only browsing and lookups,
+requires a successfully initialized session. Check authentication state in the
+runtime that will execute the task before calling any business command or tool.
+Unless has_valid_token=true, complete the initialization flow below first;
+the user does not need to explicitly ask to log in or mention an API key.
 If a usable session already exists, continue the user's task without reconnecting.
 Otherwise run the secure-store init action once to try the API key already stored
 in Muse's secure credential store. The store holds the API key, not the session.
@@ -33,6 +38,28 @@ For credential_lookup_failed, first inspect credential availability through your
 native capability without reading or displaying the key. Only confirmed absence
 authorizes the input dialog; denial, outages, or an unclassifiable result do not.
 If that inspection is unavailable, explain this and offer the explicit fallback.
+
+Before opening a required input dialog, you MUST explain the following directly
+to the user in their language, preserving the app's menu labels:
+
+- Connecting Snaplii is required before continuing their requested task.
+- If they need an API key, open the Snaplii App and sign in, then go to
+  More → Payment Methods → AI Payment Management → + New API Key.
+  Set a name, choose the permissions needed for their task and a spending limit,
+  then create and copy the key. The key is shown only once. Leave permission
+  and spending-limit choices to the user.
+- You will open Muse's native secure credential input dialog. Paste the API key
+  only into that dialog, not into the chat; Muse stores it in its secure
+  credential store. If they already have a usable key, they can enter that key
+  instead of creating another one.
+- After submission, you will verify the connection before continuing the task.
+  If they cancel, you will stop without continuing the task.
+
+Give these app instructions as part of the input request, not merely an offer
+to explain how to obtain a key. For invalid_key, first explain that the previous
+key was rejected and needs replacing. Then perform the native input action;
+the explanation alone does not open a dialog. Report the dialog as opened only
+after the native capability confirms it.
 
 Bind the API key as custom.snaplii / access_token, authorized only for
 aipayment.snaplii.com. These describe the Snaplii helper's required credential,
@@ -91,8 +118,10 @@ def render_auth_skill_block() -> str:
 Installing, updating, or reading this skill alone does not authorize credential
 collection or login: do not open credential input, exchange tokens, or probe a
 protected endpoint. Report installation separately from connection. A request to
-connect, including "install and connect", or to perform a protected Snaplii task
+connect, including "install and connect", or to perform any Snaplii business task
 starts the authentication gate below.
+Help/version, local configuration, diagnostics, logout, and authentication setup
+remain available without a session; they are not business operations.
 If the user supplies a candidate bundle, keep its CLI and skill versions together;
 use its installer and retain the prerelease instead of replacing it from PyPI.
 
@@ -101,8 +130,11 @@ use its installer and retain the prerelease instead of replacing it from PyPI.
 1. Meta Muse uses the CLI path below. Other agents prefer available Snaplii MCP
    tools; otherwise use the CLI. Check `snaplii config show` for CLI operations or
    `snaplii_config_show` for MCP operations, using the same gateway as the task.
-2. Continue to browse, balance, quote, purchase, bill pay, or transfer only when
-   `has_valid_token=true` (the JSON boolean). An `agent_id`, an empty object, or
+2. Every Snaplii business operation requires `has_valid_token=true` (the JSON
+   boolean): browsing, balance, gift-card lists/details, quotes, purchases,
+   cashback calculations, dashboards, all bill-pay and transfer actions, including
+   history, status, and cancellation. Read-only operations are not exempt.
+   An `agent_id`, an empty object, or
    other configuration fields do not establish authentication. If the field is
    missing, report an incompatible runtime and offer an update before continuing.
 3. A valid session needs no `init` or `connect`. Otherwise follow the matching
