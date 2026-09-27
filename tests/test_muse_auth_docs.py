@@ -110,6 +110,9 @@ def skill_artifacts(tmp_path):
     ("--vault-auth", "--guessed-auth"),
     ("https://aipayment.snaplii.com", "https://other.example"),
     ("has_valid_token=true", "T1_PENDING_TOOL_CALL"),
+    ("Only when host=muse", "For every host"),
+    ("Honor an explicit install-only", "Ignore an explicit install-only"),
+    ("keep the installed skill", "remove the installed skill"),
 ])
 def test_check_rejects_artifact_drift_without_writing(skill_artifacts, relative, changed):
     path = skill_artifacts / relative

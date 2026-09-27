@@ -297,6 +297,8 @@ snaplii config show
 
 When Muse is recognized, `snaplii init` selects secure credential authentication by default and caches the session token in an owner-only file so later CLI commands can reuse it. The API key stays in Muse's secure credential store. The accompanying skill directs Muse to open its native secure input when a key is needed; cancellation stops the connection attempt.
 
+When you ask Muse to install the Snaplii skill for the first time, the skill instructs Muse to continue with account connection after installation, unless you ask to connect later. It reuses an existing session or stored key where possible; otherwise it guides you to create a key in the Snaplii App and enter it only in Muse's native secure dialog. If you cancel or connection fails, the skill stays installed but is not connected. The skill does not treat updating, reinstalling, or simply downloading it as a new connection request. Other agents keep their existing connection flow.
+
 Use `snaplii config doctor` to check runtime detection and storage without logging in. If secure credential authentication is unavailable, you can explicitly choose `snaplii init --legacy-auth` and enter your API key at the terminal's hidden prompt.
 
 ### 5. Use the CLI

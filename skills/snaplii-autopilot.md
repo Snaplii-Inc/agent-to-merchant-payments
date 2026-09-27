@@ -12,11 +12,12 @@ This skill completes the **full** Agent-to-Merchant flow: buy a Snaplii gift car
 
 ### When to connect
 
-Installing, updating, or reading this skill alone does not authorize credential
-collection or login: do not open credential input, exchange tokens, or probe a
-protected endpoint. Report installation separately from connection. A request to
-connect, including "install and connect", or to perform any Snaplii business task
-starts the authentication gate below.
+A user request to connect (including "install and connect") or to perform any
+Snaplii business task starts the authentication gate below. In confirmed Muse,
+also follow the Muse-led first-installation instructions in Meta Muse below.
+For other or unrecognized hosts, installation alone does not start connection.
+Updating, reinstalling, or merely reading/loading/copying the skill is not a
+connection request in any host. Report installation separately from connection.
 Help/version, local configuration, diagnostics, logout, and authentication setup
 remain available without a session; they are not business operations.
 If the user supplies a candidate bundle, keep its CLI and skill versions together;
@@ -40,6 +41,33 @@ use its installer and retain the prerelease instead of replacing it from PyPI.
 ### Meta Muse
 
 Use the CLI for Meta Muse, before calling any card-bearing MCP connect tool.
+
+Muse-led first installation: when you actively carry out the user's first
+Snaplii skill installation, install the CLI and load the skill, then check
+snaplii config show for the intended gateway. Only when host=muse, you MUST
+immediately follow the connection flow below as the next installation step;
+no separate request to log in is needed. Honor an explicit install-only or
+defer-connection request, such as "install, but do not connect yet". Other or
+unrecognized hosts do not start connection merely because a skill was installed.
+
+Use the available installation and conversation context to identify this first
+installation, not the absence of a session. Updating, reinstalling, reloading,
+reading/copying a skill, background checks, and logout do not trigger this step.
+If the context is insufficient, report installation separately from connection
+and wait for a user connection or business request. Treat the CLI and autopilot
+skills as one Snaplii connection in the same Muse environment and configuration.
+Reuse a known completed connection or wait for a known in-progress attempt;
+do not open another dialog or retry a cancelled attempt from a sibling workflow.
+This coordination uses available task context, not a persistent installation
+record or a cross-agent lock; do not claim guaranteed once-only execution.
+
+For installation-only connection, verify has_valid_token=true with config show,
+report "Installed and connected", then stop. Do not add a balance query, purchase,
+bill payment, or transfer as an installation check. A connected session does not
+prove all business permissions. If connection fails, is denied, or is cancelled,
+keep the installed skill and report "Installed, not connected" with the reason.
+Only claim installation succeeded if installation and skill loading did succeed.
+
 Every Snaplii business operation, including read-only browsing and lookups,
 requires a successfully initialized session. Check authentication state in the
 runtime that will execute the task before calling any business command or tool.
@@ -66,18 +94,24 @@ If that inspection is unavailable, explain this and offer the explicit fallback.
 Before opening a required input dialog, you MUST explain the following directly
 to the user in their language, preserving the app's menu labels:
 
-- Connecting Snaplii is required before continuing their requested task.
+- For installation, explain that the skill is installed and you are now
+  connecting their account. For a business request, explain that connection
+  is required before continuing that task.
 - If they need an API key, open the Snaplii App and sign in, then go to
   More → Payment Methods → AI Payment Management → + New API Key.
-  Set a name, choose the permissions needed for their task and a spending limit,
-  then create and copy the key. The key is shown only once. Leave permission
-  and spending-limit choices to the user.
+  Set a name, choose permissions and a spending limit, then create and copy the
+  key. The key is shown only once. Explain that reading account information,
+  purchasing, and transferring money need the corresponding permissions.
+  During installation there may be no business task yet: let the user choose
+  their intended uses and limits in the app; do not require all permissions or
+  automatically restrict them to read-only.
 - You will open Muse's native secure credential input dialog. Paste the API key
   only into that dialog, not into the chat; Muse stores it in its secure
   credential store. If they already have a usable key, they can enter that key
   instead of creating another one.
-- After submission, you will verify the connection before continuing the task.
-  If they cancel, you will stop without continuing the task.
+- After submission, you will verify the connection, then finish installation
+  or continue the requested business task. If they cancel, you will stop the
+  connection attempt; installation remains in place and no business task runs.
 
 Give these app instructions as part of the input request, not merely an offer
 to explain how to obtain a key. For invalid_key, first explain that the previous
@@ -91,7 +125,9 @@ not a Muse tool's parameter schema. The access_token entry holds the API key,
 not the Snaplii session token. Collect input only in the native secure dialog.
 Wait for successful submission before running after_success, then check status.
 Allow one input/submission/init attempt per connection request. If it fails,
-report the failure and await a new user request instead of reopening the dialog.
+report the failure and await a new user request to connect or perform a Snaplii
+business task instead of reopening the dialog. Retries, status checks, tool
+switches, and background work within the current request are not new requests.
 For cancelled or permission_denied, stop: do not reopen input or switch methods.
 For secure_entry_unavailable, explain the limitation and offer the existing login
 method only after the user explicitly chooses it: run snaplii init --legacy-auth
