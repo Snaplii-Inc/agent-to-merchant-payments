@@ -9,6 +9,7 @@ import keyring
 import pytest
 from keyring.backends import chainer, fail, null
 
+from snaplii import config_store
 from snaplii.config_store import ConfigStore
 from snaplii.exceptions import AuthError, ConfigError
 
@@ -384,9 +385,15 @@ def test_keychain_mcp_explicit_secure_auth_keeps_secure_recovery(tmp_path, fake_
     assert action["argv"][-1] == "--vault-auth"
 
 
-def test_failed_metadata_write_restores_previous_keychain_session(tmp_path, fake_keyring, monkeypatch):
+@pytest.mark.parametrize("existing_session", [False, True], ids=["first-login", "reauthentication"])
+def test_failed_metadata_write_restores_previous_keychain_session(
+    tmp_path, fake_keyring, monkeypatch, existing_session
+):
     store = ConfigStore(tmp_path / "config.json")
-    store.commit_session("session-a", 3600, agent_id="agent-a", auth_method="api_key", token_origin=ORIGIN)
+    store.set("base_url", ORIGIN)
+    if existing_session:
+        store.commit_session("session-a", 3600, agent_id="agent-a", auth_method="api_key", token_origin=ORIGIN)
+    previous = store.path.read_bytes()
 
     def fail_replace(source, target):
         raise OSError("disk full")
@@ -394,7 +401,64 @@ def test_failed_metadata_write_restores_previous_keychain_session(tmp_path, fake
     monkeypatch.setattr(os, "replace", fail_replace)
     with pytest.raises(AuthError):
         store.commit_session("session-b", 3600, agent_id="agent-b", auth_method="api_key", token_origin=ORIGIN)
-    assert ConfigStore(store.path).get_cached_token() == "session-a"
+    expected = "session-a" if existing_session else None
+    assert ConfigStore(store.path).get_cached_token() == expected
+    assert fake_keyring.get_password(store._keyring_service, "access_token") == expected
+    assert store.path.read_bytes() == previous
+
+
+@pytest.mark.parametrize("existing_session", [False, True], ids=["first-login", "reauthentication"])
+@pytest.mark.parametrize("failure", ["config-read", "metadata-mismatch", "keychain-read"])
+def test_post_write_verification_failure_keeps_committed_keychain_session(
+    tmp_path, fake_keyring, monkeypatch, existing_session, failure
+):
+    store = ConfigStore(tmp_path / "config.json")
+    if existing_session:
+        store.commit_session("session-a", 3600, agent_id="agent-a", auth_method="api_key",
+                             token_origin=ORIGIN, country="CA")
+    read_config = config_store.read_config
+    failure_injected = False
+
+    def flaky_config_read(path):
+        nonlocal failure_injected
+        data = read_config(path)
+        if data.get("agent_id") == "agent-b" and not failure_injected:
+            if failure == "config-read":
+                failure_injected = True
+                raise ConfigError("Cannot read configuration.")
+            if failure == "metadata-mismatch":
+                failure_injected = True
+                return {**data, "agent_id": "inconsistent-readback"}
+        return data
+
+    def flaky_keychain_read(service, key):
+        nonlocal failure_injected
+        # Fail only after the real atomic write. The initial keychain write
+        # and its immediate readback still succeed.
+        if (failure == "keychain-read" and not failure_injected
+                and read_config(store.path).get("agent_id") == "agent-b"):
+            failure_injected = True
+            raise RuntimeError("Transient keychain read failure")
+        return fake_keyring.get_password(service, key)
+
+    monkeypatch.setattr(config_store, "read_config", flaky_config_read)
+    monkeypatch.setattr(keyring, "get_password", flaky_keychain_read)
+    with pytest.raises(AuthError) as exc:
+        store.commit_session("session-b", 3600, agent_id="agent-b", auth_method="api_key",
+                             token_origin=ORIGIN, country="US")
+
+    assert failure_injected
+    assert exc.value.auth_state == "session_cache_failed"
+    assert exc.value.next_action == {"type": "stop", "reason": "session_cache_failed"}
+    assert fake_keyring.get_password(store._keyring_service, "access_token") == "session-b"
+    persisted = read_config(store.path)
+    assert persisted["agent_id"] == "agent-b"
+    assert persisted["country"] == "US"
+    assert "access_token" not in persisted
+    # A new store can reuse the matched session once the transient fault ends.
+    recovered = ConfigStore(store.path)
+    assert recovered.get_cached_token(origin=ORIGIN) == "session-b"
+    assert recovered.auth_status(origin=ORIGIN)["has_valid_token"] is True
 
 
 @pytest.mark.parametrize("ttl", [3600.0, 604800.0])

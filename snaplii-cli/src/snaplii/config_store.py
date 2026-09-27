@@ -203,8 +203,10 @@ class ConfigStore:
                     _credential_storage=storage)
         if storage == "config file":
             data["access_token"] = token
+        metadata_committed = False
         try:
             write_config(self._path, data, private=storage == "config file")
+            metadata_committed = True
             persisted = read_config(self._path)
             if persisted != data:
                 raise _cache_error()
@@ -215,9 +217,10 @@ class ConfigStore:
             if self._session_token(persisted) != token:
                 raise _cache_error()
         except ConfigError as exc:
-            if storage == "system keychain":
-                # The metadata still describes the previous session: restore its
-                # keychain token so that session stays usable.
+            if storage == "system keychain" and not metadata_committed:
+                # Restore the old secret only if the atomic metadata write failed.
+                # After commit, keep the new pair even if verification fails;
+                # restoring only the secret would invalidate the stored session.
                 if previous_keychain:
                     _keyring_set(self._keyring_service, previous_keychain)
                 else:
