@@ -21,15 +21,20 @@ def muse_filesystem(monkeypatch):
                 for target in (helper, socket) for path in target.parents}
     metadata[str(helper)] = (stat.S_IFREG | 0o644, 0)
     metadata[str(socket)] = (stat.S_IFSOCK | 0o660, 0)
-    real_lstat = os.lstat
+    def synthetic_stat(original):
+        def probe(path, *args, **kwargs):
+            if str(path) not in metadata:
+                return original(path, *args, **kwargs)
+            value = metadata[str(path)]
+            if value is None:
+                raise FileNotFoundError
+            if isinstance(value, OSError):
+                raise value
+            mode, owner = value
+            return os.stat_result((mode, 1, 1, 1, owner, 0, 0, 0, 0, 0))
+        return probe
 
-    def lstat(path, *args, **kwargs):
-        value = metadata.get(str(path))
-        if value is None:
-            return real_lstat(path, *args, **kwargs)
-        mode, owner = value
-        return os.stat_result((mode, 1, 1, 1, owner, 0, 0, 0, 0, 0))
-
-    monkeypatch.setattr(os, "lstat", lstat)
+    monkeypatch.setattr(os, "stat", synthetic_stat(os.stat))
+    monkeypatch.setattr(os, "lstat", synthetic_stat(os.lstat))
     monkeypatch.setattr(sys, "platform", "linux")
     return metadata

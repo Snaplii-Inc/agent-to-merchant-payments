@@ -1,5 +1,6 @@
 import json
 import stat
+import sys
 
 import pytest
 
@@ -11,7 +12,10 @@ from snaplii.cli import main
 from click.testing import CliRunner
 
 
-def test_host_artifacts_enable_muse_file_cache_without_opt_in(tmp_path, monkeypatch, muse_filesystem):
+@pytest.mark.parametrize("owner", [0, 1000])
+def test_host_artifacts_enable_muse_file_cache_without_opt_in(tmp_path, monkeypatch, muse_filesystem, owner):
+    muse_filesystem[str(auth.MUSE_HELPER)] = (stat.S_IFREG | 0o644, owner)
+    muse_filesystem[str(auth.MUSE_SOCKET)] = (stat.S_IFSOCK | 0o660, owner)
     monkeypatch.delenv("SNAPLII_ALLOW_INSECURE", raising=False)
     store = ConfigStore(tmp_path / "config.json", runtime="cli")
     state = store.auth_status(origin=auth.DEFAULT_ORIGIN)
@@ -33,9 +37,39 @@ def test_host_artifacts_enable_muse_file_cache_without_opt_in(tmp_path, monkeypa
     ("/run/hatch/auth", stat.S_IFDIR | 0o777, 0),
     ("/opt/hatch", stat.S_IFLNK | 0o755, 0),
 ])
-def test_replaceable_or_wrong_type_host_artifacts_do_not_select_muse(muse_filesystem, target, mode, uid):
+def test_existing_host_paths_select_muse_regardless_of_metadata(muse_filesystem, target, mode, uid):
     muse_filesystem[target] = (mode, uid)
+    assert auth.detect_muse().detected is True
+
+
+@pytest.mark.parametrize("target", [str(auth.MUSE_HELPER), str(auth.MUSE_SOCKET)])
+@pytest.mark.parametrize("unavailable", [None, PermissionError("synthetic denied")])
+def test_both_fixed_paths_must_be_present(muse_filesystem, target, unavailable):
+    muse_filesystem[target] = unavailable
+    result = auth.muse_environment_status()
+    assert result["detected"] is False
+    assert result["reason_code"] == "muse_runtime_unrecognized"
+    assert next(signal for signal in result["signals"] if signal["path"] == target)["exists"] is False
+
+
+def test_presence_detection_does_not_require_a_platform_label(muse_filesystem, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    assert auth.detect_muse().detected is True
+
+
+def test_host_symlinks_require_existing_targets(tmp_path, monkeypatch):
+    helper = tmp_path / "dynamic_credentials.py"
+    socket = tmp_path / "authd.sock"
+    helper_target = tmp_path / "helper-target"
+    socket_target = tmp_path / "socket-target"
+    helper_target.touch()
+    helper.symlink_to(helper_target)
+    socket.symlink_to(socket_target)
+    monkeypatch.setattr(auth, "MUSE_HELPER", helper)
+    monkeypatch.setattr(auth, "MUSE_SOCKET", socket)
     assert auth.detect_muse().detected is False
+    socket_target.touch()
+    assert auth.detect_muse().detected is True
 
 
 def test_doctor_reports_host_and_storage_without_collecting_credentials(tmp_path, monkeypatch, muse_filesystem, httpx_mock):
@@ -45,6 +79,8 @@ def test_doctor_reports_host_and_storage_without_collecting_credentials(tmp_path
     assert result.exit_code == 0, result.output
     output = json.loads(result.output)
     assert output["muse"]["detected"] is True
+    assert all(signal["exists"] for signal in output["muse"]["signals"])
+    assert all("trusted" not in signal for signal in output["muse"]["signals"])
     assert output["authentication"]["credential_storage"] == "config file"
     assert output["authentication"]["has_valid_token"] is False
     assert not path.exists()

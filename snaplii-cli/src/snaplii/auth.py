@@ -5,7 +5,6 @@ import json
 import os
 import re
 import stat
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -165,35 +164,25 @@ def detect_muse() -> MuseEnvironment:
 
 
 def muse_environment_status() -> dict:
-    """Read-only host fingerprint, not a claim of cryptographic attestation.
+    """Recognize Muse by the presence of both fixed host paths.
 
-    Only the fixed host helper + socket qualify. Environment overrides and
-    client names do not enable plaintext session caching. Fail closed if the
-    runtime can replace either artifact or a parent directory.
+    Ownership and permissions are diagnostics, not detection requirements.
+    Environment overrides and client names do not select this storage policy.
+    This is an environment hint, not a trust or cryptographic attestation.
     """
     signals = []
-    for path, kind in ((MUSE_HELPER, stat.S_ISREG), (MUSE_SOCKET, stat.S_ISSOCK)):
-        signal = {"path": str(path), "trusted": False}
+    for path in (MUSE_HELPER, MUSE_SOCKET):
+        signal = {"path": str(path), "exists": False}
         try:
-            info = os.lstat(path)
-            signal.update(mode=oct(stat.S_IMODE(info.st_mode)), owner_uid=info.st_uid)
-            if not kind(info.st_mode):
-                signal["reason_code"] = "unexpected_file_type"
-            elif info.st_uid != 0 or (path == MUSE_HELPER and info.st_mode & 0o022):
-                signal["reason_code"] = "untrusted_owner_or_permissions"
-            else:
-                for parent in path.parents:
-                    parent_info = os.lstat(parent)
-                    if (not stat.S_ISDIR(parent_info.st_mode) or parent_info.st_uid != 0
-                            or parent_info.st_mode & 0o022):
-                        signal["reason_code"] = "untrusted_parent"
-                        break
-                else:
-                    signal.update(trusted=True, reason_code="trusted_host_artifact")
+            # Follow links just as an existence check would; dangling links
+            # do not count as an available host path.
+            info = os.stat(path)
+            signal.update(exists=True, reason_code="host_artifact_present",
+                          mode=oct(stat.S_IMODE(info.st_mode)), owner_uid=info.st_uid)
         except (OSError, ValueError):
             signal["reason_code"] = "missing_or_inaccessible"
         signals.append(signal)
-    detected = sys.platform == "linux" and all(signal["trusted"] for signal in signals)
+    detected = all(signal["exists"] for signal in signals)
     return {"detected": detected,
             "reason_code": "muse_runtime_artifacts" if detected else "muse_runtime_unrecognized",
             "signals": signals}

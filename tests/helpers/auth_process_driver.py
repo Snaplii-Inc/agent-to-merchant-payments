@@ -22,22 +22,20 @@ from snaplii.config_store import ConfigStore
 path, operation, host = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
 counts = {"auth": 0, "protected": 0}
 client_type = httpx.Client
-real_lstat = os.lstat
+real_stat = os.stat
 host_helper = Path("/opt/hatch/skills/skill-creator/bin/dynamic_credentials.py")
 host_socket = Path("/run/hatch/auth/authd.sock")
-host_metadata = {str(parent): stat.S_IFDIR | 0o755
-                 for target in (host_helper, host_socket) for parent in target.parents}
-host_metadata[str(host_helper)] = stat.S_IFREG | 0o644
-host_metadata[str(host_socket)] = stat.S_IFSOCK | 0o660
+host_metadata = {str(host_helper): stat.S_IFREG | 0o644,
+                 str(host_socket): stat.S_IFSOCK | 0o660}
 
 
-def host_lstat(target, *args, **kwargs):
+def host_stat(target, *args, **kwargs):
     name = str(target)
     if host == "muse" and name in host_metadata:
-        return os.stat_result((host_metadata[name], 1, 1, 1, 0, 0, 0, 0, 0, 0))
+        return os.stat_result((host_metadata[name], 1, 1, 1, 1000, 1000, 0, 0, 0, 0))
     if host != "muse" and name in (str(host_helper), str(host_socket)):
         raise FileNotFoundError
-    return real_lstat(target, *args, **kwargs)
+    return real_stat(target, *args, **kwargs)
 
 
 def transport(request):
@@ -57,8 +55,7 @@ def secure_exchange(opener, request, timeout):
     return response
 
 
-with patch.object(os, "lstat", host_lstat), \
-     patch.object(sys, "platform", "linux"), \
+with patch.object(os, "stat", host_stat), \
      patch.object(keyring, "get_keyring", lambda: Keyring()), \
      patch.dict(os.environ, {"SNAPLII_CONFIG_PATH": str(path), "SNAPLII_ALLOW_INSECURE": "0", "SNAPLII_VAULT_HELPER_PATH": str(Path(__file__).parent)}), \
      patch.object(cli, "check_for_update", lambda *a, **kw: None), \
