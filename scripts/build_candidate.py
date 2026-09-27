@@ -56,7 +56,7 @@ def main(argv=None) -> int:
         "--skill", output / "skills/snaplii-autopilot/SKILL.md")
     payload = sorted(path for path in output.rglob("*") if path.is_file())
     manifest = {
-        "version": version, "muse_dialog_acceptance": "not_run",
+        "version": version,
         "source_revision": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
         "working_tree_modified": subprocess.run(["git", "diff", "--quiet", "HEAD"], cwd=ROOT).returncode != 0,
         "sha256": {path.relative_to(output).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest() for path in payload},

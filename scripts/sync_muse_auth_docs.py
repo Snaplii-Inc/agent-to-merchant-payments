@@ -3,7 +3,7 @@
 
 --root checks a staged tree using the same four relative distribution paths.
 --skill checks an actual standalone downloaded/extracted SKILL.md (repeatable).
---require-secure-entry additionally enforces the Muse feature's release gate.
+--require-secure-entry additionally requires a literal native-tool call schema.
 No host tools, credentials, configuration, or network access are used.
 """
 from __future__ import annotations
@@ -53,7 +53,8 @@ def main(argv=None) -> int:
         parser.error("--skill requires --check; standalone artifacts are read-only")
     actions = auth.secure_entry_actions()
     if args.require_secure_entry and (actions is None or any("tool" not in action for action in actions.values())):
-        print("Muse secure-input contract is not verified; automatic-dialog release is blocked.", file=sys.stderr)
+        print("Literal native-tool schema is unavailable; --require-secure-entry requires explicit tool/arguments.",
+              file=sys.stderr)
         return 1
     block = auth.render_auth_skill_block()
     paths = args.skill or [args.root / target for target in TARGETS]

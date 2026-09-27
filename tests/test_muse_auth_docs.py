@@ -169,7 +169,21 @@ def test_malformed_blocks_abort_all_writes(skill_artifacts, malformation):
 def test_literal_tool_contract_gate_does_not_certify_capability_guidance():
     result = run_sync("--check", "--require-secure-entry")
     assert result.returncode != 0
-    assert "secure-input contract is not verified" in result.stderr
+    assert "requires explicit tool/arguments" in result.stderr
+    assert "automatic-dialog release is blocked" not in result.stderr
+
+
+@pytest.mark.parametrize("relative", [
+    *SKILLS, "README.md", "snaplii-cli/README.md", "scripts/candidate/INSTALL.md",
+    "clawhub-plugin/README.md", "claude-desktop/PROJECT_INSTRUCTIONS.md",
+])
+def test_agent_documents_do_not_carry_obsolete_dialog_acceptance_status(relative):
+    # Acceptance bookkeeping is not an instruction to the consuming agent.
+    text = (ROOT / relative).read_text()
+    for obsolete in ("Muse 自动输入框的真实效果仍待", "弹窗效果待验证",
+                     "muse_dialog_acceptance", "muse_native_dialog",
+                     "automatic-dialog release is blocked"):
+        assert obsolete not in text, relative
 
 
 def test_downloaded_standalone_skill_is_checked_read_only(skill_artifacts, tmp_path):
