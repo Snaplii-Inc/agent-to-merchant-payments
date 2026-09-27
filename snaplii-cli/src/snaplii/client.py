@@ -84,8 +84,8 @@ class GatewayClient:
     def login_via_vault(self, agent_id: str) -> dict:
         """Exchange a host-managed API key without exposing it to this process.
 
-        Keeps the existing explicit --vault-auth entry point. Automatic Muse
-        discovery and literal secure-input instructions remain gated by T1/G1.
+        The host owns input and cancellation; this method only exchanges an
+        existing credential. Opaque lookup failures require native inspection.
         """
         import importlib.util
         import json
@@ -97,7 +97,7 @@ class GatewayClient:
 
         origin = auth.validate_vault_origin(self._base_url)
         helper_file = Path(os.environ.get(
-            "SNAPLII_VAULT_HELPER_PATH", "/opt/hatch/skills/skill-creator/bin"
+            "SNAPLII_VAULT_HELPER_PATH", str(auth.MUSE_HELPER.parent)
         )) / "dynamic_credentials.py"
         module_name = "_snaplii_credentials_" + uuid.uuid4().hex
         try:
@@ -123,9 +123,10 @@ class GatewayClient:
             helper.add_surrogate_to_request(req, "custom.snaplii",
                                              allowed_hosts=(urlsplit(origin).hostname,))
         except Exception:
-            # T1 must establish stable missing/denied/cancelled error codes.
-            # Unknown helper failures are not evidence that an input is needed.
-            raise self._auth_error("secure_entry_unavailable", "credential_helper_failed",
+            # Do not interpret an opaque exception as "missing key". Muse must
+            # distinguish missing/denied/unavailable using its native capability.
+            state = "credential_lookup_failed" if self.auth_status()["host"] == "muse" else "secure_entry_unavailable"
+            raise self._auth_error(state, "credential_helper_failed",
                                    "The secure credential store could not provide a credential.", "vault") from None
         if req.full_url != url or req.get_method() != "POST" or req.data != payload:
             raise self._auth_error("secure_entry_unavailable", "credential_request_modified",
@@ -599,8 +600,16 @@ class GatewayClient:
 
     def _reject_session(self, error, token):
         try:
-            self._config.clear_token(expected_token=token)
-            error.auth_fields = self._auth_fields("reauth_required", "session_rejected")
+            cleared = self._config.clear_token(expected_token=token)
+            if cleared:
+                error.auth_fields = self._auth_fields("reauth_required", "session_rejected")
+            else:
+                # Another login or logout superseded this request's token.
+                # Preserve that state and its runtime-specific recovery action.
+                status = self.auth_status()
+                error.auth_fields = {"auth_state": status["auth_state"],
+                                     "reason_code": "stale_session_rejected",
+                                     "next_action": status["next_action"]}
         except ConfigError:
             # Neither clearing nor reading recovery metadata may replace the
             # request error (especially a transfer's idempotency information).

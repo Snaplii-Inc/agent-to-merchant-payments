@@ -37,7 +37,25 @@ def test_secure_init_action_and_skill_share_the_same_instruction():
     assert "has_valid_token=true" in block
     # Missing host evidence must not produce an invented, callable host tool.
     assert "credentials.request_api_access" not in block
-    assert auth.build_auth_action("credential_required", host="muse")["type"] == "offer_legacy"
+    assert auth.build_auth_action("credential_required", host="muse")["type"] == "muse_secure_entry"
+
+
+def test_muse_input_action_requires_host_capability_without_inventing_a_tool():
+    action = auth.build_auth_action("credential_required", host="muse")
+    assert action["type"] == "muse_secure_entry"
+    assert action["capability"] == "muse.secure_credential_store"
+    assert action["operation"] == "ensure_api_key"
+    assert action["credential"] == {"provider": "custom.snaplii", "entry": "access_token",
+                                    "allowed_hosts": ["aipayment.snaplii.com"]}
+    assert "tool" not in action and "arguments" not in action
+    assert action["after_success"]["argv"] == ["snaplii", "--base-url", auth.DEFAULT_ORIGIN, "init", "--vault-auth"]
+    assert action["instruction"] in auth.render_auth_skill_block()
+    assert "MUST open Muse's native secure credential input dialog" in action["instruction"]
+    assert auth.build_auth_action("invalid_key", host="muse")["operation"] == "replace_api_key"
+    assert auth.build_auth_action("credential_lookup_failed", host="muse")["operation"] == "inspect_api_key"
+    assert auth.build_auth_action("credential_required", host="unknown")["type"] == "offer_legacy"
+    assert auth.build_auth_action("secure_entry_unavailable", host="muse")["type"] == "offer_legacy"
+    assert auth.build_auth_action("credential_required", host="muse", origin="https://other.example")["type"] == "stop"
 
 
 def test_all_distributed_skills_have_the_current_auth_gate():
@@ -126,7 +144,7 @@ def test_malformed_blocks_abort_all_writes(skill_artifacts, malformation):
         assert {name: (skill_artifacts / name).read_bytes() for name in SKILLS} == snapshot
 
 
-def test_secure_entry_release_gate_cannot_pass_with_only_safe_fallback_docs():
+def test_literal_tool_contract_gate_does_not_certify_capability_guidance():
     result = run_sync("--check", "--require-secure-entry")
     assert result.returncode != 0
     assert "secure-input contract is not verified" in result.stderr

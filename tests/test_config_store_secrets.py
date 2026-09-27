@@ -1,6 +1,9 @@
 import json
 import os
 import stat
+import subprocess
+import sys
+from pathlib import Path
 
 import keyring
 import pytest
@@ -353,6 +356,34 @@ def test_mcp_runtime_memory_recovery_points_to_connect_tool(tmp_path, monkeypatc
     assert ConfigStore(store.path).auth_status(origin=ORIGIN)["next_action"]["type"] == "run_cli"
 
 
+@pytest.mark.parametrize("state", ["missing", "expired", "rejected"])
+@pytest.mark.parametrize("method", ["api_key", "url"])
+def test_keychain_mcp_recovery_does_not_require_a_shell(tmp_path, fake_keyring, state, method):
+    store = ConfigStore(tmp_path / "config.json", runtime="mcp")
+    if state != "missing":
+        store.commit_session("synthetic-token", 3600, agent_id="agent-1",
+                             auth_method=method, token_origin=ORIGIN)
+        if state == "expired":
+            store.set("token_expires_at", 1)
+        else:
+            store.clear_token()
+    status = store.auth_status(origin=ORIGIN)
+    assert status["has_valid_token"] is False
+    assert status["credential_storage"] == "system keychain"
+    assert status["next_action"] == {"type": "call_mcp_tool", "tool": "snaplii_connect", "arguments": {}}
+    assert ConfigStore(store.path, runtime="cli").auth_status(origin=ORIGIN)["next_action"]["type"] == "run_cli"
+
+
+def test_keychain_mcp_explicit_secure_auth_keeps_secure_recovery(tmp_path, fake_keyring):
+    store = ConfigStore(tmp_path / "config.json", runtime="mcp")
+    store.commit_session("synthetic-token", 3600, agent_id="agent-1",
+                         auth_method="vault", token_origin=ORIGIN)
+    store.set("token_expires_at", 1)
+    action = store.auth_status(origin=ORIGIN)["next_action"]
+    assert action["type"] == "run_cli"
+    assert action["argv"][-1] == "--vault-auth"
+
+
 def test_failed_metadata_write_restores_previous_keychain_session(tmp_path, fake_keyring, monkeypatch):
     store = ConfigStore(tmp_path / "config.json")
     store.commit_session("session-a", 3600, agent_id="agent-a", auth_method="api_key", token_origin=ORIGIN)
@@ -389,12 +420,62 @@ def test_cache_failure_reports_its_secret_free_cause(tmp_path, monkeypatch):
     assert "synthetic-secret" not in exc.value.message
 
 
-def test_clear_removes_lock_file(tmp_path):
+def test_clear_preserves_empty_lock_file_but_removes_configuration(tmp_path):
     store = _store_no_keyring(tmp_path)
     store.set("agent_id", "agent-a")
-    assert (tmp_path / "config.json.lock").exists()
+    lock = tmp_path / "config.json.lock"
+    inode = lock.stat().st_ino
     store.clear()
-    assert not (tmp_path / "config.json.lock").exists()
+    assert not store.path.exists()
+    assert store.get_cached_token() is None
+    assert lock.stat().st_ino == inode
+    assert not lock.read_bytes().strip(b"\0")  # Windows may keep one locking byte.
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX flock regression")
+def test_clear_does_not_split_the_lock_between_processes(tmp_path, monkeypatch):
+    import fcntl
+
+    monkeypatch.setattr(keyring, "get_keyring", lambda: fail.Keyring())
+    store = ConfigStore(tmp_path / "config.json")
+    store.set("agent_id", "agent-a")
+    lock = tmp_path / "config.json.lock"
+    # Model a writer that opened the lock before clear, but acquires it after.
+    descriptor = os.open(lock, os.O_RDWR)
+    writer = """
+import sys
+import keyring
+from keyring.backends.fail import Keyring
+from pathlib import Path
+from snaplii import _config_file
+from snaplii.config_store import ConfigStore
+from snaplii.exceptions import ConfigError
+keyring.get_keyring = lambda: Keyring()
+_config_file._LOCK_TIMEOUT = 0.1
+try:
+    ConfigStore(Path(sys.argv[1])).set('agent_id', 'agent-b')
+except ConfigError as exc:
+    assert 'busy' in str(exc), str(exc)
+    print('blocked')
+else:
+    print('written')
+"""
+    env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "snaplii-cli" / "src")}
+
+    def write_in_other_process():
+        result = subprocess.run([sys.executable, "-c", writer, str(store.path)],
+                                env=env, text=True, capture_output=True, timeout=5)
+        assert result.returncode == 0, result.stderr
+        return result.stdout.strip()
+
+    try:
+        store.clear()
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert write_in_other_process() == "blocked"
+    finally:
+        os.close(descriptor)
+    assert write_in_other_process() == "written"
+    assert store.get("agent_id") == "agent-b"
 
 
 def test_clear_removes_legacy_keychain_item_after_new_session(tmp_path, fake_keyring):

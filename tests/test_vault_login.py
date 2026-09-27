@@ -72,6 +72,21 @@ def _cli_error(capsys):
     return json.loads(captured.err)
 
 
+def test_muse_lookup_failure_requests_native_inspection_not_blind_key_collection(vault_client, monkeypatch, muse_filesystem, capsys):
+    from snaplii import auth
+
+    # Recreate the store's environment observation through the real detector.
+    vault_client._config._muse = auth.detect_muse()
+    helper = sys.modules["synthetic_muse_helper"]
+    helper.add_surrogate_to_request.side_effect = RuntimeError("unknown synthetic-secret")
+    out = _cli_error(capsys)
+    assert out["auth_state"] == "credential_lookup_failed"
+    assert out["next_action"]["operation"] == "inspect_api_key"
+    assert out["next_action"]["after_success"]["argv"][-1] == "--vault-auth"
+    assert "synthetic-secret" not in json.dumps(out)
+    assert vault_client._config.get_cached_token() is None
+
+
 @pytest.mark.parametrize("reason", [
     socket.gaierror("Name resolution failed"),
     ConnectionRefusedError("Connection refused"),

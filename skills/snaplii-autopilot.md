@@ -17,6 +17,8 @@ collection or login: do not open credential input, exchange tokens, or probe a
 protected endpoint. Report installation separately from connection. A request to
 connect, including "install and connect", or to perform a protected Snaplii task
 starts the authentication gate below.
+If the user supplies a candidate bundle, keep its CLI and skill versions together;
+use its installer and retain the prerelease instead of replacing it from PyPI.
 
 ### Authentication gate
 
@@ -37,14 +39,31 @@ If a usable session already exists, continue the user's task without reconnectin
 Otherwise run the secure-store init action once to try the API key already stored
 in Muse's secure credential store. The store holds the API key, not the session.
 
-For credential_required or invalid_key, use only the secure-input invocation
-documented below and supplied by a muse_secure_entry action. Invoke it as a native
-Muse tool, not Python or shell code; wait for a successful submission before
-running after_success. Collect the key through secure input, never through chat.
-If no secure-input invocation is supplied, treat secure entry as unavailable.
+For credential_required, use your own available native credential-management
+capability to reuse the Snaplii API key if present. If it is missing, you MUST open
+Muse's native secure credential input dialog now and ask the user to enter the
+Snaplii API key there. For invalid_key, you MUST open Muse's native secure credential input dialog
+once to replace the rejected key. Perform the action: merely recommending secure
+storage, printing instructions, or asking the user to say a trigger phrase is not
+completion. Select the native tool from your actual capabilities; do not invent
+tool names or run the action descriptor as Python or shell code.
+
+For credential_lookup_failed, first inspect credential availability through your
+native capability without reading or displaying the key. Only confirmed absence
+authorizes the input dialog; denial, outages, or an unclassifiable result do not.
+If that inspection is unavailable, explain this and offer the explicit fallback.
+
+Bind the API key as custom.snaplii / access_token, authorized only for
+aipayment.snaplii.com. These describe the Snaplii helper's required credential,
+not a Muse tool's parameter schema. The access_token entry holds the API key,
+not the Snaplii session token. Collect input only in the native secure dialog.
+Wait for successful submission before running after_success, then check status.
+Allow one input/submission/init attempt per connection request. If it fails,
+report the failure and await a new user request instead of reopening the dialog.
 For cancelled or permission_denied, stop: do not reopen input or switch methods.
 For secure_entry_unavailable, explain the limitation and offer the existing login
-method only after the user explicitly chooses it. Network, invalid-response or
+method only after the user explicitly chooses it: run snaplii init --legacy-auth
+with the same gateway options. Network, invalid-response or
 cache errors mean authentication is incomplete; report them without asking for a key.
 
 After successful initialization, re-read authentication state in the runtime that
@@ -61,10 +80,43 @@ snaplii --base-url https://aipayment.snaplii.com init --vault-auth
 Use this command only for that gateway; for another gateway, stop and explain
 that secure credential authentication is unavailable there. `--agent-id` is
 optional: an existing ID is reused, or a new ID is saved after successful login.
+Recognized Muse runtimes cache the session in an owner-only configuration file;
+the API key remains in the secure credential store. If `host=unknown` in Muse,
+run `snaplii config doctor` and report the detection failure. Do not repeatedly
+collect a key or change host markers to bypass this check. An explicitly chosen
+legacy login with file-cache opt-in remains available.
 
-Automatic secure-input invocation is unavailable in this version. A missing or
-rejected stored key requires the unavailable-path handling above; do not guess a
-Muse tool name or its arguments, or claim that a dialog was opened.
+Required Muse action for `credential_required` (a capability requirement, not shell/Python code):
+
+```json
+{
+  "capability": "muse.secure_credential_store",
+  "credential": {
+    "allowed_hosts": [
+      "aipayment.snaplii.com"
+    ],
+    "entry": "access_token",
+    "provider": "custom.snaplii"
+  },
+  "operation": "ensure_api_key"
+}
+```
+
+Required Muse action for `invalid_key` (a capability requirement, not shell/Python code):
+
+```json
+{
+  "capability": "muse.secure_credential_store",
+  "credential": {
+    "allowed_hosts": [
+      "aipayment.snaplii.com"
+    ],
+    "entry": "access_token",
+    "provider": "custom.snaplii"
+  },
+  "operation": "replace_api_key"
+}
+```
 
 ### Other agents
 

@@ -51,7 +51,8 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     if args.skill and not args.check:
         parser.error("--skill requires --check; standalone artifacts are read-only")
-    if args.require_secure_entry and auth.secure_entry_actions() is None:
+    actions = auth.secure_entry_actions()
+    if args.require_secure_entry and (actions is None or any("tool" not in action for action in actions.values())):
         print("Muse secure-input contract is not verified; automatic-dialog release is blocked.", file=sys.stderr)
         return 1
     block = auth.render_auth_skill_block()

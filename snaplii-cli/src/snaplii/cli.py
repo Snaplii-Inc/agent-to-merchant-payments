@@ -3,6 +3,7 @@ import sys
 from importlib.metadata import version as pkg_version
 
 import click
+from packaging.version import Version
 
 from snaplii.client import GatewayClient
 from snaplii.commands.balance import balance_cmd
@@ -82,6 +83,10 @@ main.add_command(config_group)
 @click.pass_context
 def update_cmd(ctx):
     """Check for and install the latest snaplii-cli from PyPI."""
+    if Version(_VERSION).is_prerelease:
+        print_json({"status": "candidate-pinned", "version": _VERSION,
+                    "action": "Install a matching CLI and skill candidate bundle to update this prerelease."})
+        return
     store = ctx.obj["config_store"]
     # Force a fresh check by clearing the daily cache.
     store.set("_version_check_snaplii_cli", {})

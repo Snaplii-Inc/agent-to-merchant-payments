@@ -1,7 +1,10 @@
 import click
+from importlib.metadata import version
 
+from snaplii import auth
 from snaplii.config_store import ConfigStore
 from snaplii.auth import DEFAULT_ORIGIN, normalize_base_url
+from snaplii.exceptions import ConfigError
 from snaplii.output import print_json
 
 
@@ -29,6 +32,26 @@ def config_show(ctx):
     store: ConfigStore = ctx.obj["config_store"]
     origin = ctx.obj["base_url"] or store.get("base_url", DEFAULT_ORIGIN)
     print_json(store.auth_status(origin=origin))
+
+
+@config_group.command("doctor")
+@click.pass_context
+def config_doctor(ctx):
+    """Show safe runtime/storage diagnostics without logging in or reading a key."""
+    store: ConfigStore = ctx.obj["config_store"]
+    muse = auth.muse_environment_status()
+    try:
+        origin = ctx.obj["base_url"] or store.get("base_url", DEFAULT_ORIGIN)
+        status = store.auth_status(origin=origin)
+    except ConfigError:
+        status = {"has_valid_token": False, "auth_state": "session_cache_failed",
+                  "reason_code": "configuration_unreadable_or_invalid",
+                  "host": "muse" if muse["detected"] else "unknown",
+                  # Do not reread broken configuration or guess its session storage.
+                  "credential_storage": "unknown", "auth_method": None, "base_url": None,
+                  "next_action": {"type": "stop", "reason": "session_cache_failed"}}
+    print_json({"version": version("snaplii-cli"), "muse": muse,
+                "authentication": status})
 
 
 @config_group.command("clear")

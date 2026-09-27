@@ -27,8 +27,10 @@ def _require_valid_agent_id(agent_id: str) -> None:
 @click.option("--agent-id", default=None, help="Agent ID (optional; generated or reused when omitted)")
 @click.option("--vault-auth", is_flag=True, default=False,
               help="Authenticate using Muse's secure credential store. Does not prompt for a raw API key.")
+@click.option("--legacy-auth", is_flag=True, default=False,
+              help="Explicitly choose the original API-key input instead of Muse secure authentication.")
 @click.pass_context
-def init_cmd(ctx, agent_id, vault_auth):
+def init_cmd(ctx, agent_id, vault_auth, legacy_auth):
     """Login with API key and store credentials.
 
     API key is read from hidden stdin input — never passed as a CLI argument
@@ -39,6 +41,10 @@ def init_cmd(ctx, agent_id, vault_auth):
     """
     client: GatewayClient = ctx.obj["client"]
     store = ctx.obj["config_store"]
+    if vault_auth and legacy_auth:
+        raise click.UsageError("Choose only one of --vault-auth and --legacy-auth.")
+    if not legacy_auth and client.auth_status()["host"] == "muse":
+        vault_auth = True
 
     if vault_auth:
         agent_id = agent_id or store.get("agent_id") or "agent-" + secrets.token_hex(4)

@@ -33,7 +33,7 @@ snaplii init
 
 Prompts for your API key with hidden input. The key is exchanged for a session token and never stored; the token is kept in your OS keychain when one is available.
 
-Without a working keychain, `snaplii init` stops with `no_persistent_storage` rather than keeping a session that the next command could not reuse; explicit `SNAPLII_ALLOW_INSECURE=1` opts into a private (mode 0600) plaintext token file. Only a long-lived MCP server may hold a memory-only session. `snaplii config show` reports the actual storage and `has_valid_token`, without showing the token or API key. Protected requests require a usable session and are not automatically replayed after authentication errors.
+Outside a recognized Muse runtime, a CLI without a working keychain stops with `no_persistent_storage` rather than keeping a session that the next command could not reuse; explicit `SNAPLII_ALLOW_INSECURE=1` opts into a private (mode 0600) plaintext token file. Only a long-lived MCP server may hold a memory-only session. `snaplii config show` reports the actual storage and `has_valid_token`, without showing the token or API key. Protected requests require a usable session and are not automatically replayed after authentication errors.
 
 ### Meta Muse secure credential store
 
@@ -46,7 +46,11 @@ snaplii config show
 
 `--agent-id` is optional: Snaplii reuses a saved ID or generates one on successful login. Before using Snaplii, check that `has_valid_token` is `true`; the status output does not display credentials.
 
-If secure credential authentication is unavailable, you can choose `snaplii init` and enter your API key at the terminal's hidden prompt.
+Recognized Muse runtimes select secure authentication by default for `snaplii init` and automatically keep the session token in a private file for later CLI processes. The API key remains in Muse's secure credential store. The accompanying skill directs Muse to use its native secure input when needed, and to stop on cancellation.
+
+Run `snaplii config doctor` to check runtime detection and storage without logging in. If the secure path is unavailable, explicitly choose `snaplii init --legacy-auth` for the original hidden-input flow. `--vault-auth` and `--legacy-auth` are mutually exclusive.
+
+For a separate test configuration, set `SNAPLII_CONFIG_PATH` to a new file path and use that same value for each command. This isolates Snaplii's session, not Muse's stored API key. Prerelease candidate installations keep their CLI and skill versions together; `snaplii update` will not replace a candidate with a PyPI release.
 
 ## Usage
 
@@ -80,7 +84,7 @@ snaplii transfer list
 
 | Group | Commands |
 |---|---|
-| Auth & config | `init [--agent-id ID] [--vault-auth]`, `config show`, `config set --base-url URL`, `config clear` |
+| Auth & config | `init [--agent-id ID] [--vault-auth \| --legacy-auth]`, `config show`, `config doctor`, `config set --base-url URL`, `config clear` |
 | Catalog | `browse tags`, `browse brand --id ID` |
 | Balance & quotes | `balance [--country CA\|US]`, `quote --item-id ID --price P` |
 | Purchases | `purchase --item-id ID --price P`, `giftcard list`, `giftcard detail --card-no NO` |

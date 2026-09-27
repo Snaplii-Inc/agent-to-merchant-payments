@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from snaplii import auth
-from snaplii._config_file import config_lock, lock_file, read_config, write_config
+from snaplii._config_file import config_lock, read_config, write_config
 from snaplii.exceptions import AuthError, ConfigError
 
 _TOKEN_SAFETY_MARGIN = 90
@@ -79,7 +79,8 @@ class ConfigStore:
     _NEVER_STORE = {"api_key"}
 
     def __init__(self, path: Path | None = None, *, runtime: str | None = None):
-        self._path = Path(os.path.abspath(path or Path.home() / ".snaplii" / "config.json"))
+        self._path = Path(os.path.abspath(path or os.environ.get("SNAPLII_CONFIG_PATH")
+                                         or Path.home() / ".snaplii" / "config.json"))
         self._cache_key = str(self._path.resolve())
         self._keyring_service = _KEYRING_SERVICE + ":" + _digest(self._cache_key)
         self._use_keyring = self._cache_key not in self._FAILED_KEYRINGS and _keyring_available()
@@ -291,11 +292,8 @@ class ConfigStore:
             self._MEM_SECRETS.pop(self._cache_key, None)
             _keyring_delete(self._keyring_service)
             _keyring_delete(_KEYRING_SERVICE)
-        # The lock inode is released above; a logout leaves nothing behind.
-        try:
-            lock_file(self._path).unlink()
-        except OSError:
-            pass
+        # Keep the empty lock inode: a waiter may already have it open. Unlinking
+        # it would let another writer create and acquire a different lock.
 
     def auth_status(self, *, origin: str) -> dict:
         base_url = auth.normalize_base_url(origin)
@@ -311,9 +309,11 @@ class ConfigStore:
         if storage not in ("config file", "system keychain", "process memory"):
             storage = self._selected_storage(data)
         action = auth.build_auth_action(state, host=host, auth_method=method, origin=base_url)
-        if (self.runtime == "mcp" and host == "unknown" and storage == "process memory"
+        mcp_recovery = storage == "process memory" or (storage == "system keychain" and method != "vault")
+        if (self.runtime == "mcp" and host == "unknown" and mcp_recovery
                 and action is not None and action.get("type") == "run_cli"):
-            # A separate CLI process cannot replenish this server's memory-only session.
+            # Memory sessions require this process; keychain-backed MCP hosts
+            # may also lack a shell. Preserve explicitly selected secure auth.
             action = {"type": "call_mcp_tool", "tool": "snaplii_connect", "arguments": {}}
         result = {"has_valid_token": bool(token), "auth_state": state, "host": host,
                   "auth_method": method, "credential_storage": storage, "base_url": base_url,

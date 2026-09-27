@@ -12,6 +12,8 @@ class GatewayApiError(SnapliiCliError):
 
     def to_dict(self) -> dict:
         friendly = self.body.get("friendly_message")
+        if self.auth_fields.get("reason_code") == "stale_session_rejected":
+            friendly = "The session used by this request was rejected. Check current authentication state before continuing."
         error_code = self.body.get("rspMsgCd", "")
         if not friendly:
             if self.status_code == 502:
@@ -145,7 +147,10 @@ class TransferApiError(SnapliiCliError):
     def to_dict(self) -> dict:
         if self.auth_fields:
             code = self.body.get("code", "")
-            out = {"error": "Session rejected. Authenticate before continuing.",
+            message = ("The session used by this request was rejected. Check current authentication state before continuing."
+                       if self.auth_fields.get("reason_code") == "stale_session_rejected"
+                       else "Session rejected. Authenticate before continuing.")
+            out = {"error": message,
                    "code": code if code in ("MCAP9999", "USR_NOT_EXIST", "UNAUTHORIZED", "AUTH_REQUIRED") else "",
                    "retryable": False, "endpoint": self.endpoint, **self.auth_fields}
             if self.idempotency_key:

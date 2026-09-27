@@ -295,7 +295,9 @@ snaplii config show
 
 `--agent-id` is optional: Snaplii reuses a saved ID or generates one on successful login. Before using Snaplii, check that `has_valid_token` is `true`; the status output does not display credentials.
 
-If secure credential authentication is unavailable, you can choose `snaplii init` and enter your API key at the terminal's hidden prompt.
+When Muse is recognized, `snaplii init` selects secure credential authentication by default and caches the session token in an owner-only file so later CLI commands can reuse it. The API key stays in Muse's secure credential store. The accompanying skill directs Muse to open its native secure input when a key is needed; cancellation stops the connection attempt.
+
+Use `snaplii config doctor` to check runtime detection and storage without logging in. If secure credential authentication is unavailable, you can explicitly choose `snaplii init --legacy-auth` and enter your API key at the terminal's hidden prompt.
 
 ### 5. Use the CLI
 
@@ -349,8 +351,9 @@ snaplii transfer list                                          # List transfers,
 
 | Command | Purpose |
 |---|---|
-| `snaplii init [--agent-id ID] [--vault-auth]` | Authenticate with your API key; `--vault-auth` uses Muse's secure credential store |
+| `snaplii init [--agent-id ID] [--vault-auth \| --legacy-auth]` | Authenticate; Muse defaults to secure credentials, with an explicit original-input fallback |
 | `snaplii config show` | Show current config and auth status |
+| `snaplii config doctor` | Diagnose runtime detection and storage without logging in |
 | `snaplii config set --base-url URL` | Set the gateway URL |
 | `snaplii config clear` | Clear local configuration and session; does not delete the host-stored API key |
 | `snaplii browse tags` | Browse card categories and brands |
@@ -627,7 +630,7 @@ Your JWT token has expired. Call `/v2/auth/token` again with your API key to get
 - **Scoped API keys:** keys can be restricted to `PAY_READ` view-only or `PAY_WRITE` view + purchase.
 - **Spending limits:** strict per-key consumption caps are set via the mobile app.
 - **Consent is the daily limit, set once.** You authorize spending when you create the key and set its per-day cap in the app; within that cap the agent buys and pays **without a per-transaction confirmation**, so the flow stays smooth. Spending is prepaid-only and the key is revocable, so the daily limit is the blast radius. On connect, the agent surfaces this once.
-- **Off-model key entry.** The API key is entered through a secure MCP Apps card rendered by the host — it never passes through the chat or the model. Clients that can't render the card fall back to `snaplii init` in a terminal (still off-model); the key is never accepted in plain chat. The access token is kept in the OS keychain (or, for a long-lived MCP server, in process memory); it is written to a private plaintext file only when you explicitly opt in with `SNAPLII_ALLOW_INSECURE=1`, which a keychain-less CLI requires.
+- **Off-model key entry.** The API key is entered through a secure MCP Apps card rendered by the host — it never passes through the chat or the model. Clients that can't render the card can choose hidden terminal input. The access token is kept in the OS keychain (or, for a long-lived MCP server, in process memory). Recognized Muse runtimes use a private plaintext session file automatically; other keychain-less CLI environments require explicit `SNAPLII_ALLOW_INSECURE=1` opt-in for file caching.
 - **Charges are sent once.** Charges are not auto-retried. On an ambiguous bill-pay failure, query `billpay result` by `paymentNo` before retrying rather than re-paying.
 - **No credential storage:** API keys are used once to obtain a token and are never saved to disk.
 - **Data protection:** card redemption codes and PINs are strictly masked and never exposed without explicit user consent.

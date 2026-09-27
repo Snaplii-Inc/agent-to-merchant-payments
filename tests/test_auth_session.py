@@ -64,7 +64,11 @@ def test_scope_denied_does_not_clear_session(session, httpx_mock):
     assert store.get_cached_token() == "old-token"
 
 
-def test_late_rejection_does_not_clear_new_session(session, httpx_mock):
+@pytest.mark.parametrize("operation,error_type", [
+    (lambda c: c.get_balance(), GatewayApiError),
+    (lambda c: c.transfer_create("+14165550123", "10", idempotency_key="recovery-key"), TransferApiError),
+])
+def test_late_rejection_does_not_clear_new_session(session, httpx_mock, operation, error_type):
     client, store = session
 
     def late_response(request):
@@ -72,9 +76,36 @@ def test_late_rejection_does_not_clear_new_session(session, httpx_mock):
         return httpx.Response(401, json={})
 
     httpx_mock.add_callback(late_response)
-    with pytest.raises(GatewayApiError):
-        client.get_balance()
+    with pytest.raises(error_type) as exc:
+        operation(client)
+    output = exc.value.to_dict()
+    assert output["auth_state"] == "ready"
+    assert output["reason_code"] == "stale_session_rejected"
+    assert output["next_action"] is None
+    assert "authenticate before continuing" not in output["error"].lower()
+    if error_type is TransferApiError:
+        assert output["idempotency_key"] == "recovery-key"
+        assert "never replay automatically" in output["retry_hint"]
     assert store.get_cached_token() == "new-token"
+    assert len(httpx_mock.get_requests()) == 1
+
+
+def test_late_rejection_after_logout_reports_current_auth_state(session, httpx_mock):
+    client, store = session
+
+    def late_response(request):
+        store.clear()
+        return httpx.Response(401, json={})
+
+    httpx_mock.add_callback(late_response)
+    with pytest.raises(GatewayApiError) as exc:
+        client.get_balance()
+    output = exc.value.to_dict()
+    status = client.auth_status()
+    assert output["auth_state"] == status["auth_state"] == "auth_required"
+    assert output["reason_code"] == "stale_session_rejected"
+    assert output["next_action"] == status["next_action"]
+    assert store.get_cached_token() is None
     assert len(httpx_mock.get_requests()) == 1
 
 

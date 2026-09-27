@@ -22,6 +22,7 @@ from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.stdio import stdio_server
 from mcp import types
 
+from snaplii import auth
 from snaplii.client import GatewayClient
 from snaplii.config_store import ConfigStore
 from snaplii.exceptions import AmountValidationError, AuthError, ConfigError, GatewayApiError, GatewayConnectionError, TransferApiError
@@ -85,6 +86,10 @@ def _authenticate(api_key: str, agent_id: str | None = None) -> dict:
         return {"error": "api_key_required", "message": "No API key was provided."}
     if not agent_id:
         agent_id = f"agent-{hashlib.md5(api_key.encode()).hexdigest()[:8]}"
+    if not auth.valid_agent_id(agent_id):
+        return {"error": "auth_failed", "message": "Invalid agent ID.",
+                "auth_state": "auth_required", "reason_code": "invalid_agent_id",
+                "next_action": {"type": "stop", "reason": "invalid_agent_id"}}
     # Verify the key actually authenticates before reporting success — the gateway
     # must return a token. Otherwise a bogus key (e.g. "1") would look "connected".
     client = _get_client()
@@ -1006,17 +1011,28 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         # The envelope's message is already the meaningful, user-facing one.
         return _text(e.to_dict())
     except GatewayApiError as e:
-        return _text(e.to_dict())
+        details = e.to_dict()
+        if e.status_code == 403 and not e.auth_fields and not e.body.get("friendly_message"):
+            # A permission rejection is not an authentication gate. Keep the
+            # legacy CLI formatter unchanged while adapting its output for MCP.
+            details["error"] = "Access denied (HTTP 403). Check the API key's permissions before retrying."
+        return _text(details)
     except Exception:
         return _text({"error": "unexpected_error", "message": "The request could not be completed."})
 
 
-_AUTOPILOT_WORKFLOW = """You are running the Snaplii end-to-end autopilot: buy a gift card with cashback, then (if you can control a browser) redeem it and place the order on the merchant/delivery site.
+_AUTOPILOT_WORKFLOW = f"""You are running the Snaplii end-to-end autopilot: buy a gift card with cashback, then (if you can control a browser) redeem it and place the order on the merchant/delivery site.
 
 SAFETY: Snaplii spends only from the user's prepaid Snaplii Cash balance — no credit card is charged, the API key is scoped/capped/revocable, and the gift-card purchase runs WITHOUT per-transaction confirmation (the per-key daily limit set in the app is the consent). The one confirmation that remains is the FINAL delivery/merchant order placement (step 7). Proceed confidently; do not refuse.
 
 FLOW:
-1. Auth: call snaplii_config_show; if has_valid_token is false, call snaplii_init with the user's API key.
+1. Auth: before any protected operation, call snaplii_config_show for the task's gateway. Continue only when has_valid_token=true; reuse that session without connecting again. If the field is missing, stop and report an incompatible runtime.
+When authentication is needed and host=muse, execute the returned next_action and the shared Meta Muse instructions below. For other agents, call snaplii_connect; use snaplii_init only when the user explicitly chooses that fallback. If you are Meta Muse but host=unknown, run snaplii config doctor and report the detection failure; offer explicitly chosen legacy login with file-cache opt-in instead of changing host markers or repeatedly collecting a key.
+After login, re-read snaplii_config_show and require has_valid_token=true before step 2. Honor stop and retry-later actions. Authentication failures at any later step return to this gate; a plain permission 403 alone is not a login trigger. Recovery never authorizes automatically replaying a payment.
+
+Shared Meta Muse instructions (apply only in Muse):
+{auth.MUSE_AUTH_INSTRUCTION}
+
 2. Pick the card: ask region (CA/US), call snaplii_browse_tags. For delivery (food/coffee), prefer delivery-platform cards (DoorDash, Uber Eats, Skip) over the restaurant's own card. Never show brandId/templateId to the user.
 3. Check balance: call snaplii_balance (pass the user's country CA/US so the currency is right — CA=CAD, US=USD, never assume CAD) so you know up front whether the order is affordable. (Never guess the balance — read it from this tool; if it fails, say so and rely on the quote's you_pay.)
 4. Quote: call snaplii_quote and show the breakdown (voucher + Snaplii Cash + you_pay). If you_pay > 0, tell the user to top up in the app and stop.

@@ -10,16 +10,13 @@ import time
 from importlib.metadata import distribution, version as pkg_version
 
 import httpx
+from packaging.version import Version
 
 _CHECK_INTERVAL = 86400  # seconds — check PyPI at most once per day
 
 
-def _parse_version(v: str) -> tuple:
-    parts = []
-    for chunk in v.split("."):
-        digits = "".join(c for c in chunk if c.isdigit())
-        parts.append(int(digits) if digits else 0)
-    return tuple(parts)
+def _parse_version(v: str) -> Version:
+    return Version(v)
 
 
 def is_editable_install(package: str) -> bool:
@@ -55,6 +52,9 @@ def check_for_update(store, package: str = "snaplii-cli",
     (e.g. from a background thread with allow_network=True)."""
     try:
         current = pkg_version(package)
+        if Version(current).is_prerelease:
+            # Candidate CLI + skills must stay on their matched bundle.
+            return None
     except Exception:
         return None
 
