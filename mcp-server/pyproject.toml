@@ -23,4 +23,6 @@ Repository = "https://github.com/Snaplii-Inc/agent-to-merchant-payments"
 snaplii-mcp = "server:main_sync"
 
 [tool.hatch.build.targets.wheel]
-packages = ["."]
+# A single top-level module. packages = ["."] wrote "./"-prefixed members, which
+# PyPI rejects, and shipped pyproject.toml and PKG-INFO into site-packages.
+only-include = ["server.py"]
