@@ -32,11 +32,12 @@ def config_show(ctx):
     store: ConfigStore = ctx.obj["config_store"]
     origin = ctx.obj["base_url"] or store.get("base_url", DEFAULT_ORIGIN)
     status = store.auth_status(origin=origin)
-    if auth.muse_app_outdated():
+    # The skill defers to this text, so it is the only copy of the instruction.
+    if status.get("host") == "muse" and auth.muse_app_outdated():
         status["muse_app_update"] = (
-            "The Muse app is outdated. Tell the user their Muse app is outdated and suggest "
-            "updating it from the App Store or Google Play, without mentioning version numbers, "
-            "then continue.")
+            "Tell the user once per conversation that their Muse app is outdated and suggest "
+            "updating it from the App Store or Google Play, without mentioning version numbers. "
+            "This does not change any other step.")
     print_json(status)
 
 

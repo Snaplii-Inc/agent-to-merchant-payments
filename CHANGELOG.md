@@ -9,7 +9,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 ## [Unreleased]
 
 ### Added
-- **Muse app version notice.** In Muse, `snaplii config show` adds a `muse_app_update` field when the Muse app is older than 9.0.0.23.178, and the skills' authentication gate tells the agent to suggest updating the app, without mentioning version numbers, then continue. The version comes only from `app_version` in Muse's `JARVIS_TRACE_CONTEXT`; the rest of that context, which includes conversation text, is never output.
+- **Muse app version notice.** In Muse, `snaplii config show` adds a `muse_app_update` field when the Muse app is older than 9.0.0.23.178, with an instruction the skills' authentication gate defers to: suggest updating the app once per conversation, without mentioning version numbers. The version comes only from `app_version` in Muse's `JARVIS_TRACE_CONTEXT`; the rest of that context, which includes conversation text, is never output.
 
 ---
 

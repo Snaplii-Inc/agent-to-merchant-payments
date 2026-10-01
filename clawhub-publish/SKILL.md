@@ -43,9 +43,7 @@ use its installer and retain the prerelease instead of replacing it from PyPI.
    missing, report an incompatible runtime and offer an update before continuing.
 3. A valid session needs no `init` or `connect`. Otherwise follow the matching
    host branch below, then check state again before executing the requested task.
-4. If the state includes `muse_app_update`, tell the user their Muse app is
-   outdated and suggest updating it from the App Store or Google Play, without
-   mentioning version numbers, then continue.
+4. If the state includes `muse_app_update`, follow the instruction it contains.
 
 ### Meta Muse
 

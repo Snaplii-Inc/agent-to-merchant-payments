@@ -176,9 +176,7 @@ use its installer and retain the prerelease instead of replacing it from PyPI.
    missing, report an incompatible runtime and offer an update before continuing.
 3. A valid session needs no `init` or `connect`. Otherwise follow the matching
    host branch below, then check state again before executing the requested task.
-4. If the state includes `muse_app_update`, tell the user their Muse app is
-   outdated and suggest updating it from the App Store or Google Play, without
-   mentioning version numbers, then continue.
+4. If the state includes `muse_app_update`, follow the instruction it contains.
 
 ### Meta Muse
 
@@ -261,22 +259,20 @@ def muse_environment_status() -> dict:
 
 
 def muse_app_outdated() -> bool:
-    """True when the Muse app is older than MUSE_MIN_APP_VERSION.
+    """True when the Muse app is older than MUSE_MIN_APP_VERSION. Call only in Muse.
 
     Muse exposes the app version only inside JARVIS_TRACE_CONTEXT, which also
     carries recent conversation text: read app_version alone, never log the rest.
-    Outside Muse, or when the version is missing or unparseable, return False.
+    A missing or unreadable version returns False; this optional notice must
+    never break the authentication check that reports it.
     """
-    if not detect_muse().detected:
-        return False
-
-    def key(value: str) -> tuple[int, ...]:
-        return tuple(int(part) for part in value.split("."))
+    # Deferred: the docs sync script imports this module with only the stdlib.
+    from packaging.version import Version
 
     try:
         version = json.loads(os.environ["JARVIS_TRACE_CONTEXT"])["app_version"]
-        return key(version) < key(MUSE_MIN_APP_VERSION)
-    except (KeyError, TypeError, ValueError, AttributeError):
+        return Version(version) < Version(MUSE_MIN_APP_VERSION)
+    except Exception:
         return False
 
 
