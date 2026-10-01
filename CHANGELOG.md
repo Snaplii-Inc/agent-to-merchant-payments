@@ -6,7 +6,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
-## [Unreleased]
+## [0.18.0] — 2026-10-01
 
 ### Added
 - **Muse app version notice.** In Muse, `snaplii config show` adds a `muse_app_update` field when the Muse app is older than 9.0.0.23.178, with an instruction the skills' authentication gate defers to: suggest updating the app once per conversation, without mentioning version numbers. The version comes only from `app_version` in Muse's `JARVIS_TRACE_CONTEXT`; the rest of that context, which includes conversation text, is never output.
@@ -338,6 +338,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.18.0 | 2026-10-01 | Muse app update notice in `snaplii config show` |
 | 0.17.0 | 2026-09-27 | Muse secure credential store and first-install connection; session caching and recovery |
 | 0.16.0 | 2026-09-23 | Secure Vault authentication; OpenAPI specification for 19 gateway operations |
 | 0.15.0 | 2026-09-02 | P2P transfers to a phone number (26 MCP tools); `mcp<2` pin |
