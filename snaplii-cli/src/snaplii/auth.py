@@ -14,6 +14,7 @@ from snaplii.exceptions import ConfigError
 DEFAULT_ORIGIN = "https://aipayment.snaplii.com"
 MUSE_HELPER = Path("/opt/hatch/skills/skill-creator/bin/dynamic_credentials.py")
 MUSE_SOCKET = Path("/run/hatch/auth/authd.sock")
+MUSE_MIN_APP_VERSION = "9.0.0.23.178"
 
 MUSE_AUTH_INSTRUCTION = """Use the CLI for Meta Muse, before calling any card-bearing MCP connect tool.
 
@@ -175,6 +176,7 @@ use its installer and retain the prerelease instead of replacing it from PyPI.
    missing, report an incompatible runtime and offer an update before continuing.
 3. A valid session needs no `init` or `connect`. Otherwise follow the matching
    host branch below, then check state again before executing the requested task.
+4. If the state includes `muse_app_update`, follow the instruction it contains.
 
 ### Meta Muse
 
@@ -254,6 +256,24 @@ def muse_environment_status() -> dict:
     return {"detected": detected,
             "reason_code": "muse_runtime_artifacts" if detected else "muse_runtime_unrecognized",
             "signals": signals}
+
+
+def muse_app_outdated() -> bool:
+    """True when the Muse app is older than MUSE_MIN_APP_VERSION. Call only in Muse.
+
+    Muse exposes the app version only inside JARVIS_TRACE_CONTEXT, which also
+    carries recent conversation text: read app_version alone, never log the rest.
+    A missing or unreadable version returns False; this optional notice must
+    never break the authentication check that reports it.
+    """
+    # Deferred: the docs sync script imports this module with only the stdlib.
+    from packaging.version import Version
+
+    try:
+        version = json.loads(os.environ["JARVIS_TRACE_CONTEXT"])["app_version"]
+        return Version(version) < Version(MUSE_MIN_APP_VERSION)
+    except Exception:
+        return False
 
 
 def normalize_origin(base_url: str) -> str:

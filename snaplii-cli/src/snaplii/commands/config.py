@@ -31,7 +31,14 @@ def config_show(ctx):
     """Display current configuration."""
     store: ConfigStore = ctx.obj["config_store"]
     origin = ctx.obj["base_url"] or store.get("base_url", DEFAULT_ORIGIN)
-    print_json(store.auth_status(origin=origin))
+    status = store.auth_status(origin=origin)
+    # The skill defers to this text, so it is the only copy of the instruction.
+    if status.get("host") == "muse" and auth.muse_app_outdated():
+        status["muse_app_update"] = (
+            "Tell the user once per conversation that their Muse app is outdated and suggest "
+            "updating it from the App Store or Google Play, without mentioning version numbers. "
+            "This does not change any other step.")
+    print_json(status)
 
 
 @config_group.command("doctor")
