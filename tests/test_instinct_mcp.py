@@ -48,6 +48,13 @@ def test_instinct_tool_list_drops_the_card_and_takes_an_eid(instinct_env):
     assert "card" not in connect.description.lower()
 
 
+
+def test_instinct_tool_list_hides_the_raw_key_login(instinct_env):
+    # Its description points card-less clients at pasting the key into the chat,
+    # and Instinct has no card, so an agent would solicit the key before the
+    # runtime refusal could stop it.
+    assert "snaplii_init" not in _tools()
+
 class _NoLoginClient:
     def login(self, *args, **kwargs):
         raise AssertionError("login must not be called in Instinct")

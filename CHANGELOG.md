@@ -13,7 +13,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 - **Connect right after installation in Instinct.** The README's Instinct section and the MCP server instructions tell the agent to connect as soon as the MCP server is registered, and to reconnect on the next Snaplii request once the session is gone.
 
 ### Changed
-- **CLI and raw-key tools are disabled in Instinct.** The CLI only serves `help`, `update`, `--version`, and `config`; other commands point to `snaplii_connect`. `snaplii_init` and the card submit tool refuse API keys, and `snaplii_connect` shows no card there.
+- **CLI and raw-key tools are disabled in Instinct.** The CLI only serves `help`, `update`, `--version`, and `config`; other commands point to `snaplii_connect`. `snaplii_init` and the card submit tool are hidden there and refuse API keys if called anyway, and `snaplii_connect` shows no card.
 - **Diagnostics name the Instinct signal.** `snaplii config show`, `snaplii_config_show`, and `snaplii config doctor` list the matching `INSTINCT_` variable names, never their values.
 
 ---

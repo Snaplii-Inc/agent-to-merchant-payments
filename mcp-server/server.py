@@ -275,10 +275,12 @@ _INSTINCT_CONNECT_DESCRIPTION = (
 
 def _instinct_tools(tools: list[types.Tool]) -> list[types.Tool]:
     """Instinct connects only through the vault-filled browser page: no card, no
-    card submit tool, and snaplii_connect takes the eid back."""
+    raw-key tools, and snaplii_connect takes the eid back. snaplii_init is hidden
+    because its description sends card-less clients to paste the key into the
+    chat; _authenticate still refuses it if an agent calls it anyway."""
     adapted = []
     for tool in tools:
-        if tool.name == "snaplii_submit_api_key":
+        if tool.name in ("snaplii_init", "snaplii_submit_api_key"):
             continue
         if tool.name == "snaplii_connect":
             tool = tool.model_copy(update={

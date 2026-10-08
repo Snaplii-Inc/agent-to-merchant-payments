@@ -95,7 +95,7 @@
 
 - `snaplii_connect` 去掉 `_meta.ui`，不再弹出卡片。
 - 工具描述改为介绍浏览器流程，输入参数增加可选的 `eid`。
-- `snaplii_submit_api_key` 从列表中移除。
+- `snaplii_init` 和 `snaplii_submit_api_key` 从列表中移除。`snaplii_init` 的描述会引导无卡片的客户端让用户在聊天里粘贴 key，所以必须隐藏。这一条来自 Codex 第一轮审阅。
 
 **`snaplii_connect` 在 Instinct 下的行为：**
 
