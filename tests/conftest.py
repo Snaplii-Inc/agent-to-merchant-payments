@@ -38,3 +38,12 @@ def muse_filesystem(monkeypatch):
     monkeypatch.setattr(os, "lstat", synthetic_stat(os.lstat))
     monkeypatch.setattr(sys, "platform", "linux")
     return metadata
+
+
+@pytest.fixture(autouse=True)
+def _no_instinct_environment(monkeypatch):
+    """A stray INSTINCT_ variable on a developer machine or CI must not flip tests
+    into Instinct mode; Instinct tests set their own variables."""
+    for name in list(os.environ):
+        if name.startswith("INSTINCT_"):
+            monkeypatch.delenv(name)

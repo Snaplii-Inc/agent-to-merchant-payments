@@ -6,6 +6,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
+## [0.19.0] — 2026-10-08
+
+### Added
+- **Instinct support.** When an environment variable whose name starts with `INSTINCT_` is present and Muse is not detected, Snaplii treats the host as Instinct and runs only through the MCP tools. `snaplii_connect` returns a connect link; the agent opens it in its cloud browser, has the Instinct vault fill the stored API key, clicks Connect, and calls `snaplii_connect` again with the one-time `eid` so the MCP server takes the session token. The key never passes through the chat, the model, or the MCP process. The production gateway uses the vault entry `Snaplii API Key`; other gateways append their host.
+- **Connect right after installation in Instinct.** The README's Instinct section and the MCP server instructions tell the agent to connect as soon as the MCP server is registered, and to reconnect on the next Snaplii request once the session is gone.
+
+### Changed
+- **CLI and raw-key tools are disabled in Instinct.** The CLI only serves `help`, `update`, `--version`, and `config`; other commands point to `snaplii_connect`. `snaplii_init` and the card submit tool are hidden there and refuse API keys if called anyway, and `snaplii_connect` shows no card.
+- **Diagnostics name the Instinct signal.** `snaplii config show`, `snaplii_config_show`, and `snaplii config doctor` list the matching `INSTINCT_` variable names, never their values.
+
+---
+
 ## [0.18.0] — 2026-10-01
 
 ### Added
@@ -338,6 +350,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.19.0 | 2026-10-08 | Instinct support: MCP-only, vault-filled connect page |
 | 0.18.0 | 2026-10-01 | Muse app update notice in `snaplii config show` |
 | 0.17.0 | 2026-09-27 | Muse secure credential store and first-install connection; session caching and recovery |
 | 0.16.0 | 2026-09-23 | Secure Vault authentication; OpenAPI specification for 19 gateway operations |

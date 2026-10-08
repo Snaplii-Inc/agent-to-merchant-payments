@@ -5,9 +5,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import sys
 import threading
+import uuid
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 # Try importing from installed snaplii-cli package first, fall back to local source
 try:
@@ -49,7 +52,15 @@ CONNECT: only call snaplii_connect when the account is NOT yet authenticated. If
 
 RULES: never show internal IDs (brandId/templateId/cardNo); for delivery prefer DoorDash/Uber Eats/Skip cards; to state the Snaplii Cash balance, query it via snaplii_balance — never guess or fabricate a number, and if that tool fails say you couldn't retrieve it rather than making one up; gift-card and bill payments within the daily limit need no per-transaction confirmation, but for a delivery/shipping FINAL order still confirm the address + place-order step (see FULL-CHAIN ORDERING); never claim to have completed an order you didn't; don't echo the raw API key back in chat."""
 
-app = Server("snaplii", instructions=_SERVER_INSTRUCTIONS)
+def _server_instructions() -> str:
+    """Instinct hears its vault connect flow in the system prompt, where it is
+    read before any tool call."""
+    if auth.detect_instinct():
+        return _SERVER_INSTRUCTIONS + "\n\n" + auth.INSTINCT_AUTH_INSTRUCTION
+    return _SERVER_INSTRUCTIONS
+
+
+app = Server("snaplii", instructions=_server_instructions())
 
 _DEFAULT_BASE_URL = "https://aipayment.snaplii.com"
 
@@ -81,6 +92,14 @@ def _authenticate(api_key: str, agent_id: str | None = None) -> dict:
     and never returned. Shared by snaplii_init (model path) and the off-model card
     submit (snaplii_submit_api_key), so both behave identically."""
     import hashlib
+    if auth.detect_instinct():
+        # Instinct keeps the key in its vault; it reaches Snaplii only through the
+        # vault-filled connect page, never as a tool argument.
+        return {"error": "mcp_connect_required",
+                "message": ("In Instinct, connect with snaplii_connect and the Instinct vault. "
+                            "API keys are not accepted as tool arguments."),
+                "auth_state": "mcp_required", "reason_code": "instinct_requires_vault_connect",
+                "next_action": auth.build_auth_action("mcp_required", host="instinct")}
     api_key = (api_key or "").strip()
     if not api_key:
         return {"error": "api_key_required", "message": "No API key was provided."}
@@ -113,6 +132,71 @@ def _authenticate(api_key: str, agent_id: str | None = None) -> dict:
             "one. You can change the limit or revoke this key in the app anytime."
         ),
     }
+
+
+async def _poll_connect_token(client, eid: str) -> dict | None:
+    """Take the token the hosted /connect page parked under eid, or None."""
+    for _ in range(_ELICIT_POLL_MAX_ATTEMPTS):
+        try:
+            token_data = client.poll_connect_token(eid)
+        except GatewayConnectionError:
+            token_data = None
+        if isinstance(token_data, dict) and token_data.get("access_token"):
+            return token_data
+        await asyncio.sleep(_ELICIT_POLL_INTERVAL_S)
+    return None
+
+
+_EID_PATTERN = re.compile(r"[0-9a-fA-F]{16,64}")
+_INSTINCT_FIELD = "the password input labelled 'Snaplii API key' (id apikey)"
+
+
+def _instinct_eid(value) -> str | None:
+    """Accept the bare one-time ID, or the whole connect URL an agent echoes back."""
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if "eid=" in value:
+        value = (parse_qs(urlsplit(value).query).get("eid") or [""])[0]
+    return value if _EID_PATTERN.fullmatch(value) else None
+
+
+async def _instinct_connect(arguments: dict) -> dict:
+    """Instinct: the agent opens the connect page in its cloud browser and has the
+    Instinct vault fill the key. This server only hands out the link and later
+    takes the parked token, so the key never reaches the model or this process.
+    Stateless: the agent passes the eid back, so a restart in between is fine."""
+    raw = (arguments or {}).get("eid")
+    if not raw:
+        eid = uuid.uuid4().hex
+        page = _elicit_url()
+        sep = "&" if "?" in page else "?"
+        return {
+            "status": "open_in_browser",
+            "connect_url": f"{page}{sep}eid={eid}",
+            "eid": eid,
+            "vault_entry": auth.instinct_vault_entry(_base_url()),
+            "field": _INSTINCT_FIELD,
+            "next": ("Open connect_url in your cloud browser, use the Instinct vault fill action on "
+                     "that field with vault_entry, click Connect, then call snaplii_connect with "
+                     "this eid within 2 minutes of the page showing Connected."),
+        }
+    eid = _instinct_eid(raw)
+    if eid is None:
+        return {"status": "invalid_eid",
+                "message": ("That eid is not valid. Pass the eid returned by snaplii_connect, "
+                            "or call snaplii_connect without arguments to start over.")}
+    client = _get_client()
+    token_data = await _poll_connect_token(client, eid)
+    if token_data:
+        client.accept_connect_token(token_data)
+        return {"status": "authenticated", **client.auth_status(),
+                "message": ("✅ Connected through the Instinct vault. Purchases come only from your "
+                            "prepaid Snaplii Cash, capped by your daily limit.")}
+    return {"status": "pending",
+            "message": ("No connection for this eid yet. Check the connect page. If it shows "
+                        "Connected and more than 2 minutes have passed, call snaplii_connect "
+                        "without arguments to start over once.")}
 
 
 def _elicit_url() -> str:
@@ -180,9 +264,44 @@ def _route_for_caps(caps, client_info=None) -> str:
     return "text"
 
 
+_INSTINCT_CONNECT_DESCRIPTION = (
+    "Connect the user's Snaplii account in Instinct through the Instinct vault. Call with no "
+    "arguments to get connect_url, eid and vault_entry. Open connect_url in your cloud browser, "
+    "fill the API key field from the vault entry, click Connect, then call again with the eid "
+    "within 2 minutes to finish. Do not call when snaplii_config_show reports "
+    "has_valid_token=true. The API key never passes through the chat."
+)
+
+
+def _instinct_tools(tools: list[types.Tool]) -> list[types.Tool]:
+    """Instinct connects only through the vault-filled browser page: no card, no
+    raw-key tools, and snaplii_connect takes the eid back. snaplii_init is hidden
+    because its description sends card-less clients to paste the key into the
+    chat; _authenticate still refuses it if an agent calls it anyway."""
+    adapted = []
+    for tool in tools:
+        if tool.name in ("snaplii_init", "snaplii_submit_api_key"):
+            continue
+        if tool.name == "snaplii_connect":
+            tool = tool.model_copy(update={
+                "meta": None,
+                "description": _INSTINCT_CONNECT_DESCRIPTION,
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"eid": {
+                        "type": "string",
+                        "description": "The eid returned by the first snaplii_connect call",
+                    }},
+                    "required": [],
+                },
+            })
+        adapted.append(tool)
+    return adapted
+
+
 @app.list_tools()
 async def list_tools() -> list[types.Tool]:
-    return [
+    tools = [
         types.Tool(
             name="snaplii_config_show",
             description="Show current Snaplii config and auth status.",
@@ -476,6 +595,7 @@ async def list_tools() -> list[types.Tool]:
             },
         ),
     ]
+    return _instinct_tools(tools) if auth.detect_instinct() else tools
 
 
 _UPDATE_NOTICE = {"checked": False, "notice": None}
@@ -558,6 +678,9 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                     ),
                 })
 
+            if auth_status["host"] == "instinct":
+                return _text(await _instinct_connect(arguments))
+
             if auth_status["host"] == "muse":
                 # Static UI metadata is unchanged. The agent should select the
                 # CLI action before calling this card-bearing tool in Muse.
@@ -569,7 +692,6 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 # page — off the model AND off this client. The spec mandates URL mode
                 # (not form) for secrets like API keys. A one-time eid ties the page
                 # submission to the token we then poll for.
-                import uuid
                 eid = uuid.uuid4().hex
                 base_page = _elicit_url()
                 sep = "&" if "?" in base_page else "?"
@@ -616,16 +738,8 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 # the gateway parked the minted token under our eid. Poll to take it —
                 # it never came through the chat.
                 client = _get_client()
-                token_data = None
-                for _ in range(_ELICIT_POLL_MAX_ATTEMPTS):
-                    try:
-                        token_data = client.poll_connect_token(eid)
-                    except GatewayConnectionError:
-                        token_data = None
-                    if isinstance(token_data, dict) and token_data.get("access_token"):
-                        break
-                    await asyncio.sleep(_ELICIT_POLL_INTERVAL_S)
-                if isinstance(token_data, dict) and token_data.get("access_token"):
+                token_data = await _poll_connect_token(client, eid)
+                if token_data:
                     client.accept_connect_token(token_data)
                     return _text({
                         "status": "authenticated",
