@@ -458,6 +458,8 @@ snaplii init
 
 Enter your API key when prompted.
 
+In Instinct, skip this step and follow the **Instinct** instructions under Step 3.
+
 #### Step 3: Configure your MCP client
 
 <details>
@@ -516,6 +518,25 @@ Or add to your OpenClaw MCP config:
   }
 }
 ```
+
+</details>
+
+<details>
+<summary><strong>Instinct</strong></summary>
+
+Instinct installs the MCP server from this repository and connects through the Instinct vault, so the API key never enters the chat.
+
+1. Clone the repository and install the dependencies from Step 1.
+2. Register `python3 /path/to/agent-to-merchant-payments/mcp-server/server.py` as a stdio MCP server in Instinct.
+3. Skip `snaplii init`. In Instinct the CLI only serves `help`, `update`, `--version` and `config`; everything else runs through the MCP tools.
+4. Connect right away. Call `snaplii_connect` and open the returned `connect_url` in the cloud browser. Use the Instinct vault fill action on the API key field with the returned `vault_entry`, click **Connect**, then call `snaplii_connect` again with the returned `eid` within 2 minutes. If the MCP tools only load in a new session, connect at the start of that session.
+5. If the vault has no entry yet, the agent explains how to create a key in the Snaplii App and sends the vault's encrypted submission link so you can save it there.
+
+The vault entry is `Snaplii API Key` for the production gateway. Other gateways append their host, for example `Snaplii API Key aipay.stage.snaplii.com`.
+
+Instinct is detected from any environment variable whose name starts with `INSTINCT_`; Muse takes precedence. `snaplii_config_show` and `snaplii config doctor` list the matching variable names, never their values.
+
+The one-time `eid` in the connect link is visible to the agent. Whoever holds it can take the session token once, within 2 minutes after **Connect** is pressed. If someone else takes it first, `snaplii_connect` reports `pending` instead of connecting.
 
 </details>
 

@@ -187,6 +187,15 @@ Required Muse action for `invalid_key` (a capability requirement, not shell/Pyth
 }
 ```
 
+### Instinct
+
+When `snaplii config show` or `snaplii_config_show` reports `host=instinct`,
+Snaplii runs only through the Snaplii MCP tools; the CLI refuses authentication
+and business commands there. Install the MCP server from GitHub as the README's
+Instinct section describes, then follow the Instinct instructions from the MCP
+server or from `next_action`, starting with `snaplii_connect`. Never ask for the
+API key in the chat.
+
 ### Other agents
 
 Keep authentication in the runtime that will use it. For MCP, call
