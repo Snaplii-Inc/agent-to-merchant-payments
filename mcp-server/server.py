@@ -5,9 +5,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import sys
 import threading
+import uuid
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 # Try importing from installed snaplii-cli package first, fall back to local source
 try:
@@ -129,6 +132,71 @@ def _authenticate(api_key: str, agent_id: str | None = None) -> dict:
             "one. You can change the limit or revoke this key in the app anytime."
         ),
     }
+
+
+async def _poll_connect_token(client, eid: str) -> dict | None:
+    """Take the token the hosted /connect page parked under eid, or None."""
+    for _ in range(_ELICIT_POLL_MAX_ATTEMPTS):
+        try:
+            token_data = client.poll_connect_token(eid)
+        except GatewayConnectionError:
+            token_data = None
+        if isinstance(token_data, dict) and token_data.get("access_token"):
+            return token_data
+        await asyncio.sleep(_ELICIT_POLL_INTERVAL_S)
+    return None
+
+
+_EID_PATTERN = re.compile(r"[0-9a-fA-F]{16,64}")
+_INSTINCT_FIELD = "the password input labelled 'Snaplii API key' (id apikey)"
+
+
+def _instinct_eid(value) -> str | None:
+    """Accept the bare one-time ID, or the whole connect URL an agent echoes back."""
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if "eid=" in value:
+        value = (parse_qs(urlsplit(value).query).get("eid") or [""])[0]
+    return value if _EID_PATTERN.fullmatch(value) else None
+
+
+async def _instinct_connect(arguments: dict) -> dict:
+    """Instinct: the agent opens the connect page in its cloud browser and has the
+    Instinct vault fill the key. This server only hands out the link and later
+    takes the parked token, so the key never reaches the model or this process.
+    Stateless: the agent passes the eid back, so a restart in between is fine."""
+    raw = (arguments or {}).get("eid")
+    if not raw:
+        eid = uuid.uuid4().hex
+        page = _elicit_url()
+        sep = "&" if "?" in page else "?"
+        return {
+            "status": "open_in_browser",
+            "connect_url": f"{page}{sep}eid={eid}",
+            "eid": eid,
+            "vault_entry": auth.instinct_vault_entry(_base_url()),
+            "field": _INSTINCT_FIELD,
+            "next": ("Open connect_url in your cloud browser, use the Instinct vault fill action on "
+                     "that field with vault_entry, click Connect, then call snaplii_connect with "
+                     "this eid within 2 minutes of the page showing Connected."),
+        }
+    eid = _instinct_eid(raw)
+    if eid is None:
+        return {"status": "invalid_eid",
+                "message": ("That eid is not valid. Pass the eid returned by snaplii_connect, "
+                            "or call snaplii_connect without arguments to start over.")}
+    client = _get_client()
+    token_data = await _poll_connect_token(client, eid)
+    if token_data:
+        client.accept_connect_token(token_data)
+        return {"status": "authenticated", **client.auth_status(),
+                "message": ("✅ Connected through the Instinct vault. Purchases come only from your "
+                            "prepaid Snaplii Cash, capped by your daily limit.")}
+    return {"status": "pending",
+            "message": ("No connection for this eid yet. Check the connect page. If it shows "
+                        "Connected and more than 2 minutes have passed, call snaplii_connect "
+                        "without arguments to start over once.")}
 
 
 def _elicit_url() -> str:
@@ -608,6 +676,9 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                     ),
                 })
 
+            if auth_status["host"] == "instinct":
+                return _text(await _instinct_connect(arguments))
+
             if auth_status["host"] == "muse":
                 # Static UI metadata is unchanged. The agent should select the
                 # CLI action before calling this card-bearing tool in Muse.
@@ -619,7 +690,6 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 # page — off the model AND off this client. The spec mandates URL mode
                 # (not form) for secrets like API keys. A one-time eid ties the page
                 # submission to the token we then poll for.
-                import uuid
                 eid = uuid.uuid4().hex
                 base_page = _elicit_url()
                 sep = "&" if "?" in base_page else "?"
@@ -666,16 +736,8 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 # the gateway parked the minted token under our eid. Poll to take it —
                 # it never came through the chat.
                 client = _get_client()
-                token_data = None
-                for _ in range(_ELICIT_POLL_MAX_ATTEMPTS):
-                    try:
-                        token_data = client.poll_connect_token(eid)
-                    except GatewayConnectionError:
-                        token_data = None
-                    if isinstance(token_data, dict) and token_data.get("access_token"):
-                        break
-                    await asyncio.sleep(_ELICIT_POLL_INTERVAL_S)
-                if isinstance(token_data, dict) and token_data.get("access_token"):
+                token_data = await _poll_connect_token(client, eid)
+                if token_data:
                     client.accept_connect_token(token_data)
                     return _text({
                         "status": "authenticated",
