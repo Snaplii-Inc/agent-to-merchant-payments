@@ -49,7 +49,15 @@ CONNECT: only call snaplii_connect when the account is NOT yet authenticated. If
 
 RULES: never show internal IDs (brandId/templateId/cardNo); for delivery prefer DoorDash/Uber Eats/Skip cards; to state the Snaplii Cash balance, query it via snaplii_balance — never guess or fabricate a number, and if that tool fails say you couldn't retrieve it rather than making one up; gift-card and bill payments within the daily limit need no per-transaction confirmation, but for a delivery/shipping FINAL order still confirm the address + place-order step (see FULL-CHAIN ORDERING); never claim to have completed an order you didn't; don't echo the raw API key back in chat."""
 
-app = Server("snaplii", instructions=_SERVER_INSTRUCTIONS)
+def _server_instructions() -> str:
+    """Instinct hears its vault connect flow in the system prompt, where it is
+    read before any tool call."""
+    if auth.detect_instinct():
+        return _SERVER_INSTRUCTIONS + "\n\n" + auth.INSTINCT_AUTH_INSTRUCTION
+    return _SERVER_INSTRUCTIONS
+
+
+app = Server("snaplii", instructions=_server_instructions())
 
 _DEFAULT_BASE_URL = "https://aipayment.snaplii.com"
 
@@ -81,6 +89,14 @@ def _authenticate(api_key: str, agent_id: str | None = None) -> dict:
     and never returned. Shared by snaplii_init (model path) and the off-model card
     submit (snaplii_submit_api_key), so both behave identically."""
     import hashlib
+    if auth.detect_instinct():
+        # Instinct keeps the key in its vault; it reaches Snaplii only through the
+        # vault-filled connect page, never as a tool argument.
+        return {"error": "mcp_connect_required",
+                "message": ("In Instinct, connect with snaplii_connect and the Instinct vault. "
+                            "API keys are not accepted as tool arguments."),
+                "auth_state": "mcp_required", "reason_code": "instinct_requires_vault_connect",
+                "next_action": auth.build_auth_action("mcp_required", host="instinct")}
     api_key = (api_key or "").strip()
     if not api_key:
         return {"error": "api_key_required", "message": "No API key was provided."}
@@ -180,9 +196,42 @@ def _route_for_caps(caps, client_info=None) -> str:
     return "text"
 
 
+_INSTINCT_CONNECT_DESCRIPTION = (
+    "Connect the user's Snaplii account in Instinct through the Instinct vault. Call with no "
+    "arguments to get connect_url, eid and vault_entry. Open connect_url in your cloud browser, "
+    "fill the API key field from the vault entry, click Connect, then call again with the eid "
+    "within 2 minutes to finish. Do not call when snaplii_config_show reports "
+    "has_valid_token=true. The API key never passes through the chat."
+)
+
+
+def _instinct_tools(tools: list[types.Tool]) -> list[types.Tool]:
+    """Instinct connects only through the vault-filled browser page: no card, no
+    card submit tool, and snaplii_connect takes the eid back."""
+    adapted = []
+    for tool in tools:
+        if tool.name == "snaplii_submit_api_key":
+            continue
+        if tool.name == "snaplii_connect":
+            tool = tool.model_copy(update={
+                "meta": None,
+                "description": _INSTINCT_CONNECT_DESCRIPTION,
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"eid": {
+                        "type": "string",
+                        "description": "The eid returned by the first snaplii_connect call",
+                    }},
+                    "required": [],
+                },
+            })
+        adapted.append(tool)
+    return adapted
+
+
 @app.list_tools()
 async def list_tools() -> list[types.Tool]:
-    return [
+    tools = [
         types.Tool(
             name="snaplii_config_show",
             description="Show current Snaplii config and auth status.",
@@ -476,6 +525,7 @@ async def list_tools() -> list[types.Tool]:
             },
         ),
     ]
+    return _instinct_tools(tools) if auth.detect_instinct() else tools
 
 
 _UPDATE_NOTICE = {"checked": False, "notice": None}
