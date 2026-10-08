@@ -5,6 +5,7 @@ from importlib.metadata import version as pkg_version
 import click
 from packaging.version import Version
 
+from snaplii import auth
 from snaplii.client import GatewayClient
 from snaplii.commands.balance import balance_cmd
 from snaplii.commands.billpay import billpay_group
@@ -17,12 +18,15 @@ from snaplii.commands.quote import quote_cmd
 from snaplii.commands.smart import smart_group
 from snaplii.commands.transfer import transfer_group
 from snaplii.config_store import ConfigStore
-from snaplii.exceptions import ConfigError, SnapliiCliError
+from snaplii.exceptions import AuthError, ConfigError, SnapliiCliError
 from snaplii.output import print_error, print_json
 from snaplii.version_check import check_for_update
 
 _VERSION = pkg_version("snaplii-cli")
 _DEFAULT_BASE_URL = "https://aipayment.snaplii.com"
+# Local setup and repair commands: they run without a gateway client, and they
+# stay available in Instinct, where everything else goes through MCP.
+_LOCAL_COMMANDS = ("config", "help", "update")
 
 
 @click.group()
@@ -45,7 +49,16 @@ def main(ctx, base_url):
     store.runtime = "cli"  # a one-shot process cannot keep a memory-only session
     ctx.obj["config_store"] = store
     ctx.obj["base_url"] = base_url
-    if ctx.invoked_subcommand not in ("config", "help", "update"):
+    if ctx.invoked_subcommand not in _LOCAL_COMMANDS:
+        instinct = auth.instinct_environment_status()
+        if instinct["detected"]:
+            # Checked before reading configuration, so a broken config file
+            # still yields this pointer instead of a configuration error.
+            raise AuthError(
+                "Instinct detected from " + ", ".join(instinct["env_names"])
+                + ": Snaplii runs through its MCP tools here. Use snaplii_connect.",
+                auth_state="mcp_required", reason_code="instinct_requires_mcp",
+                next_action=auth.build_auth_action("mcp_required", host="instinct"))
         # Repair commands must run even when the stored configuration is
         # unreadable or holds an invalid gateway URL.
         ctx.obj["client"] = GatewayClient(base_url or store.get("base_url", _DEFAULT_BASE_URL), store)

@@ -47,17 +47,18 @@ def config_doctor(ctx):
     """Show safe runtime/storage diagnostics without logging in or reading a key."""
     store: ConfigStore = ctx.obj["config_store"]
     muse = auth.muse_environment_status()
+    instinct = auth.instinct_environment_status()
     try:
         origin = ctx.obj["base_url"] or store.get("base_url", DEFAULT_ORIGIN)
         status = store.auth_status(origin=origin)
     except ConfigError:
         status = {"has_valid_token": False, "auth_state": "session_cache_failed",
                   "reason_code": "configuration_unreadable_or_invalid",
-                  "host": "muse" if muse["detected"] else "unknown",
+                  "host": "muse" if muse["detected"] else "instinct" if instinct["detected"] else "unknown",
                   # Do not reread broken configuration or guess its session storage.
                   "credential_storage": "unknown", "auth_method": None, "base_url": None,
                   "next_action": {"type": "stop", "reason": "session_cache_failed"}}
-    print_json({"version": version("snaplii-cli"), "muse": muse,
+    print_json({"version": version("snaplii-cli"), "muse": muse, "instinct": instinct,
                 "authentication": status})
 
 
