@@ -116,6 +116,78 @@ cannot be reused, report the storage problem instead of repeating key collection
 Authentication recovery never authorizes automatically replaying a payment."""
 
 
+INSTINCT_ENV_PREFIX = "INSTINCT_"
+INSTINCT_VAULT_ENTRY = "Snaplii API Key"
+INSTINCT_AUTH_INSTRUCTION = """Instinct: in Instinct, Snaplii runs only through the Snaplii MCP tools. Do not use
+the snaplii CLI for authentication or business operations, never call
+snaplii_init, and never request the Snaplii token endpoint yourself.
+
+When to connect: right after you install and register the Snaplii MCP server,
+connect immediately; the user does not need to ask. If the new tools only become
+available in a new session, tell the user and connect at the start of that
+session. Later, whenever the user makes a Snaplii request and
+snaplii_config_show reports has_valid_token=false, connect first without asking
+the user to log in. Do not connect at the start of unrelated conversations.
+Honor an explicit install-only or connect-later request.
+
+Connection flow:
+1. Call snaplii_connect with no arguments. It returns connect_url, eid and
+   vault_entry.
+2. Open connect_url in your cloud browser. Use the Instinct vault fill action on
+   the password field labelled "Snaplii API key" (id apikey), selecting the
+   vault entry named exactly vault_entry. Never read, print or copy the field.
+3. If the vault reports that the entry does not exist, explain to the user in
+   their language: open the Snaplii App and sign in, go to More → Payment Methods → AI Payment Management → + New API Key,
+   set a name, permissions and a spending limit, then create and copy the key;
+   it is shown only once. Then create the vault's encrypted submission link for
+   that entry and send it to the user. They paste the key only into that link,
+   never into the chat. After they confirm, retry the fill once.
+4. Click the Connect button. When the page shows "Connected", immediately call
+   snaplii_connect with {"eid": "<eid>"}; the token expires 2 minutes after
+   submission. Then confirm has_valid_token=true with snaplii_config_show.
+   For an installation, report "Installed and connected"; otherwise continue
+   the user's task.
+5. If the page says the key was not accepted, tell the user the stored key was
+   rejected, send the encrypted submission link once to replace the entry, and
+   retry once. If it fails again, stop and report.
+6. If snaplii_connect returns pending, check the page. If more than 2 minutes
+   passed since "Connected", start over once without eid.
+
+Select the vault actions from your actual capabilities; do not invent tool
+names. If the vault cannot fill fields or create links, explain the limitation
+and stop. Authentication recovery never authorizes replaying a payment."""
+
+
+def instinct_env_names(environ=None) -> list[str]:
+    """Names (never values) of the variables that signal Instinct."""
+    source = os.environ if environ is None else environ
+    return sorted(name for name in source if name.startswith(INSTINCT_ENV_PREFIX))
+
+
+def instinct_environment_status(environ=None) -> dict:
+    """Recognize Instinct by any INSTINCT_-prefixed variable, unless Muse is present.
+
+    Like Muse detection, this is an environment hint, not an attestation.
+    """
+    names = instinct_env_names(environ)
+    if not names:
+        return {"detected": False, "reason_code": "instinct_env_absent", "env_names": []}
+    if detect_muse().detected:
+        return {"detected": False, "reason_code": "muse_takes_precedence", "env_names": names}
+    return {"detected": True, "reason_code": "instinct_env_present", "env_names": names}
+
+
+def detect_instinct() -> bool:
+    return instinct_environment_status()["detected"]
+
+
+def instinct_vault_entry(base_url: str) -> str:
+    """Production keeps the plain entry name; other gateways never overwrite it."""
+    if normalize_base_url(base_url) == DEFAULT_ORIGIN:
+        return INSTINCT_VAULT_ENTRY
+    return INSTINCT_VAULT_ENTRY + " " + urlsplit(normalize_origin(base_url)).netloc
+
+
 def secure_entry_actions() -> dict | None:
     """Same capability requirements for runtime actions and distributed skills."""
     actions = {state: build_auth_action(state, host="muse")
