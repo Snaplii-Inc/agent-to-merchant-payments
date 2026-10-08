@@ -1,6 +1,14 @@
+import asyncio
+import json
+
+import keyring
 import pytest
+from keyring.backends.fail import Keyring
 
 from snaplii import auth
+from snaplii.client import GatewayClient
+from snaplii.config_store import ConfigStore
+from test_business_auth_gate import OPERATIONS
 
 
 def test_prefix_variable_selects_instinct(monkeypatch):
@@ -55,3 +63,75 @@ def test_instruction_covers_the_vault_flow_without_raw_key_entry():
     ):
         assert phrase in text
     assert "paste their Snaplii API key" not in text
+
+
+INSTINCT_ACTION = {"type": "call_mcp_tool", "tool": "snaplii_connect", "arguments": {},
+                   "instruction": auth.INSTINCT_AUTH_INSTRUCTION}
+
+
+@pytest.fixture
+def instinct_store(tmp_path, monkeypatch):
+    monkeypatch.setattr(keyring, "get_keyring", lambda: Keyring())
+    monkeypatch.delenv("SNAPLII_ALLOW_INSECURE", raising=False)
+    monkeypatch.setenv("INSTINCT_AGENT_ID", "synthetic-value")
+    return ConfigStore(tmp_path / "config.json", runtime="mcp")
+
+
+def test_status_reports_instinct_host_and_names_without_values(instinct_store):
+    state = instinct_store.auth_status(origin=auth.DEFAULT_ORIGIN)
+    assert state["host"] == "instinct"
+    assert state["instinct_env"] == ["INSTINCT_AGENT_ID"]
+    assert state["next_action"] == INSTINCT_ACTION
+    assert "synthetic-value" not in json.dumps(state)
+
+
+def test_non_instinct_status_has_no_instinct_field(tmp_path, monkeypatch):
+    monkeypatch.setattr(keyring, "get_keyring", lambda: Keyring())
+    state = ConfigStore(tmp_path / "config.json", runtime="mcp").auth_status(origin=auth.DEFAULT_ORIGIN)
+    assert state["host"] == "unknown"
+    assert "instinct_env" not in state
+
+
+def test_muse_host_wins_over_instinct_variables(tmp_path, monkeypatch, muse_filesystem):
+    monkeypatch.setattr(keyring, "get_keyring", lambda: Keyring())
+    monkeypatch.setenv("INSTINCT_AGENT_ID", "synthetic-value")
+    state = ConfigStore(tmp_path / "config.json", runtime="cli").auth_status(origin=auth.DEFAULT_ORIGIN)
+    assert state["host"] == "muse"
+    assert state["next_action"]["argv"][-1] == "--vault-auth"
+    assert "instinct_env" not in state
+
+
+@pytest.mark.parametrize("state", [
+    "auth_required", "reauth_required", "credential_required", "invalid_key",
+    "credential_lookup_failed", "secure_entry_unavailable", "mcp_required",
+])
+@pytest.mark.parametrize("origin", [auth.DEFAULT_ORIGIN, "https://aipay.stage.snaplii.com"])
+def test_instinct_actions_point_to_connect_on_any_gateway(state, origin):
+    assert auth.build_auth_action(state, host="instinct", origin=origin) == INSTINCT_ACTION
+
+
+@pytest.mark.parametrize("state,expected", [
+    ("ready", None),
+    ("cancelled", {"type": "stop", "reason": "cancelled"}),
+    ("session_cache_failed", {"type": "stop", "reason": "session_cache_failed"}),
+    ("temporary_gateway_error", {"type": "retry_auth_later", "reason": "temporary_gateway_error"}),
+])
+def test_instinct_keeps_terminal_and_retry_actions(state, expected):
+    assert auth.build_auth_action(state, host="instinct") == expected
+
+
+@pytest.mark.parametrize("command,name,arguments", OPERATIONS, ids=[op[1] for op in OPERATIONS])
+def test_mcp_business_tools_without_session_point_to_connect(
+    instinct_store, monkeypatch, httpx_mock, command, name, arguments,
+):
+    import server
+    client = GatewayClient(auth.DEFAULT_ORIGIN, instinct_store)
+    monkeypatch.setattr(server, "_get_client", lambda: client)
+    monkeypatch.setattr(server, "ConfigStore", lambda: instinct_store)
+    monkeypatch.setattr(server, "_base_url", lambda: auth.DEFAULT_ORIGIN)
+    monkeypatch.setattr(server, "_update_notice", lambda: None)
+    result = json.loads(asyncio.run(server.call_tool("snaplii_" + name, arguments))[0].text)
+    client._http.close()
+    assert result["auth_state"] == "auth_required"
+    assert result["next_action"] == INSTINCT_ACTION
+    assert httpx_mock.get_requests() == []

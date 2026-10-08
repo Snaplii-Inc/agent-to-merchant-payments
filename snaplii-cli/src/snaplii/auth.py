@@ -393,6 +393,11 @@ def build_auth_action(state: str, *, host: str, auth_method=None, origin=DEFAULT
         return {"type": "stop", "reason": state}
     if state == "temporary_gateway_error":
         return {"type": "retry_auth_later", "reason": state}
+    if host == "instinct":
+        # Instinct connects only through the vault-filled connect page in MCP, on
+        # whichever gateway is configured, so staging can be tested too.
+        return {"type": "call_mcp_tool", "tool": "snaplii_connect", "arguments": {},
+                "instruction": INSTINCT_AUTH_INSTRUCTION}
     secure = host == "muse" or auth_method == "vault"
     if secure:
         try:

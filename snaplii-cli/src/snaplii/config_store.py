@@ -307,7 +307,8 @@ class ConfigStore:
         if method not in ("api_key", "vault", "url"):
             method = None
         state = "ready" if token else "reauth_required" if method or data.get("token_expires_at") else "auth_required"
-        host = "muse" if self._muse.detected else "unknown"
+        instinct_env = [] if self._muse.detected else auth.instinct_env_names()
+        host = "muse" if self._muse.detected else "instinct" if instinct_env else "unknown"
         storage = data.get("_credential_storage") if self._session_token(data) else None
         if storage not in ("config file", "system keychain", "process memory"):
             storage = self._selected_storage(data)
@@ -321,6 +322,8 @@ class ConfigStore:
         result = {"has_valid_token": bool(token), "auth_state": state, "host": host,
                   "auth_method": method, "credential_storage": storage, "base_url": base_url,
                   "next_action": action}
+        if host == "instinct":
+            result["instinct_env"] = instinct_env
         if auth.valid_agent_id(data.get("agent_id")):
             result["agent_id"] = data["agent_id"]
         if data.get("country") in ("US", "CA"):
