@@ -30,7 +30,7 @@ def test_next_steps_per_host(installer):
         register = steps[1]
         assert register["executable"] == exe and register["command"] == first and register["status"] == "pending"
     skill = installer.next_steps("claude-code", "unknown", comps, "/v", None, False, False, "linux", {}, [])[0]
-    assert skill["args"] == ["skills", "add", "Snaplii-Inc/agent-to-merchant-payments", "-g", "-a", "claude-code"]
+    assert skill["args"] == ["skills", "add", "https://github.com/Snaplii-Inc/agent-to-merchant-payments/tree/v0.19.0", "-g", "-a", "claude-code"]
     assert installer.next_steps("openclaw", "unknown", comps, "/v", None, False, False, "linux", {}, [])[0]["command"] == "clawhub install snaplii-a2m-payment"
     desktop = installer.next_steps("claude-desktop", "unknown", comps, "/v", None, False, False, "darwin", {"HOME": "/Users/u"}, [])[1]
     assert desktop["file"].endswith("Library/Application Support/Claude/claude_desktop_config.json")
@@ -272,3 +272,54 @@ def test_main_lock_rewrite_failure_still_prints_json_and_keeps_the_lock(installe
     code, report = run_main(installer, capsys, [], {"HOME": str(tmp_path)})
     assert code == 1 and report["failure"]["code"] == "cleanup_incomplete"
     assert os.path.exists(str(tmp_path / ".snaplii-env.lock"))
+
+
+# The skill comes from the same release as the CLI and the MCP server.
+
+def test_skill_step_installs_from_the_source_clone(installer):
+    steps = installer.next_steps("claude-code", "unknown", installed(installer), "/v", None, False, False, "linux", {}, [],
+                                 source="/home/u/snaplii-src")
+    assert steps[0]["args"] == ["skills", "add", "/home/u/snaplii-src", "-g", "-a", "claude-code"]
+
+
+def test_skill_step_pins_the_tag_of_the_installed_cli(installer):
+    steps = installer.next_steps("codex", "unknown", installed(installer), "/v", None, False, False, "linux", {}, [])
+    assert steps[0]["args"] == ["skills", "add", "https://github.com/Snaplii-Inc/agent-to-merchant-payments/tree/v0.19.0",
+                                "-g", "-a", "codex"]
+
+
+def test_skill_step_without_a_known_version_uses_the_repository(installer):
+    comps = {"cli": {"status": "missing"}, "mcp": {"status": "missing"}}
+    steps = installer.next_steps(None, "unknown", comps, "/v", None, True, False, "linux", {}, ["python3", "install.py", "--check"])
+    skill = [s for s in steps if s["id"] == "install_skill"][0]
+    assert skill["args"] == ["skills", "add", "Snaplii-Inc/agent-to-merchant-payments", "-g"]
+
+
+def test_update_step_points_at_a_release_tag(installer):
+    update = [s for s in installer.next_steps("claude-code", "unknown", installed(installer), "/v", None, False, False,
+                                              "linux", {}, []) if s["id"] == "update"][0]
+    assert "release tag" in update["why"] and "--source" in update["why"] and "same flags" in update["why"]
+
+
+def test_relative_source_is_resolved_for_the_install_and_the_report(installer, capsys, tmp_path, monkeypatch):
+    src = tmp_path / "snaplii-src"
+    (src / "snaplii-cli").mkdir(parents=True)
+    (src / "mcp-server").mkdir()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(installer, "locate_uv", lambda environ, **k: None)
+    monkeypatch.setattr(installer, "qualifying_candidates", lambda *a, **k: [{"argv": [sys.executable], "executable": sys.executable, "version": [3, 12, 0], "venv_ok": True}])
+
+    def fake_build(venv_path, reservation, candidates, need, env, mode):
+        os.makedirs(venv_path, exist_ok=True)
+        installer.write_marker(venv_path, sys.executable)
+        reservation.remove()
+        return {"executable": installer.venv_python(venv_path), "version": [3, 12, 0], "state": "created"}
+    seen = {}
+    monkeypatch.setattr(installer, "build_venv", fake_build)
+    monkeypatch.setattr(installer, "install_packages", lambda py, cli_only, source, env: seen.setdefault("source", source))
+    monkeypatch.setattr(installer, "verify_cli", lambda v, env, t: {"status": "installed", "version": "0.19.0", "executable": installer.venv_exe(v, "snaplii"), "host_seen_by_cli": "unknown"})
+    monkeypatch.setattr(installer, "verify_mcp", lambda v, env, t, w: {"status": "installed", "version": "0.19.0", "executable": installer.venv_exe(v, "snaplii-mcp"), "tools": 26})
+    code, report = run_main(installer, capsys, ["--source", "snaplii-src", "--host", "claude-code"], {"HOME": str(tmp_path), "PATH": os.environ.get("PATH", "")})
+    assert code == 0 and seen["source"] == str(src)
+    skill = [s for s in report["next_steps"] if s["id"] == "install_skill"][0]
+    assert skill["args"][2] == str(src)

@@ -50,12 +50,12 @@ def test_readme_claude_code_block_matches_the_installer():
                                        ("cursor", ["-g", "-a", "cursor"]), (None, ["-g"])])
 def test_skill_install_is_user_wide(installer, host, tail):
     args = _steps(installer, host)["install_skill"]["args"]
-    assert args == ["skills", "add", "Snaplii-Inc/agent-to-merchant-payments"] + tail
+    assert args == ["skills", "add", "https://github.com/Snaplii-Inc/agent-to-merchant-payments/tree/v0.19.0"] + tail
 
 
 def test_readme_skill_command_is_user_wide():
     first = README.split("### Install the Agent Skill", 1)[1].split("```bash", 1)[1].split("```", 1)[0]
-    assert first.strip() == "npx skills add Snaplii-Inc/agent-to-merchant-payments -g"
+    assert first.strip() == "npx skills add ./snaplii-src -g"
 
 
 # 2. relayed commands name a CLI that exists

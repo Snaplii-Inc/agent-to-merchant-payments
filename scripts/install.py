@@ -1444,24 +1444,33 @@ def _register_step(host: Optional[str], exe: str, platform: str, environ: Dict[s
                 "README (MCP Server section): " + README_URL, exe, [], platform)
 
 
-def _skill_step(host: Optional[str], platform: str) -> Dict[str, object]:
+def _skill_step(host: Optional[str], platform: str, source: Optional[str] = None,
+                cli_version: Optional[str] = None) -> Dict[str, object]:
     why = "The skill carries the rules and flows; the server alone does not."
     if host == "openclaw":
         return step("install_skill", "pending", why, "clawhub", ["install", "snaplii-a2m-payment"], platform)
+    # The skill comes from the same release as the packages: the clone given to
+    # --source, else the tag of the installed CLI, else the repository.
+    if source:
+        origin = source
+    elif cli_version:
+        origin = "https://github.com/%s/tree/v%s" % (REPO, cli_version)
+    else:
+        origin = REPO
     # -g installs for the user; without it the skills land in the current project.
-    args = ["skills", "add", REPO, "-g"] + (["-a", host] if host in ("claude-code", "codex", "cursor") else [])
+    args = ["skills", "add", origin, "-g"] + (["-a", host] if host in ("claude-code", "codex", "cursor") else [])
     return step("install_skill", "pending", why, "npx", args, platform)
 
 
 def next_steps(host: Optional[str], detected: str, components: Dict[str, dict], venv: str,
                failure: Optional[InstallFailure], check_mode: bool, cli_only: bool, platform: str,
-               environ: Dict[str, str], rerun: List[str]) -> List[Dict[str, object]]:
+               environ: Dict[str, str], rerun: List[str], source: Optional[str] = None) -> List[Dict[str, object]]:
     effective = "instinct" if detected == "instinct" else host
     cli, mcp = components.get("cli", {}), components.get("mcp", {})
     cli_ok, mcp_ok = cli.get("status") == "installed", mcp.get("status") == "installed"
     steps = []  # type: List[Dict[str, object]]
     if effective != "instinct":
-        steps.append(_skill_step(effective, platform))
+        steps.append(_skill_step(effective, platform, source, cli.get("version") if cli_ok else None))
     install_argv = [a for a in rerun if a != "--check"]  # a repair is an install, never another check
     rerun_cmd = render_command(install_argv[0], install_argv[1:], platform) if install_argv else None
     if mcp_ok:
@@ -1496,10 +1505,11 @@ def next_steps(host: Optional[str], detected: str, components: Dict[str, dict], 
                               "export", ["PATH=%s:$PATH" % bin_dir], platform,
                               command='export PATH="%s:$PATH"' % bin_dir))
     if cli_ok and (mcp_ok or mcp.get("status") == "skipped") and failure is None:
-        steps.append(step("update", "optional", "To update later: ask the user to quit the host, then download this "
-                          "installer again and run it with the same flags; it upgrades the CLI and the MCP server together. "
-                          "Do not use `snaplii update` in this environment: it upgrades only the CLI and leaves the MCP "
-                          "server on its old version."))
+        steps.append(step("update", "optional", "To update later: ask the user to quit the host, then clone the new "
+                          "release tag, install the skill from that clone, and run its scripts/install.py with --source "
+                          "pointing at it and the same flags; the skill, the CLI and the MCP server then come from one "
+                          "release. Do not use `snaplii update` in this environment: it upgrades only the CLI and leaves "
+                          "the MCP server on its old version."))
     return steps
 
 
@@ -1531,6 +1541,23 @@ def parse_args(argv: Optional[List[str]]) -> argparse.Namespace:
             raise
         raise InstallFailure("arguments", "bad_arguments", "unrecognised or invalid arguments",
                              "run with --help and correct the command line", retryable=False)
+
+
+def _with_source(argv: List[str], source: str) -> List[str]:
+    """argv with the --source value replaced by the given path."""
+    out, skip = [], False
+    for item in argv:
+        if skip:
+            out.append(source)
+            skip = False
+        elif item == "--source":
+            out.append(item)
+            skip = True
+        elif item.startswith("--source="):
+            out.append("--source=" + source)
+        else:
+            out.append(item)
+    return out
 
 
 def _check_source(source: Optional[str], cli_only: bool) -> None:
@@ -1566,6 +1593,10 @@ def main(argv: Optional[List[str]] = None, environ: Optional[Dict[str, str]] = N
         except SystemExit:
             return 0
         check_mode, cli_only = args.check, args.cli_only
+        if args.source:
+            # Absolute, so the install, the report and any re-run name the same clone from any directory.
+            args.source = os.path.abspath(os.path.expanduser(args.source))
+            rerun = [sys.executable, os.path.abspath(__file__)] + _with_source(argv, args.source)
         if is_windows():
             JOB = WindowsJob()
             if not JOB.available:
@@ -1656,7 +1687,8 @@ def main(argv: Optional[List[str]] = None, environ: Optional[Dict[str, str]] = N
         report["status"] = compute_status(components, failure, check_mode, cli_only)
         detected = report["host"]["detected"] if report["host"] else "unknown"
         report["next_steps"] = next_steps(getattr(args, "host", None), detected, components, str(report["venv"]["path"]),
-                                          failure, check_mode, cli_only, sys.platform, environ, rerun)
+                                          failure, check_mode, cli_only, sys.platform, environ, rerun,
+                                          getattr(args, "source", None))
         text = json.dumps(report, indent=2)
     except Exception as exc:  # the last guard of the two-state promise: still a JSON report, never a traceback
         report = _fallback_report(report, exc)
