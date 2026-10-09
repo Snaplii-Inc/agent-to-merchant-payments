@@ -8,6 +8,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ## [Unreleased]
 
+### Added
+- **`scripts/install.py`, an installer for agents.** One standard-library script (Python 3.8+) installs `snaplii-cli` and `snaplii-mcp` into `~/.snaplii-env`, fetches CPython 3.12 with uv when needed, verifies the CLI and the MCP handshake against an isolated configuration, and prints a JSON report whose `next_steps` carry the exact skill-install and MCP-registration commands per host. Re-running it is the update path. Release steps: after each PyPI release run `SNAPLII_INSTALLER_LIVE=1 pytest tests/test_installer_live.py` (both variants) before announcing.
+- CI runs Test and Build on pull requests and provides CPython 3.8 for the installer's compatibility test; publishing stays tag-gated.
+
 ### Changed
 - **One confirmation policy everywhere.** Gift-card purchases within the per-key daily limit need no per-transaction confirmation; bill payments need the user's explicit current-turn confirmation of biller, account, and amount; a final merchant order needs the summary and address confirmed. The MCP server instructions and `snaplii_billpay_pay` description, the autopilot skill, and the Claude Desktop project instructions now say the same thing the `snaplii-cli` skill already said.
 - **README rewritten for agents first.** Capabilities by country and key scope, how the skill, MCP, CLI and REST fit together, a generic Agent Skills install (`npx skills add`) with per-agent directories, both skills, and the Muse and Instinct paths come first; the product background moved to the end.
