@@ -10,6 +10,7 @@ on:
   push:
     tags:
       - "v*"
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -21,6 +22,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.0.1
+
+      # The installer must start under Python 3.8; tests/test_installer_live.py finds this
+      # interpreter and skips when it is absent, so the download lives here, not in the test.
+      - name: Install CPython 3.8 for the installer test
+        run: uv python install 3.8
 
       # The tag is what users get; a mismatch would publish a version nobody asked for.
       # Exact match is deliberate: it rules out prereleases (v0.15.0rc1) by design.
