@@ -64,12 +64,17 @@ def test_order_item_states_the_item_id_rule():
     assert "{cardBrandId}-{cardTemplateId}" in description and "verbatim" in description
 
 
-def test_readme_rest_section_sends_agents_to_the_skill_or_mcp_and_lists_the_rules():
-    section = README.split("### REST API (Any LLM)", 1)[1].split("\n### ", 1)[0]
+def test_readme_never_leads_an_agent_to_the_rest_api():
+    # The README routes AI agents to the skill or the MCP server only; REST is for
+    # server integrations and carries no how-to for an agent calling it directly.
+    assert "Any LLM" not in README and "direct caller" not in README.lower()
+    section = README.split("### REST API (server integrations)", 1)[1].split("\n### ", 1)[0]
     intro = flat(section.split("**Base URL:**", 1)[0])
-    assert "Agent Skill" in intro and "MCP server" in intro and "x-agent-rules" in intro
-    rows = [line for line in section.splitlines() if line.startswith("| ") and "---" not in line]
-    assert len(rows) >= len(REQUIRED_RULES) - 2  # header plus one row per rule group
+    assert "AI agents do not call this API" in intro
+    assert "Agent Skill" in intro and "MCP server" in intro
+    assert not [line for line in intro.splitlines() if line.startswith("| ")]
+    row = [line for line in README.splitlines() if line.startswith("| A service or script")][0]
+    assert "Not for AI agents" in row and "#rest-api-server-integrations" in row
 
 
 # openapi.yaml is published to the public: it states the contract and the caller's duties, and

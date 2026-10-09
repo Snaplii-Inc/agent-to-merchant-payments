@@ -29,7 +29,7 @@ The account country is fixed at login and enforced by the gateway, so the catalo
 | An agent that reads `SKILL.md` (Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot, OpenClaw, Muse, and others) | The **Agent Skill**, see [Install the Agent Skill](#install-the-agent-skill) | The skill carries the rules, the flows, and the host-specific login steps. It then picks MCP or the CLI for you |
 | An MCP client (Claude Desktop, Codex, Cursor, VS Code, OpenClaw, Instinct) | The **MCP server**, see [MCP Server](#mcp-server-claude-openclaw-cursor-instinct) | 26 tools, plus an off-model login card or page on hosts that support one |
 | A terminal, a script, or an agent with only a shell | The **CLI**, see [Quick Start](#quick-start) | One command per operation, JSON on stdout |
-| A service or script without an agent runtime | The **REST API**, see [REST API](#rest-api-any-llm) | Plain HTTPS against `aipayment.snaplii.com`. An agent calling it directly must apply the rules the skill applies; the REST section lists them |
+| A service or script without an agent runtime | The **REST API**, see [REST API](#rest-api-server-integrations) | Plain HTTPS against `aipayment.snaplii.com`. Not for AI agents: they use the skill or the MCP server |
 
 ### How Snaplii and agent tools work together
 
@@ -197,7 +197,7 @@ A connection attempt can also end in one of these states. Honor its action befor
 - [CLI Commands](#cli-commands)
 - [Integration Guides](#integration-guides)
   - [MCP Server (Claude, OpenClaw, Cursor, Instinct)](#mcp-server-claude-openclaw-cursor-instinct)
-  - [REST API (Any LLM)](#rest-api-any-llm)
+  - [REST API (server integrations)](#rest-api-server-integrations)
 - [Components](#components)
 - [Uninstall](#uninstall)
 - [Troubleshooting](#troubleshooting)
@@ -612,22 +612,9 @@ The server also offers one MCP prompt, `snaplii_autopilot`, which carries the en
 
 ---
 
-### REST API (Any LLM)
+### REST API (server integrations)
 
-For services and scripts that call Snaplii without an agent runtime. **An AI agent should use the [Agent Skill](#install-the-agent-skill) or the [MCP server](#mcp-server-claude-openclaw-cursor-instinct) instead**: they follow these rules for you. An agent that calls the API directly must follow each rule itself. [`openapi.yaml`](openapi.yaml) is the full contract and lists the same rules machine-readably under `info.x-agent-rules`.
-
-| Rule | What a direct caller must do |
-|---|---|
-| Gift-card `itemId` is exactly `{cardBrandId}-{cardTemplateId}` | Build it from the two values `GET /v2/card-brands/{id}` returns, copied verbatim; never one ID alone, a template from another brand, or a guessed one |
-| The price matches the card's denomination | Check `faceValueRules` before quoting: a fixed card takes exactly `priceStart`, a variable card `priceStart` to `priceEnd` |
-| Quote first; stop when Snaplii Cash does not cover it | Do not purchase while `primaryPayAmount` is above zero |
-| No blind purchase retry | `/v2/purchase` is not idempotent: after an unclear failure, check owned cards or the bill payment result first |
-| Confirm bill payments | Get an explicit current-turn yes for biller, account and amount |
-| Card codes, PINs and internal IDs stay private | Show a code only when the user asks; never show IDs |
-| The API key stays out of the chat | Let the user enter it in their own terminal or a hosted page |
-| Instinct executes only through MCP | Do not call this API from Instinct |
-| Transfer idempotency key and conversion disclosure | Keep and reuse your own `Idempotency-Key`; disclose any currency conversion before the transfer sends |
-| Snaplii Cash only, within the key's scope and daily limit | Expect a request beyond the key's scope or daily limit to be rejected |
+For backend services that integrate Snaplii without an AI agent. AI agents do not call this API directly: they use the [Agent Skill](#install-the-agent-skill) or the [MCP server](#mcp-server-claude-openclaw-cursor-instinct). [`openapi.yaml`](openapi.yaml) is the full contract.
 
 **Base URL:** `https://aipayment.snaplii.com`
 
