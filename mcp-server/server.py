@@ -1147,8 +1147,8 @@ After login, re-read snaplii_config_show and require has_valid_token=true before
 Shared Meta Muse instructions (apply only in Muse):
 {auth.MUSE_AUTH_INSTRUCTION}
 
-2. Pick the card: ask region (CA/US), call snaplii_browse_tags. For delivery (food/coffee), prefer delivery-platform cards (DoorDash, Uber Eats, Skip) over the restaurant's own card. Never show brandId/templateId to the user.
-3. Check balance: call snaplii_balance (pass the user's country CA/US so the currency is right — CA=CAD, US=USD, never assume CAD) so you know up front whether the order is affordable. (Never guess the balance — read it from this tool; if it fails, say so and rely on the quote's you_pay.)
+2. Pick the card: call snaplii_browse_tags. The account country is already known from the connection and comes back as account_country — do NOT ask the user for a region. For delivery (food/coffee), prefer delivery-platform cards (DoorDash, Uber Eats, Skip) over the restaurant's own card. Never show brandId/templateId to the user.
+3. Check balance: call snaplii_balance (it labels the currency from the stored account country — CA=CAD, US=USD, never assume CAD) so you know up front whether the order is affordable. (Never guess the balance — read it from this tool; if it fails, say so and rely on the quote's you_pay.)
 4. Quote: call snaplii_quote and show the breakdown (voucher + Snaplii Cash + you_pay). If you_pay > 0, tell the user to top up in the app and stop.
 5. Buy: call snaplii_purchase with the item_id and price (no confirmation needed). Then snaplii_giftcard_list -> find the new card -> snaplii_giftcard_detail for the redemption code. Report brand, amount, and code.
 6. Redeem + order (if you have a browser-control tool): open the merchant/delivery site, go to Payment -> Add Gift Card, enter the code, build the order (search item, add to cart). For any delivery/shipping order, EXPLICITLY confirm the delivery address with the user before continuing — read back the exact address and ask "deliver to <address>?"; never assume a saved/default address. Then set the tip.

@@ -50,6 +50,10 @@ def test_autopilot_prompt_requires_shared_muse_auth_before_business():
     assert "host=muse" in gate
     assert "next_action" in gate
     assert "snaplii_connect" in gate
+    # The account country is fixed at login and returned by browse/balance, so the
+    # prompt must not send the agent back to the user for it.
+    assert "ask region" not in text
+    assert "account_country" in text
     assert "snaplii_init only when the user explicitly chooses" in gate
     assert "host=unknown" in gate and "snaplii config doctor" in gate
     assert "call snaplii_init with the user's API key" not in text

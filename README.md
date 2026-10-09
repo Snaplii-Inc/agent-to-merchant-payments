@@ -37,7 +37,7 @@ The account country is fixed at login and enforced by the gateway, so the catalo
 - **MCP and the CLI are two execution layers over the same gateway.** They expose the same operations and mostly the same names: `snaplii balance` is `snaplii_balance`, but `smart cashback` is `snaplii_cashback_calc`, `smart dashboard` is `snaplii_dashboard`, and some options differ. Use the [CLI](#cli-commands) and [MCP](#available-mcp-tools) tables rather than deriving one from the other. Both read the same configuration file (`~/.snaplii/config.json`, or `SNAPLII_CONFIG_PATH`), so a session stored there or in the OS keychain is visible to both; a session an MCP server could only keep in memory is not. Always check status in the runtime that will execute the task.
 - **Which execution layer a skill uses depends on the host.** Muse uses the CLI. Instinct uses MCP only. Every other agent prefers the MCP tools when they are present and falls back to the CLI.
 - **Authentication is per host.** The skill's Auth section and the MCP server's instructions carry the exact steps for Muse, Instinct, card-rendering hosts, and plain terminals. The agent checks `has_valid_token=true` before any Snaplii operation, including read-only ones, and connects first when it is false.
-- **The API key stays out of the chat wherever the host allows it.** On hosts that render the secure card, open the hosted page, or hold the key themselves (Muse, Instinct), the key never passes through the model. A host with none of those takes it in a hidden terminal prompt, or as a last resort through `snaplii_init`, whose argument the model does see. The key is exchanged once for a session token and is never written to disk.
+- **The API key stays out of the chat wherever the host allows it.** On hosts that render the secure card, open the hosted page, or hold the key themselves (Muse, Instinct), the key never passes through the model. A host with none of those offers the user two equal options: a hidden terminal prompt, or pasting the key for `snaplii_init`, whose argument the model does see. The key is exchanged once for a session token and is never written to disk.
 
 ### Install the Agent Skill
 
@@ -90,10 +90,10 @@ clawhub install snaplii-autopilot
 ### Rules the skill enforces
 
 - Every Snaplii operation, including browsing and balance, requires `has_valid_token=true`. Connect first; the user does not need to ask to log in.
-- Gift-card purchases within the key's daily limit run **without a per-transaction confirmation**; the limit the user set in the app is the consent. Two actions still need an explicit, current-turn "yes": a **bill payment** (confirm the biller, account, and amount first) and the **final order on a merchant site** (confirm the summary and the exact delivery address first).
+- Gift-card purchases within the key's daily limit run **without a per-transaction confirmation**; the limit the user set in the app is the consent. The skill asks for an explicit, current-turn "yes" before a **bill payment** (biller, account, and amount) and before the **final order on a merchant site** (summary and exact delivery address). The MCP server's own tool descriptions do not ask before a bill payment, so an agent running on MCP without the skill pays bills unprompted.
 - Quote before buying. The quote's `you_pay` is the amount Snaplii Cash does not cover. If it is above zero, tell the user to top up in the app and stop.
 - Read the balance from `snaplii_balance` or `snaplii balance`; never guess it. If the lookup fails, say so and rely on the quote's `you_pay`.
-- Never ask for the API key in the chat while a card, a hosted page, a hidden prompt, or the host's own store can take it; `snaplii_init` is the last resort. Never echo a key or token, and never show internal IDs such as `brandId`, `templateId`, or `cardNo`.
+- Never ask for the API key in the chat while a card, a hosted page, or the host's own store can take it. A client with none of those offers the user two equal options: a hidden terminal prompt (`snaplii init`) or pasting the key in the chat for `snaplii_init`, which passes it through the model once. Never echo a key or token, and never show internal IDs such as `brandId`, `templateId`, or `cardNo`.
 - After creating a transfer, tell the user the amount, the masked recipient, and the cancel deadline. If the result carries `cross_currency_notice`, show it and let the user keep or cancel the transfer. Use `finish` only when the user explicitly asks to send now.
 - Charges are sent once. On an ambiguous failure, check the result (`billpay result`, `transfer status`) before retrying. Retry a transfer that returned `CREATING` with the **same** key, `--idempotency-key` in the CLI or `idempotency_key` in MCP, never a fresh one; if no order number came back, check `transfer list` first.
 
@@ -325,7 +325,7 @@ snaplii transfer list                                          # List transfers,
 
 ## CLI Commands
 
-Every operation prints one JSON document on stdout, or one JSON error on stderr with exit code 1; `help`, `--help`, and `--version` print plain text, and `init` writes its hidden prompt to stderr. Authentication errors carry `auth_state` and a `next_action` the agent can follow.
+Every operation prints one JSON document on stdout, or one JSON error on stderr with exit code 1; `help`, `--help`, and `--version` print plain text, and `init` writes its hidden prompt to stderr. A refused connection is reported as JSON too, but another transport failure during a read, such as a timeout, can still surface as a Python traceback. Authentication errors carry `auth_state` and a `next_action` the agent can follow.
 
 | Command | Purpose |
 |---|---|
@@ -534,7 +534,16 @@ curl https://aipayment.snaplii.com/v2/card-brands?channel=HOME_PAGE \
   -H "Authorization: Bearer <token>"
 ```
 
-#### Step 3: Get a price quote
+#### Step 3: Check the denomination
+
+```bash
+curl https://aipayment.snaplii.com/v2/card-brands/CB... \
+  -H "Authorization: Bearer <token>"
+```
+
+A `FIXED` template accepts exactly `priceStart`; a `VARIABLE` template accepts any amount from `priceStart` to `priceEnd`. Check this before quoting.
+
+#### Step 4: Get a price quote
 
 ```bash
 curl -X POST https://aipayment.snaplii.com/v2/quote \
@@ -546,7 +555,9 @@ curl -X POST https://aipayment.snaplii.com/v2/quote \
   }'
 ```
 
-#### Step 4: Purchase
+A positive `primaryPayAmount` in the response means Snaplii Cash does not fully cover the order; stop and tell the user to top up. This is the field the CLI and MCP report as `you_pay`.
+
+#### Step 5: Purchase
 
 ```bash
 curl -X POST https://aipayment.snaplii.com/v2/purchase \
@@ -631,8 +642,8 @@ A `401`, or a session-rejection code such as `MCAP9999` in the body, means the s
 - **Isolated spending access:** agents can spend only the prepaid Snaplii Cash available within their permissions and limits. They do not receive direct access to your bank accounts or credit cards.
 - **Scoped API keys:** `PAY_READ` (read-only), `PAY_WRITE` (read, purchase, bill pay), `P2P` (transfers), `ALL`.
 - **Spending limits:** strict per-key consumption caps are set via the mobile app. Transfers also have a rolling 24-hour per-key limit.
-- **Consent is the daily limit, set once.** You authorize spending when you create the key and set its per-day cap in the app; within that cap the agent buys gift cards **without a per-transaction confirmation**, so the flow stays smooth. The skill still asks before a bill payment and before a final merchant order. Spending is prepaid-only and the key is revocable, so the daily limit is the blast radius. On connect, the agent surfaces this once.
-- **Off-model key entry.** The API key is entered through a secure MCP Apps card rendered by the host, on the hosted connect page, in a hidden terminal prompt, or supplied by the host's credential store (Muse) or vault (Instinct). Only a client with none of those falls back to `snaplii_init`, where the key passes through the model once. The session token is kept in the OS keychain, or in process memory for a long-lived MCP server. Recognized Muse runtimes use a private session file automatically; other keychain-less CLI environments require explicit `SNAPLII_ALLOW_INSECURE=1` opt-in for file caching.
+- **Consent is the daily limit, set once.** You authorize spending when you create the key and set its per-day cap in the app; within that cap the agent buys gift cards **without a per-transaction confirmation**, so the flow stays smooth. The skill still asks before a bill payment and before a final merchant order; the MCP server's tool descriptions do not, so MCP without the skill pays bills unprompted. Spending is prepaid-only and the key is revocable, so the daily limit is the blast radius. On connect, the agent surfaces this once.
+- **Off-model key entry.** The API key is entered through a secure MCP Apps card rendered by the host, on the hosted connect page, in a hidden terminal prompt, or supplied by the host's credential store (Muse) or vault (Instinct). A client with none of those offers the terminal prompt and `snaplii_init` as two equal options; with `snaplii_init` the key passes through the model once. The session token is kept in the OS keychain, or in process memory for a long-lived MCP server. Recognized Muse runtimes use a private session file automatically; other keychain-less CLI environments require explicit `SNAPLII_ALLOW_INSECURE=1` opt-in for file caching.
 - **Charges are sent once.** Charges are not auto-retried. On an ambiguous bill-pay failure, query `billpay result` by `paymentNo` before retrying rather than re-paying. Transfers carry an idempotency key; retry a `CREATING` transfer with the same key, never a fresh one.
 - **No credential storage:** API keys are used once to obtain a token and are never saved to disk.
 - **Data protection:** card redemption codes and PINs are shown only when the user asks for them or needs them to finish a purchase, and never appear in logs or summaries.
