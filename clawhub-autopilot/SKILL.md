@@ -252,8 +252,8 @@ Follow the base flow: `browse` (region is automatic from the account — no flag
 
 If `you_pay` > 0 (Snaplii Cash doesn't cover it), tell the user to top up in the app and stop — do not proceed.
 
-### 2. Confirm & buy
-On explicit confirmation, `purchase`. Then retrieve the card you just bought:
+### 2. Buy
+Show the quote breakdown, then `purchase` — no confirmation is needed within the daily limit. Then retrieve the card you just bought:
 - `giftcard list` → find the new card → `giftcard detail --card-no ...` to get the redemption code.
 - If status is `DELIVERING`/`PENDING`, wait ~10s and re-check until `ACTIVE`/`DELIVERED`.
 - Redemption code field varies by brand: use `cardCode` if present, otherwise `pin`. (DoorDash etc. use `pin`.) The detail response nests fields under `data`.

@@ -6,6 +6,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
+## [Unreleased]
+
+### Changed
+- **One confirmation policy everywhere.** Gift-card purchases within the per-key daily limit need no per-transaction confirmation; bill payments need the user's explicit current-turn confirmation of biller, account, and amount; a final merchant order needs the summary and address confirmed. The MCP server instructions and `snaplii_billpay_pay` description, the autopilot skill, and the Claude Desktop project instructions now say the same thing the `snaplii-cli` skill already said.
+- **README rewritten for agents first.** Capabilities by country and key scope, how the skill, MCP, CLI and REST fit together, a generic Agent Skills install (`npx skills add`) with per-agent directories, both skills, and the Muse and Instinct paths come first; the product background moved to the end.
+- The `snaplii_autopilot` MCP prompt no longer asks the user for a region; the account country is fixed at login.
+
+---
+
 ## [0.19.0] — 2026-10-08
 
 ### Added
