@@ -1102,3 +1102,108 @@ def build_venv(venv: str, reservation: Reservation, candidates: List[Dict[str, o
         return {"executable": python, "version": info["version"], "state": "created" if mode == "new" else "rebuilt"}
     raise InstallFailure("venv", "venv_create_failed", "no interpreter could create a virtual environment at " + venv,
                          required_python_remedy(), retryable=True, diagnostics=last)
+
+
+# ----------------------------------------------------------------------------
+# pip
+# ----------------------------------------------------------------------------
+PIP_SIGNALS = [
+    ("index_auth_failed", (re.compile(r"(?i)HTTP error 40[13]\b|\b40[13] Client Error|\b40[13] (?:Unauthorized|Forbidden)\b"),
+                           "User for ", "credentials"), False),
+    ("tls_failed", ("CERTIFICATE_VERIFY_FAILED", "SSLError", "certificate verify"), False),
+    ("index_unreachable", ("Could not fetch URL", "connection", "name resolution", "timed out", "ProxyError",
+                           "NewConnectionError", "Max retries exceeded"), True),
+    ("package_unavailable", ("No matching distribution", "Could not find a version"), False),
+    ("build_failed", ("Failed building wheel", "subprocess-exited-with-error"), False),
+    ("disk_full", ("No space left on device", "[Errno 28]"), True),
+    ("files_in_use", ("being used by another process", "WinError 32"), True),
+    ("permission_denied", ("[Errno 13]", "Permission denied", "Access is denied"), False),
+]
+
+PIP_REMEDIES = {
+    "index_auth_failed": "the package index rejected the credentials; supply a reachable index through PIP_INDEX_URL "
+                         "(and PIP_EXTRA_INDEX_URL, PIP_TRUSTED_HOST, PIP_CERT, PIP_PROXY as needed), then re-run",
+    "tls_failed": "TLS verification failed; set PIP_CERT or SSL_CERT_FILE to the CA bundle, then re-run",
+    "index_unreachable": "the package index is unreachable; check the network, or supply a mirror through "
+                         "PIP_INDEX_URL (pip.conf is not read by this installer), then re-run",
+    "package_unavailable": "no release matches this Python; use Python 3.10+ (the installer can fetch 3.12 with uv) "
+                           "or check the mirror's contents",
+    "build_failed": "a dependency had to be built from source and failed; use a Python with prebuilt wheels "
+                    "(3.10–3.13) or install the platform's build tools",
+    "disk_full": "free disk space, then re-run",
+    "files_in_use": "close the host that runs the Snaplii MCP server (it holds the files open), then re-run",
+    "permission_denied": "the environment is not writable by this user; pass a writable --venv path",
+    "dependency_conflict": "pip check reported conflicting packages in the environment; pass another --venv path",
+    "pip_failed": "pip failed; read the diagnostics and re-run after fixing the cause",
+}
+
+
+def classify_pip(output: str) -> Tuple[str, bool]:
+    for code, signals, retryable in PIP_SIGNALS:
+        for signal_ in signals:
+            if isinstance(signal_, str):
+                if signal_.lower() in output.lower():
+                    return code, retryable
+            elif signal_.search(output):
+                return code, retryable
+    return "pip_failed", False
+
+
+def pip_remedy(code: str) -> str:
+    return PIP_REMEDIES.get(code, PIP_REMEDIES["pip_failed"])
+
+
+def _pip_failure(code: str, retryable: bool, child: Child, what: str) -> InstallFailure:
+    return InstallFailure("pip", code, "%s failed (%s)" % (what, code), pip_remedy(code),
+                          retryable=retryable, diagnostics=child.stderr.tail() or child.stdout.tail())
+
+
+def pip_floor_ok(python_exe: str, env: Dict[str, str]) -> bool:
+    child = run([python_exe, "-m", "pip", "--version"], "pip", DEADLINES["metadata"], env)
+    match = re.search(r"pip (\d+)\.(\d+)", child.stdout.text())
+    if child.returncode != 0 or not match:
+        return False
+    return (int(match.group(1)), int(match.group(2))) >= (23, 1)
+
+
+def ensure_pip_floor(python_exe: str, env: Dict[str, str]) -> None:
+    if pip_floor_ok(python_exe, env):
+        return
+    log("upgrading pip to 23.1 or newer")
+    child = run([python_exe, "-m", "pip", "install", "--upgrade", "--no-input", "pip>=23.1"], "pip", DEADLINES["pip"], env)
+    if child.returncode != 0:
+        code, retryable = classify_pip(child.stderr.text() + "\n" + child.stdout.text())
+        raise _pip_failure(code, retryable, child, "upgrading pip")
+
+
+def package_specs(cli_only: bool, source: Optional[str]) -> List[str]:
+    if source:
+        specs = [os.path.join(source, "snaplii-cli")]
+        if not cli_only:
+            specs.append(os.path.join(source, "mcp-server"))
+        return specs
+    return ["snaplii-cli"] if cli_only else ["snaplii-cli", "snaplii-mcp"]
+
+
+def pip_install(python_exe: str, specs: List[str], env: Dict[str, str]) -> None:
+    argv = [python_exe, "-m", "pip", "install", "--upgrade", "--prefer-binary", "--no-input",
+            "--keyring-provider", "disabled", "--timeout", "30", "--retries", "2"] + list(specs)
+    for attempt in (1, 2):
+        child = run(argv, "pip", DEADLINES["pip"], env)
+        if child.returncode == 0:
+            return
+        code, retryable = classify_pip(child.stderr.text() + "\n" + child.stdout.text())
+        if code == "index_unreachable" and attempt == 1:
+            log("package index unreachable; retrying once in 3 s")
+            time.sleep(3)
+            continue
+        raise _pip_failure(code, retryable, child, "pip install")
+
+
+def install_packages(python_exe: str, cli_only: bool, source: Optional[str], env: Dict[str, str]) -> None:
+    ensure_pip_floor(python_exe, env)
+    pip_install(python_exe, package_specs(cli_only, source), env)
+    check = run([python_exe, "-m", "pip", "check"], "pip", DEADLINES["metadata"], env)
+    if check.returncode != 0:
+        raise InstallFailure("pip", "dependency_conflict", "pip check reported a conflict", pip_remedy("dependency_conflict"),
+                             retryable=False, diagnostics=check.stdout.tail() or check.stderr.tail())
