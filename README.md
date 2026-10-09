@@ -95,7 +95,7 @@ clawhub install snaplii-autopilot
 - Read the balance from `snaplii_balance` or `snaplii balance`; never guess it. If the lookup fails, say so and rely on the quote's `you_pay`.
 - Never ask for the API key in the chat while a card, a hosted page, or the host's own store can take it. A client with none of those offers the user two equal options: a hidden terminal prompt (`snaplii init`) or pasting the key in the chat for `snaplii_init`, which passes it through the model once. Never echo a key or token, and never show internal IDs such as `brandId`, `templateId`, or `cardNo`.
 - After creating a transfer, tell the user the amount, the masked recipient, and the cancel deadline. If the result carries `cross_currency_notice`, show it and let the user keep or cancel the transfer. Use `finish` only when the user explicitly asks to send now.
-- Charges are sent once. On an ambiguous failure, check the result (`billpay result`, `transfer status`) before retrying. Retry a transfer that returned `CREATING` with the **same** key, `--idempotency-key` in the CLI or `idempotency_key` in MCP, never a fresh one; if no order number came back, check `transfer list` first.
+- Charges are sent once. On an ambiguous failure, check the result (`billpay result` with the `paymentNo`, `transfer status`) before retrying; a successful or still-processing result is not a reason to pay again. If the failure came after sending and no `paymentNo` came back, report the outcome as unknown and stop until it is reconciled in the app or with support. Retry a transfer that returned `CREATING` with the **same** key, `--idempotency-key` in the CLI or `idempotency_key` in MCP, never a fresh one; if no order number came back, check `transfer list` first.
 
 ---
 
@@ -347,7 +347,7 @@ Every operation prints one JSON document on stdout, or one JSON error on stderr 
 | `snaplii billpay detail --payee-code CODE` | View biller account validation rules |
 | `snaplii billpay save --payee-code CODE --first-name F --last-name L --amount A --account NO` | Save a bill pay instruction |
 | `snaplii billpay vouchers --pay-code PC --price P` | List eligible bill-payment vouchers |
-| `snaplii billpay history --payee-code CODE` | List payment history for a biller |
+| `snaplii billpay history --payee-code CODE` | Get the previous bill instruction for a biller, for autofill; not a ledger of what was paid |
 | `snaplii billpay quote --pay-code PC --price P` | Preview bill price with voucher/cashback |
 | `snaplii billpay pay --pay-code PC --price P` | Canada only: pay the bill from Snaplii Cash |
 | `snaplii billpay result --payment-no NO` | Check bill payment status |
@@ -644,7 +644,7 @@ A `401`, or a session-rejection code such as `MCAP9999` in the body, means the s
 - **Spending limits:** strict per-key consumption caps are set via the mobile app. Transfers also have a rolling 24-hour per-key limit.
 - **Consent is the daily limit, set once.** You authorize spending when you create the key and set its per-day cap in the app; within that cap the agent buys gift cards **without a per-transaction confirmation**, so the flow stays smooth. The skill still asks before a bill payment and before a final merchant order; the MCP server's tool descriptions do not, so MCP without the skill pays bills unprompted. Spending is prepaid-only and the key is revocable, so the daily limit is the blast radius. On connect, the agent surfaces this once.
 - **Off-model key entry.** The API key is entered through a secure MCP Apps card rendered by the host, on the hosted connect page, in a hidden terminal prompt, or supplied by the host's credential store (Muse) or vault (Instinct). A client with none of those offers the terminal prompt and `snaplii_init` as two equal options; with `snaplii_init` the key passes through the model once. The session token is kept in the OS keychain, or in process memory for a long-lived MCP server. Recognized Muse runtimes use a private session file automatically; other keychain-less CLI environments require explicit `SNAPLII_ALLOW_INSECURE=1` opt-in for file caching.
-- **Charges are sent once.** Charges are not auto-retried. On an ambiguous bill-pay failure, query `billpay result` by `paymentNo` before retrying rather than re-paying. Transfers carry an idempotency key; retry a `CREATING` transfer with the same key, never a fresh one.
+- **Charges are sent once.** Charges are not auto-retried. On an ambiguous bill-pay failure, query `billpay result` by `paymentNo` before retrying rather than re-paying; without a `paymentNo`, treat the outcome as unknown and reconcile before resubmitting. Transfers carry an idempotency key; retry a `CREATING` transfer with the same key, never a fresh one.
 - **No credential storage:** API keys are used once to obtain a token and are never saved to disk.
 - **Data protection:** card redemption codes and PINs are shown only when the user asks for them or needs them to finish a purchase, and never appear in logs or summaries.
 
