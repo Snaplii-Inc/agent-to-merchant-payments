@@ -40,14 +40,14 @@ class _RecordingStore:
 
 
 def _client(store):
-    return GatewayClient("https://gw.test", store)
+    return GatewayClient("https://aipayment.snaplii.com", store)
 
 
 def test_200_without_token_raises_and_caches_nothing(httpx_mock):
     # The exact shape the gateway produces today: HTTP 200, plain-text body
     # labeled application/json.
     httpx_mock.add_response(
-        method="POST", url="https://gw.test/v2/auth/token", status_code=200,
+        method="POST", url="https://aipayment.snaplii.com/v2/auth/token", status_code=200,
         content=b"Snaplii core did not return an access token in the x-auth-token header",
         headers={"Content-Type": "application/json"},
     )
@@ -64,7 +64,7 @@ def test_200_with_core_business_error_surfaces_rspmsginf(httpx_mock):
     # Once the gateway passes core's rspMsgCd/rspMsgInf through, the CLI must
     # show that reason rather than a generic message.
     httpx_mock.add_response(
-        method="POST", url="https://gw.test/v2/auth/token", status_code=200,
+        method="POST", url="https://aipayment.snaplii.com/v2/auth/token", status_code=200,
         json={"rspMsgCd": "MCA20102", "rspMsgInf": "API key has been deactivated"},
     )
     store = _RecordingStore()
@@ -79,7 +79,7 @@ def test_200_with_core_business_error_surfaces_rspmsginf(httpx_mock):
 
 def test_200_empty_json_without_token_raises(httpx_mock):
     httpx_mock.add_response(
-        method="POST", url="https://gw.test/v2/auth/token", status_code=200, json={},
+        method="POST", url="https://aipayment.snaplii.com/v2/auth/token", status_code=200, json={},
     )
     store = _RecordingStore()
     with pytest.raises(GatewayApiError):
@@ -89,7 +89,7 @@ def test_200_empty_json_without_token_raises(httpx_mock):
 
 def test_login_with_token_still_caches(httpx_mock):
     httpx_mock.add_response(
-        method="POST", url="https://gw.test/v2/auth/token", status_code=200,
+        method="POST", url="https://aipayment.snaplii.com/v2/auth/token", status_code=200,
         json={"access_token": "jwt-1", "expires_in": 600, "country": "US"},
     )
     store = _RecordingStore()
@@ -101,6 +101,8 @@ def test_login_with_token_still_caches(httpx_mock):
 
 def test_init_does_not_print_authenticated_without_token():
     class FailingClient:
+        origin = "https://aipayment.snaplii.com"
+
         def auth_status(self):
             return {"host": "unknown", "has_valid_token": False}
 
@@ -123,7 +125,7 @@ def test_invalid_expiry_does_not_replace_existing_identity(httpx_mock, tmp_path,
     monkeypatch.setattr(keyring, "get_keyring", lambda: Keyring())
     store = ConfigStore(tmp_path / "config.json")
     store.set("agent_id", "previous-agent")
-    httpx_mock.add_response(method="POST", url="https://gw.test/v2/auth/token",
+    httpx_mock.add_response(method="POST", url="https://aipayment.snaplii.com/v2/auth/token",
                             json={"access_token": "new-token", "expires_in": ttl})
     with pytest.raises(AuthError) as exc:
         _client(store).login("new-agent", "synthetic-api-key")
@@ -135,14 +137,14 @@ def test_invalid_expiry_does_not_replace_existing_identity(httpx_mock, tmp_path,
 def test_login_commits_identity_method_and_origin_together(httpx_mock, tmp_path, monkeypatch):
     monkeypatch.setattr(keyring, "get_keyring", lambda: Keyring())
     store = ConfigStore(tmp_path / "config.json")
-    httpx_mock.add_response(method="POST", url="https://gw.test/v2/auth/token",
+    httpx_mock.add_response(method="POST", url="https://aipayment.snaplii.com/v2/auth/token",
                             json={"access_token": "new-token", "expires_in": 604800, "country": "US"})
     _client(store).login("new-agent", "synthetic-api-key")
-    status = store.auth_status(origin="https://gw.test")
+    status = store.auth_status(origin="https://aipayment.snaplii.com")
     assert status["agent_id"] == "new-agent"
     assert status["auth_method"] == "api_key"
     assert status["has_valid_token"] is True
-    assert store.get_cached_token(origin="https://other.test") is None
+    assert store.get_cached_token(origin="https://aipay.stage.snaplii.com") is None
 
 
 @pytest.mark.parametrize("code", [["synthetic-secret"], {"synthetic-secret": True}, 42])

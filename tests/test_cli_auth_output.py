@@ -121,7 +121,7 @@ def test_path_prefixed_gateway_survives_config_login_and_recovery(tmp_path, monk
     monkeypatch.delenv("SNAPLII_BASE_URL", raising=False)
     store = ConfigStore(tmp_path / "config.json")
     monkeypatch.setattr(cli, "ConfigStore", lambda: store)
-    base_url = "https://gateway.example/payments"
+    base_url = "https://aipay.stage.snaplii.com/payments"
 
     def run(*args):
         monkeypatch.setattr(sys, "argv", ["snaplii", *args])
@@ -140,7 +140,7 @@ def test_path_prefixed_gateway_survives_config_login_and_recovery(tmp_path, monk
     httpx_mock.add_response(method="POST", url=base_url + "/v2/auth/token",
                             json={"access_token": "synthetic-token", "expires_in": 600})
     assert run("init")["has_valid_token"] is True
-    assert store.get("token_origin") == "https://gateway.example"
+    assert store.get("token_origin") == "https://aipay.stage.snaplii.com"
     httpx_mock.add_response(method="GET", url=base_url + "/v2/balance", json={"balance": 42})
     assert run("balance")["balance"] == 42
 

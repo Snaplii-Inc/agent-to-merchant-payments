@@ -12,6 +12,9 @@ from urllib.parse import urlsplit
 from snaplii.exceptions import ConfigError
 
 DEFAULT_ORIGIN = "https://aipayment.snaplii.com"
+STAGING_ORIGIN = "https://aipay.stage.snaplii.com"
+# The only gateways that may receive an API key, a connect eid, or a connect page.
+LOGIN_ORIGINS = (DEFAULT_ORIGIN, STAGING_ORIGIN)
 MUSE_HELPER = Path("/opt/hatch/skills/skill-creator/bin/dynamic_credentials.py")
 MUSE_SOCKET = Path("/run/hatch/auth/authd.sock")
 MUSE_MIN_APP_VERSION = "9.0.0.23.178"
@@ -382,6 +385,17 @@ def normalize_base_url(base_url: str) -> str:
     """Validate the URL while retaining its gateway routing prefix."""
     origin = normalize_origin(base_url)
     return origin + urlsplit(base_url).path.rstrip("/")
+
+
+def require_login_origin(base_url: str) -> str:
+    """Return the gateway origin, or refuse when it is not a Snaplii gateway."""
+    origin = normalize_origin(base_url)
+    if origin not in LOGIN_ORIGINS:
+        raise ConfigError(
+            "Snaplii sign-in works only with the Snaplii gateways: %s (production) and %s "
+            "(staging). The configured gateway is %s. Change it with `snaplii config set "
+            "--base-url`, or remove SNAPLII_BASE_URL." % (DEFAULT_ORIGIN, STAGING_ORIGIN, origin))
+    return origin
 
 
 def validate_vault_origin(base_url: str) -> str:

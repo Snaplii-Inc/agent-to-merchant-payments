@@ -94,7 +94,12 @@ class GatewayClient:
 
     # ── Auth ──────────────────────────────────────────────────────
 
+    @property
+    def origin(self) -> str:
+        return self._origin
+
     def login(self, agent_id: str, api_key: str) -> dict:
+        auth.require_login_origin(self._origin)
         resp = self._post("/v2/auth/token", json={
             "agent_id": agent_id,
             "api_key": api_key,
@@ -233,6 +238,7 @@ class GatewayClient:
         header — the endpoint is guarded by possession of the one-time eid. Returns
         the token dict on 200, or None when not ready yet (204) / on any other
         status, so the caller can keep polling."""
+        auth.require_login_origin(self._origin)
         url = f"{self._base_url}/v2/auth/elicit/{eid}/token"
         try:
             resp = self._http.get(url)

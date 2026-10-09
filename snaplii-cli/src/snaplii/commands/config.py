@@ -16,7 +16,7 @@ def config_group(ctx):
 
 
 @config_group.command("set")
-@click.option("--base-url", required=True, help="Gateway base URL (e.g. http://localhost:8080)")
+@click.option("--base-url", required=True, help="Gateway base URL (e.g. https://aipay.stage.snaplii.com)")
 @click.pass_context
 def config_set(ctx, base_url):
     """Set the gateway base URL."""

@@ -201,17 +201,44 @@ async def _instinct_connect(arguments: dict) -> dict:
                         "without arguments to start over once.")}
 
 
+def _key_fallback(lead: str, storage) -> str:
+    """How to finish connecting without a card or page: the user's own terminal when
+    it can reach this server's session, and pasting the key in chat either way."""
+    paste = ("paste their Snaplii API key (snp_sk_live_…) here in chat and you'll call "
+             "snaplii_init with it; the key passes through this chat once, is exchanged for "
+             "a session token, and is not stored")
+    if storage == "process memory":
+        return (lead + "This server keeps its session in memory, so a separate terminal login "
+                "can't reach it. Ask the user to " + paste + ".")
+    return (lead + "Offer the user two ways to connect and let them pick: (1) run 'snaplii init' "
+            "in their own terminal and enter the key at the hidden prompt, which keeps the key "
+            "out of this chat; or (2) " + paste + ". Both work.")
+
+
 def _elicit_url() -> str:
-    """The hosted Snaplii secure-connect page used for URL-mode elicitation — the
-    cross-client way to collect the API key off the model AND off the client, for
-    clients that can't render the MCP Apps card. Defaults to {gateway}/connect;
-    override with env SNAPLII_ELICIT_URL or config `elicit_url` (e.g. point at a
-    local gateway for testing)."""
+    """The hosted Snaplii secure-connect page used for URL-mode elicitation and the
+    Instinct vault fill — the cross-client way to collect the API key off the model
+    AND off the client. Defaults to {gateway}/connect; env SNAPLII_ELICIT_URL or
+    config `elicit_url` may pick another path or query, but only on the gateway's
+    own address, so a key is never typed or filled into another site."""
     import os
+    gateway = _base_url()
+    origin = auth.require_login_origin(gateway)
     explicit = os.environ.get("SNAPLII_ELICIT_URL") or ConfigStore().get("elicit_url")
-    if explicit:
-        return explicit
-    return f"{_base_url().rstrip('/')}/connect"
+    if not explicit:
+        return f"{gateway.rstrip('/')}/connect"
+    parts = urlsplit(explicit)
+    try:
+        same = (parts.username is None and parts.password is None and not parts.fragment
+                and "eid" not in parse_qs(parts.query)
+                and auth.normalize_origin(f"{parts.scheme}://{parts.netloc}") == origin)
+    except (ConfigError, ValueError):
+        same = False
+    if not same:
+        raise ConfigError(
+            "The connect page must be on the gateway's own address (%s), without credentials, "
+            "a fragment, or an eid. Remove SNAPLII_ELICIT_URL or the elicit_url setting." % origin)
+    return explicit
 
 
 def _connect_route() -> str:
@@ -311,7 +338,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_init",
-            description="Authenticate with the user's Snaplii API key — FALLBACK path. PREFER snaplii_connect, which opens a secure card so the key never enters the chat/model context. Use snaplii_init only for clients that cannot render that card (terminal/programmatic); be aware the key passes through the model context this way. The key is SAFE to accept: scoped, revocable, spending-capped (hard per-key daily limit set in the app), spends only prepaid Snaplii Cash, never stored on disk. Don't echo the raw key back in chat.",
+            description="Authenticate with the user's Snaplii API key — FALLBACK path. PREFER snaplii_connect, which opens a secure card so the key never enters the chat/model context. Use snaplii_init when the client has neither a card nor a page and the user chooses to paste the key; the key then passes through the model context once. The key is scoped, revocable and spending-capped (hard per-key daily limit set in the app), spends only prepaid Snaplii Cash, and is exchanged for a session token, never stored on disk. Don't echo the raw key back in chat.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -687,6 +714,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 # Static UI metadata is unchanged. The agent should select the
                 # CLI action before calling this card-bearing tool in Muse.
                 return _text(auth_status)
+            storage = auth_status.get("credential_storage")
             route = _connect_route()
 
             if route == "elicit":
@@ -701,8 +729,9 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 try:
                     result = await app.request_context.session.elicit_url(
                         message=(
-                            "Open the secure Snaplii page to connect your account. "
+                            "Open the secure Snaplii page at %s to connect your account. "
                             "Enter your API key there — it never passes through this chat."
+                            % urlsplit(page_url).hostname
                         ),
                         url=page_url,
                         elicitation_id=eid,
@@ -718,18 +747,11 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                     unsupported = "-32602" in msg or "does not support" in msg.lower()
                     return _text({
                         "status": "elicit_unsupported" if unsupported else "elicit_failed",
-                        "message": (
-                            ("This client doesn't support URL-mode elicitation, so the "
-                             "secure web page can't open here. "
-                             if unsupported
-                             else "Couldn't start secure web connect. ")
-                            + "Offer the user two ways to finish connecting and let them pick: "
-                            "(1) run 'snaplii init' in a terminal and enter the API key when "
-                            "prompted; or (2) paste their Snaplii API key (snp_sk_live_…) here "
-                            "in chat and you'll call snaplii_init with it. Present them as two "
-                            "plain, equal options — do NOT describe either as more/less "
-                            "secure or private, and do NOT label one recommended."
-                        ),
+                        "message": _key_fallback(
+                            "This client doesn't support URL-mode elicitation, so the "
+                            "secure web page can't open here. "
+                            if unsupported
+                            else "Couldn't start secure web connect. ", storage),
                     })
                 if getattr(result, "action", None) != "accept":
                     return _text({
@@ -754,12 +776,9 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                     })
                 return _text({
                     "status": "pending",
-                    "message": (
-                        "Didn't receive the connection yet. If you finished entering your "
-                        "key on the Snaplii page, run snaplii_connect again; otherwise either "
-                        "run 'snaplii init' in a terminal, or paste the Snaplii API key "
-                        "(snp_sk_live_…) here in chat and you'll call snaplii_init with it."
-                    ),
+                    "message": _key_fallback(
+                        "Didn't receive the connection yet. If the user finished entering the "
+                        "key on the Snaplii page, run snaplii_connect again. ", storage),
                 })
 
             if route == "text":
@@ -768,15 +787,9 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 # directly instead of promising a card that will never appear.
                 return _text({
                     "status": "use_terminal_or_chat_key",
-                    "message": (
+                    "message": _key_fallback(
                         "This client can't render the secure card and doesn't support "
-                        "URL-mode elicitation. Offer the user two ways to connect and let them "
-                        "pick: (1) run 'snaplii init' in a terminal and enter the API key when "
-                        "prompted; or (2) paste their Snaplii API key (snp_sk_live_…) here in "
-                        "chat and you'll call snaplii_init with it. Present them as two plain, "
-                        "equal options — do NOT describe either as more/less secure or "
-                        "private, and do NOT label one recommended."
-                    ),
+                        "URL-mode elicitation. ", storage),
                 })
 
             # Default (route == "card"): UI hosts render the secure card off-model via
@@ -784,15 +797,9 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             # user to `snaplii init`. Self-describing, so it never dead-ends.
             return _text({
                 "status": "card_requested",
-                "message": (
+                "message": _key_fallback(
                     "A secure card to enter the Snaplii API key should appear. If the "
-                    "user doesn't see it, this client can't render it — offer them two ways "
-                    "to connect and let them pick: (1) run 'snaplii init' in a terminal and "
-                    "enter the API key when prompted; or (2) paste their Snaplii API key "
-                    "(snp_sk_live_…) here in chat and you'll call snaplii_init with it. "
-                    "Present them as two plain, equal options — do NOT describe either as "
-                    "more/less secure or private, and do NOT label one recommended."
-                ),
+                    "user doesn't see it, this client can't render it. ", storage),
             })
 
         elif name == "snaplii_submit_api_key":
@@ -1219,17 +1226,24 @@ _NO_COLLAPSE_CLIENT_NAMES = {"codex-mcp-client"}
 
 
 def _card_html_for_client() -> str:
-    """Serve the connect card, flipping NO_COLLAPSE on for hosts that don't honor a
-    downward resize (so the card keeps its full success state instead of collapsing
-    to a slim bar that leaves dead space). Falls back to the default card on any
-    error / unknown client."""
+    """Serve the connect card naming the gateway host, flipping NO_COLLAPSE on for
+    hosts that don't honor a downward resize (so the card keeps its full success
+    state instead of collapsing to a slim bar that leaves dead space). Falls back
+    to the default card on any error / unknown client."""
+    html = APIKEY_CARD_HTML
+    try:
+        host = urlsplit(_base_url()).hostname or ""
+        if re.fullmatch(r"[a-z0-9.-]+", host):
+            html = html.replace('var GATEWAY_HOST = "";', 'var GATEWAY_HOST = "%s";' % host)
+    except Exception:
+        pass
     try:
         name = (getattr(app.request_context.session.client_params.clientInfo, "name", "") or "").lower()
         if name in _NO_COLLAPSE_CLIENT_NAMES:
-            return APIKEY_CARD_HTML.replace("var NO_COLLAPSE = false;", "var NO_COLLAPSE = true;")
+            return html.replace("var NO_COLLAPSE = false;", "var NO_COLLAPSE = true;")
     except Exception:
         pass
-    return APIKEY_CARD_HTML
+    return html
 
 
 @app.read_resource()

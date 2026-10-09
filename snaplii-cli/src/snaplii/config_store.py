@@ -262,7 +262,8 @@ class ConfigStore:
         if (not token or type(expires_at) not in (int, float) or not math.isfinite(expires_at)
                 or time.time() >= expires_at - _TOKEN_SAFETY_MARGIN):
             return None
-        if origin is not None and data.get("token_origin") not in (None, auth.normalize_origin(origin)):
+        # A session without its recorded gateway is never sent anywhere.
+        if origin is not None and data.get("token_origin") != auth.normalize_origin(origin):
             return None
         return token
 

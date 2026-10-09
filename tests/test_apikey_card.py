@@ -44,10 +44,12 @@ def _call(name, args):
 
 # ── the card resource ─────────────────────────────────────────────────────────
 
-def test_read_resource_serves_card_with_app_mime():
+def test_read_resource_serves_card_with_app_mime(monkeypatch):
+    monkeypatch.setattr(server, "_base_url", lambda: "https://aipayment.snaplii.com")
     res = asyncio.run(server.read_resource(APIKEY_RES_URI))
     assert res[0].mime_type == MCP_APP_MIME == "text/html;profile=mcp-app"
-    assert res[0].content == APIKEY_CARD_HTML
+    assert res[0].content == APIKEY_CARD_HTML.replace(
+        'var GATEWAY_HOST = "";', 'var GATEWAY_HOST = "aipayment.snaplii.com";')
 
 
 def test_unknown_resource_raises():
@@ -83,7 +85,7 @@ def test_card_default_collapse_for_other_clients(monkeypatch):
     other_app = SimpleNamespace(request_context=SimpleNamespace(session=SimpleNamespace(
         client_params=SimpleNamespace(clientInfo=SimpleNamespace(name="claude-ai")))))
     monkeypatch.setattr(server, "app", other_app)
-    assert server._card_html_for_client() == APIKEY_CARD_HTML  # unchanged → collapses
+    assert "var NO_COLLAPSE = false;" in server._card_html_for_client()  # unchanged → collapses
 
 
 def test_card_self_checks_connection_on_load():

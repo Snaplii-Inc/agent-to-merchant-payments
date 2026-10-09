@@ -53,9 +53,12 @@ def init_cmd(ctx, agent_id, vault_auth, legacy_auth):
         print_json({"status": "authenticated", **client.auth_status()})
         return
 
+    # Refuse an unknown gateway before the key is typed, and show the person
+    # typing it where it will go.
+    origin = auth.require_login_origin(client.origin)
     try:
         if sys.stdin.isatty():
-            api_key = click.prompt("API key", hide_input=True, err=True)
+            api_key = click.prompt("Snaplii API key for %s" % origin, hide_input=True, err=True)
         else:
             # Explicit stdin input remains supported without echoing a secret or
             # mixing a prompt into the JSON result consumed by an agent.

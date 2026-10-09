@@ -197,6 +197,8 @@ APIKEY_CARD_HTML = r"""<!DOCTYPE html>
   // there, collapsing to the slim "✓ Connected" bar just leaves dead space below, so
   // we keep the full success card instead.
   var NO_COLLAPSE = false;
+  // Set by the server to the gateway host, so the person typing sees where the key goes.
+  var GATEWAY_HOST = "";
   var statusEl = document.getElementById("status");
   var inputEl = document.getElementById("apikey");
   var btnEl = document.getElementById("connect");
@@ -236,7 +238,13 @@ APIKEY_CARD_HTML = r"""<!DOCTYPE html>
     post({ jsonrpc: "2.0", method: "ui/notifications/size-changed", params: { width: w, height: h } });
   }
 
+  if (GATEWAY_HOST) {
+    document.querySelector(".title small").textContent =
+      "Your key goes straight to Snaplii at " + GATEWAY_HOST + " — never through the AI.";
+  }
+
   window.addEventListener("message", function (event) {
+    if (event.source !== window.parent) { return; }
     var data = event.data;
     if (!data || data.jsonrpc !== "2.0") { return; }
     if (data.id != null && (data.result !== undefined || data.error !== undefined)) {
@@ -356,6 +364,7 @@ APIKEY_CARD_HTML = r"""<!DOCTYPE html>
         }
       })
       .catch(function (err) {
+        inputEl.value = "";
         setStatus("✕ Could not connect: " + err.message, "err");
         btnEl.disabled = false; inputEl.disabled = false;
       });
