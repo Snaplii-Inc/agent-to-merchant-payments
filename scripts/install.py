@@ -136,3 +136,75 @@ class LineBuffer:
     def tail(self, lines: int = 40, limit: int = 8192) -> str:
         chunk = "\n".join(list(self.lines)[-lines:])
         return chunk[-limit:]
+
+
+# ----------------------------------------------------------------------------
+# Child environment policy
+# ----------------------------------------------------------------------------
+def child_env(base: Dict[str, str], check_mode: bool = False, for_uv: bool = False) -> Dict[str, str]:
+    env = {k: v for k, v in base.items() if k not in PY_DROP and not k.startswith("PIP_")}
+    for name in PIP_PASS:
+        if name in base:
+            env[name] = base[name]
+    env.update({"PIP_CONFIG_FILE": os.devnull, "PIP_NO_INPUT": "1",
+                "PIP_DISABLE_PIP_VERSION_CHECK": "1", "PYTHONIOENCODING": "utf-8",
+                "PYTHONNOUSERSITE": "1"})
+    if check_mode:
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
+    if for_uv:
+        for name in UV_SCRUB:
+            env.pop(name, None)
+    return env
+
+
+# ----------------------------------------------------------------------------
+# Host detection
+# ----------------------------------------------------------------------------
+def detect_host(environ: Dict[str, str], exists=os.path.exists) -> Dict[str, object]:
+    instinct_vars = sorted(name for name in environ if name.startswith(INSTINCT_PREFIX))
+    if exists(MUSE_HELPER) and exists(MUSE_SOCKET):
+        detected = "muse"
+    elif instinct_vars:
+        detected = "instinct"
+    else:
+        detected = "unknown"
+    return {"detected": detected, "instinct_variables": instinct_vars, "platform": sys.platform}
+
+
+# ----------------------------------------------------------------------------
+# Destination
+# ----------------------------------------------------------------------------
+def home_dir(environ: Dict[str, str]) -> str:
+    return environ.get("HOME") or environ.get("USERPROFILE") or os.path.expanduser("~")
+
+
+def config_dir(environ: Dict[str, str]) -> str:
+    configured = environ.get("SNAPLII_CONFIG_PATH")
+    if configured:
+        return os.path.dirname(os.path.abspath(os.path.expanduser(configured)))
+    return os.path.join(home_dir(environ), ".snaplii")
+
+
+def _occupied(message: str) -> InstallFailure:
+    return InstallFailure("destination", "venv_path_occupied", message,
+                          "pass another --venv path; nothing was touched", retryable=False)
+
+
+def _is_within(child: str, parent: str) -> bool:
+    child, parent = os.path.normcase(child), os.path.normcase(parent)
+    return child == parent or child.startswith(parent.rstrip(os.sep) + os.sep)
+
+
+def resolve_destination(venv_arg: Optional[str], environ: Dict[str, str]) -> str:
+    raw = venv_arg or os.path.join(home_dir(environ), ".snaplii-env")
+    raw = os.path.abspath(os.path.expanduser(raw))
+    if os.path.islink(raw):
+        raise _occupied("%s is a symbolic link" % raw)
+    parent = os.path.realpath(os.path.dirname(raw))
+    resolved = os.path.join(parent, os.path.basename(raw))
+    if os.path.lexists(resolved) and not os.path.isdir(resolved):
+        raise _occupied("%s exists and is not a directory" % resolved)
+    cfg = os.path.realpath(config_dir(environ))
+    if _is_within(resolved, cfg) or _is_within(cfg, resolved):
+        raise _occupied("%s overlaps the Snaplii configuration directory %s" % (resolved, cfg))
+    return resolved
