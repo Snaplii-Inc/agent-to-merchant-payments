@@ -817,3 +817,182 @@ def classify_destination(venv_path: str, reservation: Reservation, check_mode: b
     if exists:
         raise _occupied("%s exists and was not created by this installer" % venv_path)
     return "new"
+
+
+# ----------------------------------------------------------------------------
+# Interpreter discovery and acquisition
+# ----------------------------------------------------------------------------
+PROBE_CODE = ("import json, sys\n"
+              "try:\n    import venv, ensurepip\n    ok = True\nexcept Exception:\n    ok = False\n"
+              "print(json.dumps({'version': list(sys.version_info[:3]), 'executable': sys.executable, "
+              "'venv_ok': ok}))")
+
+
+def required_python_remedy() -> str:
+    return ("install Python 3.12 (macOS: brew install python@3.12; Debian/Ubuntu: apt install python3.12 "
+            "python3.12-venv; Windows: winget install Python.Python.3.12) or uv "
+            "(curl -LsSf https://astral.sh/uv/install.sh | sh), then re-run the installer")
+
+
+def python_too_old_failure(detail: str) -> InstallFailure:
+    return InstallFailure("python", "python_too_old", detail, required_python_remedy(), retryable=True)
+
+
+def download_failed(detail: str, diagnostics: str) -> InstallFailure:
+    return InstallFailure("python", "python_download_failed", detail, required_python_remedy(),
+                          retryable=True, diagnostics=diagnostics)
+
+
+def candidate_argvs(python_arg: Optional[str], cli_only: bool, environ: Dict[str, str], platform: str,
+                    uv_path: Optional[str], which=shutil.which) -> List[List[str]]:
+    minors = [14, 13, 12, 11, 10] + ([9] if cli_only else [])
+    path = environ.get("PATH")
+    argvs = []  # type: List[List[str]]
+    if python_arg:
+        argvs.append([python_arg])
+    argvs.append([sys.executable])
+    for minor in minors:
+        found = which("python3.%d" % minor, path=path)
+        if found:
+            argvs.append([found])
+    for name in ("python3", "python"):
+        found = which(name, path=path)
+        if found:
+            argvs.append([found])
+    if platform == "win32":
+        launcher = which("py", path=path)
+        if launcher:
+            for minor in minors:
+                argvs.append([launcher, "-3.%d" % minor])
+    if uv_path:
+        for minor in minors:
+            argvs.append([uv_path, "python", "find", "--no-project", "3.%d" % minor])
+    return argvs
+
+
+def _last_line(text: str) -> str:
+    lines = [line for line in text.splitlines() if line.strip()]
+    return lines[-1].strip() if lines else ""
+
+
+def probe(argv: List[str], env: Dict[str, str]) -> Optional[Dict[str, object]]:
+    try:
+        if len(argv) >= 3 and argv[1:3] == ["python", "find"]:
+            found = run(argv, "probe", DEADLINES["probe"], env)
+            if found.returncode != 0 or not _last_line(found.stdout.text()):
+                return None
+            argv = [_last_line(found.stdout.text())]
+        child = run(list(argv) + ["-c", PROBE_CODE], "probe", DEADLINES["probe"], env)
+    except InstallFailure:
+        return None
+    if child.returncode != 0:
+        return None
+    try:
+        info = json.loads(_last_line(child.stdout.text()))
+    except ValueError:
+        return None
+    if not isinstance(info, dict) or "version" not in info:
+        return None
+    info["argv"] = list(argv)
+    return info
+
+
+def qualifying_candidates(argvs: List[List[str]], need: Tuple[int, int], env: Dict[str, str],
+                          python_arg: Optional[str], warnings: List[str]) -> List[Dict[str, object]]:
+    seen = set()
+    out = []  # type: List[Dict[str, object]]
+    for argv in argvs:
+        if len(argv) == 1:
+            resolved = os.path.realpath(argv[0])
+            if resolved in seen:
+                continue  # an alias of an interpreter already probed
+            seen.add(resolved)
+        info = probe(argv, env)
+        reason = None
+        if info is None:
+            reason = "not runnable"
+        elif tuple(info["version"][:2]) < need:
+            reason = "Python %s is older than %d.%d" % (".".join(map(str, info["version"])), need[0], need[1])
+        elif not info.get("venv_ok"):
+            reason = "cannot import venv/ensurepip (install the python3-venv package or use another interpreter)"
+        if reason:
+            log("candidate %s skipped: %s" % (" ".join(argv), reason))
+            if python_arg and argv == [python_arg]:
+                warnings.append("--python %s skipped: %s" % (python_arg, reason))
+            continue
+        key = os.path.realpath(str(info["executable"]))
+        if any(os.path.realpath(str(c["executable"])) == key for c in out):
+            continue
+        seen.add(key)
+        out.append(info)
+    return out
+
+
+def uv_binary() -> str:
+    return "uv.exe" if is_windows() else "uv"
+
+
+def locate_uv(environ: Dict[str, str], which=shutil.which, exists=os.path.exists) -> Optional[str]:
+    found = which("uv", path=environ.get("PATH"))
+    if found:
+        return found
+    dirs = []  # type: List[str]
+    for var in ("UV_INSTALL_DIR", "XDG_BIN_HOME"):
+        if environ.get(var):
+            dirs.append(environ[var])
+    if environ.get("XDG_DATA_HOME"):
+        dirs.append(os.path.join(environ["XDG_DATA_HOME"], "..", "bin"))
+    dirs.append(os.path.join(home_dir(environ), ".local", "bin"))
+    for directory in dirs:
+        candidate = os.path.normpath(os.path.join(os.path.expanduser(directory), uv_binary()))
+        if exists(candidate):
+            return candidate
+    return None
+
+
+def install_uv(environ: Dict[str, str], env: Dict[str, str], which=shutil.which) -> str:
+    target = environ.get("UV_INSTALL_DIR") or os.path.join(home_dir(environ), ".local", "bin")
+    env = dict(env)
+    env["UV_INSTALL_DIR"] = target
+    env["UV_NO_MODIFY_PATH"] = "1"
+    path = environ.get("PATH")
+    if is_windows():
+        if not which("powershell", path=path):
+            raise python_too_old_failure("no suitable Python and PowerShell is unavailable to install uv")
+        argv = ["powershell", "-ExecutionPolicy", "ByPass", "-c", "irm %s | iex" % UV_INSTALL_PS1]
+    else:
+        if which("curl", path=path):
+            fetch = "curl -LsSf %s" % UV_INSTALL_SH
+        elif which("wget", path=path):
+            fetch = "wget -qO- %s" % UV_INSTALL_SH
+        else:
+            raise python_too_old_failure("no suitable Python and neither curl nor wget is available to install uv")
+        argv = ["sh", "-c", fetch + " | sh"]
+    log("installing uv into " + target)
+    child = run(argv, "uv", DEADLINES["uv"], env)
+    binary = os.path.join(target, uv_binary())
+    if child.returncode != 0 or not os.path.exists(binary):
+        raise download_failed("installing uv failed", child.stderr.tail())
+    return binary
+
+
+def acquire_python(environ: Dict[str, str], env: Dict[str, str], need: Tuple[int, int]) -> Dict[str, object]:
+    uv = locate_uv(environ)
+    acquired_by = "uv"
+    if uv is None:
+        uv = install_uv(environ, env)
+        acquired_by = "uv-installed"
+    log("acquiring CPython %s with uv" % ACQUIRE_VERSION)
+    child = run([uv, "python", "install", "--no-bin", "--no-registry", ACQUIRE_VERSION], "uv", DEADLINES["uv"], env)
+    if child.returncode != 0:
+        raise download_failed("uv could not install CPython %s" % ACQUIRE_VERSION, child.stderr.tail())
+    found = run([uv, "python", "find", "--no-project", "--managed-python", ACQUIRE_VERSION], "uv",
+                DEADLINES["probe"], env)
+    executable = _last_line(found.stdout.text())
+    if found.returncode != 0 or not executable:
+        raise download_failed("uv installed CPython %s but could not locate it" % ACQUIRE_VERSION, found.stderr.tail())
+    info = probe([executable], env)
+    if info is None or tuple(info["version"][:2]) < need or not info.get("venv_ok"):
+        raise download_failed("the interpreter uv provided does not qualify", "")
+    info["acquired_by"] = acquired_by
+    return info
