@@ -75,7 +75,7 @@ snaplii transfer status --order-no ZZ... --wait --timeout 330
 snaplii transfer list
 ```
 
-- `--item-id` is `{cardBrandId}-{cardTemplateId}`; both come from `snaplii browse brand`.
+- **`--item-id` must be exactly `{cardBrandId}-{cardTemplateId}`**, copied verbatim from the `item_id` in the `denominations` of `snaplii browse brand`; never either ID alone or one built by hand. Use the same value for `quote` and `purchase`.
 - Bill pay flow: `payees → detail → save (returns payCode) → quote → pay → result`.
 - A new transfer stays cancellable (`transfer cancel`) for about 5 minutes, then sends automatically; `transfer finish` sends it immediately. `transfer status --wait` polls for the outcome, but its `--timeout` defaults to 120s — pass a larger value (e.g. `--timeout 330`) to poll through the whole cancellable window.
 - `snaplii help` and `snaplii <command> --help` list every flag.

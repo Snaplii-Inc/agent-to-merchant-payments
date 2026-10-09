@@ -5,7 +5,8 @@ from snaplii.output import print_json
 
 
 @click.command("purchase")
-@click.option("--item-id", required=True, help="Item ID (e.g. CB0000000000135-CT0000000000897)")
+@click.option("--item-id", required=True,
+              help="Exactly {cardBrandId}-{cardTemplateId}, copied verbatim from the item_id in `snaplii browse brand` denominations (e.g. CB00000000000086-CT000000003618)")
 @click.option("--price", required=True, help="Price in dollars (e.g. 50)")
 @click.pass_context
 def purchase_cmd(ctx, item_id, price):

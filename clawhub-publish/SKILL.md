@@ -278,7 +278,7 @@ Recommendation rules:
 - Use `smart cashback` to compute exact dollar savings when the user names a specific brand + amount.
 - Use `smart dashboard` for inventory questions ("what cards do I have?").
 - **Never expose `brandId` or `templateId` in user-facing text** — those are internal. Show brand name, cashback %, and available amounts only.
-- The `--item-id` for purchase is `{cardBrandId}-{cardTemplateId}` (e.g. `CB00000000000086-CT000000003618`).
+- **`item_id` format: get it exactly right.** `quote` and `purchase` take `--item-id` as `{cardBrandId}-{cardTemplateId}` (e.g. `CB00000000000086-CT000000003618`). Copy it verbatim from the `item_id` of the chosen entry in `denominations`; never assemble it from other fields, shorten it, or put a template ID under another brand. See [Important Rules](#important-rules).
 - Denominations: `browse brand` returns a `denominations` list — FIXED cards have one `amount`, VARIABLE cards have a `min` and `max`. Use the REAL min/max from that data; never invent a range. For a custom amount (e.g. $24.50), use a VARIABLE card and keep within its actual min/max.
 
 ### Step 3: View owned gift cards
@@ -318,6 +318,8 @@ Then, before buying, **always call `snaplii quote`** to check if vouchers or cas
 snaplii quote --item-id "CB...-CT..." --price 50
 ```
 
+`--item-id` is the exact `{cardBrandId}-{cardTemplateId}` string copied verbatim from Step 2; `purchase` must use the same value.
+
 This returns the price breakdown:
 - `order_amount` — original price
 - `you_pay` — actual amount after discounts
@@ -352,7 +354,7 @@ If no voucher applies, still show the breakdown so the user knows. This is for t
 snaplii purchase --item-id "CB...-CT..." --price 50
 ```
 
-- `--item-id` is `{cardBrandId}-{cardTemplateId}` from Step 2.
+- `--item-id` is the exact `{cardBrandId}-{cardTemplateId}` string you quoted, copied verbatim from Step 2. A different well-formed ID buys a different card.
 - `--price` is the dollar amount.
 - Payment is always Snaplii Cash (`SNAPLII_CREDIT`) — there's no payment-method/token to pass.
 - The CLI charges as soon as you call `purchase`. Within the per-key daily limit (set in the app) **no per-transaction confirmation is required** — show the quote for transparency, then buy and report what you bought. Spending is prepaid and the key is revocable, so the daily limit is the safeguard.
@@ -473,6 +475,7 @@ This skill handles real financial operations. These safety rules always apply:
 
 ## Important Rules
 
+- **ALWAYS pass a gift card's `item_id` exactly as `{cardBrandId}-{cardTemplateId}`, copied verbatim from `browse brand`.** It is the brand ID, one hyphen, then the template ID of the card being bought, for example `CB00000000000086-CT000000003618`. Take it from the `item_id` of the chosen entry in `denominations` (or from `smart cashback`) and pass the same value to `quote` and `purchase`. Never pass the brand ID or the template ID alone, a brand or card name, a template ID under another brand, or an ID you assembled or guessed. A malformed ID skips the local amount check, and a well-formed ID of another card buys that card.
 - **NEVER show sensitive card information (card code, PIN, barcode URL) without explicit user consent.**
 - **NEVER print a freshly-created API key without explicit user consent and a warning that it's shown only once.**
 - **NEVER call `billpay pay` without explicit current-turn confirmation.** Gift-card `purchase` needs none — the per-key daily limit set in the app is the authorization.

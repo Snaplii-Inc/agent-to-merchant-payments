@@ -130,6 +130,7 @@ Windows support is by construction (`Scripts\`, the `py` launcher, PowerShell qu
 
 - Every Snaplii operation, including browsing and balance, requires `has_valid_token=true`. Connect first; the user does not need to ask to log in.
 - Gift-card purchases within the key's daily limit run **without a per-transaction confirmation**; the limit the user set in the app is the consent. The skill asks for an explicit, current-turn "yes" before a **bill payment** (biller, account, and amount) and before the **final order on a merchant site** (summary and exact delivery address). The MCP server's instructions and tool descriptions apply the same rule.
+- Pass a gift card's `item_id` exactly as `{cardBrandId}-{cardTemplateId}`, copied verbatim from the `denominations` that `browse brand` or `snaplii_browse_brand` returns. Never one ID alone, a name, or an assembled or guessed ID: a different well-formed ID buys a different card.
 - Quote before buying. The quote's `you_pay` is the amount Snaplii Cash does not cover. If it is above zero, tell the user to top up in the app and stop.
 - Read the balance from `snaplii_balance` or `snaplii balance`; never guess it. If the lookup fails, say so and rely on the quote's `you_pay`.
 - Never ask for the API key in the chat while a card, a hosted page, or the host's own store can take it. A client with none of those offers the user two equal options: `snaplii init` in the user's own interactive terminal, or, if the Snaplii MCP tools are available, pasting the key in the chat for `snaplii_init`, which passes it through the model once. Do not run `snaplii init` from a shell tool yourself: without a terminal it reads nothing and answers `api_key_missing`. Never echo a key or token, and never show internal IDs such as `brandId`, `templateId`, or `cardNo`.
@@ -384,7 +385,7 @@ snaplii purchase --item-id CB...-CT... --price 50    # Buy a card
 snaplii giftcard detail --card-no ...                # Read the redemption code
 ```
 
-> `--item-id` is formatted as `{cardBrandId}-{cardTemplateId}`. Both IDs are available from `snaplii browse brand`.
+> **`--item-id` must be exactly `{cardBrandId}-{cardTemplateId}`** (e.g. `CB00000000000086-CT000000003618`). Copy it verbatim from the `item_id` in the `denominations` that `snaplii browse brand` returns, and use the same value for `quote` and `purchase`. Never pass either ID alone or build one by hand: a different well-formed ID buys a different card.
 >
 > The catalog is scoped to your account's country (fixed at login, enforced server-side), so there's no region/province flag to pass. `balance` labels the currency from the stored country; `--country CA|US` is only a fallback for older sessions.
 >

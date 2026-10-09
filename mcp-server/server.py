@@ -40,6 +40,8 @@ WHEN THE USER MENTIONS SPENDING (dining, coffee, travel, shopping, transport, gr
 
 PURCHASE: check balance (snaplii_balance) → quote (snaplii_quote) to know the exact cost → if the order isn't covered (you_pay > 0) tell them to top up and stop → snaplii_purchase → snaplii_giftcard_detail for the redemption code (use cardCode, else pin; fields under "data"). No confirmation token is needed; checking balance first lets you tell them up front whether they can afford it, and the quote's you_pay is the hard safety net. Report what you bought (brand, amount, code) after.
 
+ITEM ID: snaplii_quote and snaplii_purchase take item_id exactly as {cardBrandId}-{cardTemplateId} (e.g. CB00000000000086-CT000000003618), copied verbatim from the chosen denominations entry of snaplii_browse_brand. Never pass the brand ID or template ID alone, a name, or an ID you assembled or guessed: a well-formed ID of another card buys that card.
+
 FIRST-TIME / TOP-UP (avoid friction): a brand-new user often has a $0 balance — this is normal, not an error. Never dead-end them. Warmly explain they just need to add funds in the Snaplii app (Wallet → Add Cash / Top Up), that there's nothing else to set up, and offer to re-check the balance and continue once they have. If snaplii_balance itself errors, don't block — just say you couldn't read the balance and proceed to quote, which is the real affordability check.
 
 P2P TRANSFERS: send Snaplii Cash to another person's phone number (the API key's scope must include P2P or ALL). If the user didn't give the recipient's phone number, ASK for it — never guess. snaplii_transfer_create makes a transfer that stays cancellable until auto_finish_at (~5 minutes), then sends automatically — always tell the user the amount, the masked recipient, and the cancel deadline. If the result carries cross_currency_notice (the recipient is in another country and receives a different amount/currency), disclose it and let the user choose to keep or cancel the transfer. snaplii_transfer_cancel undoes it within the window. Call snaplii_transfer_finish ONLY when the user explicitly asks to send now, then poll snaplii_transfer_status every few seconds until FINISHED (report success) or FAILED (report the fail_message). Once auto_finish_at passes, poll the same way to confirm the outcome. Transfer errors already carry a meaningful message — surface it; when a create returns status CREATING, call create again with the SAME idempotency_key (never a fresh one — that can double the transfer).
@@ -362,7 +364,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_browse_brand",
-            description="Get brand details and exact denominations. Read the `denominations` array for each card's real type and amount: FIXED cards have a single `amount`; VARIABLE cards have a `min` and `max` (any amount in that range is allowed). NEVER invent or assume a min/max — only use the values returned here. Each entry's `item_id` is what you pass to quote/purchase. Use brandId from browse_tags.",
+            description="Get brand details and exact denominations. Read the `denominations` array for each card's real type and amount: FIXED cards have a single `amount`; VARIABLE cards have a `min` and `max` (any amount in that range is allowed). NEVER invent or assume a min/max — only use the values returned here. Each entry's `item_id` ({cardBrandId}-{cardTemplateId}) is exactly what you pass to quote/purchase: copy it verbatim, never assemble or shorten it. Use brandId from browse_tags.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -399,7 +401,7 @@ async def list_tools() -> list[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "item_id": {"type": "string", "description": "Item ID: {brandId}-{templateId}"},
+                    "item_id": {"type": "string", "description": "EXACTLY {cardBrandId}-{cardTemplateId}, e.g. CB00000000000086-CT000000003618. Copy it verbatim from the `item_id` of the chosen `denominations` entry returned by snaplii_browse_brand (or from snaplii_cashback_calc). Never pass the brand ID or template ID alone, a name, or an ID you assembled or guessed. Use the same value for snaplii_quote and snaplii_purchase."},
                     "price": {"type": "string", "description": "Price in dollars"},
                     "voucher_option": {"type": "string", "description": "BEST_FIT (auto-apply best voucher), USE, or NOT_USE", "default": "BEST_FIT"},
                     "cashback_option": {"type": "string", "description": "USE or NOT_USE", "default": "USE"},
@@ -414,7 +416,7 @@ async def list_tools() -> list[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "item_id": {"type": "string", "description": "Item ID: {brandId}-{templateId}"},
+                    "item_id": {"type": "string", "description": "EXACTLY {cardBrandId}-{cardTemplateId}, e.g. CB00000000000086-CT000000003618. Copy it verbatim from the `item_id` of the chosen `denominations` entry returned by snaplii_browse_brand (or from snaplii_cashback_calc). Never pass the brand ID or template ID alone, a name, or an ID you assembled or guessed. Use the same value for snaplii_quote and snaplii_purchase."},
                     "price": {"type": "string", "description": "Price in dollars"},
                     "voucher_option": {"type": "string", "description": "BEST_FIT (default), USE, or NOT_USE — match what you quoted"},
                     "cashback_option": {"type": "string", "description": "USE (default) or NOT_USE — match what you quoted"},
@@ -1150,7 +1152,7 @@ Shared Meta Muse instructions (apply only in Muse):
 2. Pick the card: call snaplii_browse_tags. The account country is already known from the connection and comes back as account_country — do NOT ask the user for a region. For delivery (food/coffee), prefer delivery-platform cards (DoorDash, Uber Eats, Skip) over the restaurant's own card. Never show brandId/templateId to the user.
 3. Check balance: call snaplii_balance (it labels the currency from the stored account country — CA=CAD, US=USD, never assume CAD) so you know up front whether the order is affordable. (Never guess the balance — read it from this tool; if it fails, say so and rely on the quote's you_pay.)
 4. Quote: call snaplii_quote and show the breakdown (voucher + Snaplii Cash + you_pay). If you_pay > 0, tell the user to top up in the app and stop.
-5. Buy: call snaplii_purchase with the item_id and price (no confirmation needed). Then snaplii_giftcard_list -> find the new card -> snaplii_giftcard_detail for the redemption code. Report brand, amount, and code.
+5. Buy: call snaplii_purchase with the exact item_id you quoted ({{cardBrandId}}-{{cardTemplateId}}, copied verbatim from snaplii_browse_brand) and the price (no confirmation needed). Then snaplii_giftcard_list -> find the new card -> snaplii_giftcard_detail for the redemption code. Report brand, amount, and code.
 6. Redeem + order (if you have a browser-control tool): open the merchant/delivery site, go to Payment -> Add Gift Card, enter the code, build the order (search item, add to cart). For any delivery/shipping order, EXPLICITLY confirm the delivery address with the user before continuing — read back the exact address and ask "deliver to <address>?"; never assume a saved/default address. Then set the tip.
 7. CONFIRM (final order): show the full order summary (items, delivery address, tip, total) and STOP. Only click the final Place Order / pay button after the user's explicit "yes".
 

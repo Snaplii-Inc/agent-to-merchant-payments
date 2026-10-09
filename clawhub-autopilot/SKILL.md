@@ -250,6 +250,8 @@ Complete [Auth](#auth) first. Continue only when the matching runtime reports
 
 Follow the base flow: `browse` (region is automatic from the account — no flag) → for delivery, prefer delivery-platform cards (DoorDash, Uber Eats, Skip) → `balance` (check spendable Snaplii Cash so you know up front whether it's affordable) → `quote` (auto-applies vouchers + Snaplii Cash) → show the breakdown.
 
+**`item_id` format matters.** `quote` and `purchase` take `item_id` exactly as `{cardBrandId}-{cardTemplateId}` (e.g. `CB00000000000086-CT000000003618`). Copy it verbatim from the chosen `denominations` entry of `browse brand`; never assemble, shorten, or guess it, and pass the same value to `quote` and `purchase`.
+
 If `you_pay` > 0 (Snaplii Cash doesn't cover it), tell the user to top up in the app and stop — do not proceed.
 
 ### 2. Buy
@@ -275,6 +277,7 @@ Confirm the order went through (read the confirmation page). Report the order nu
 - Purchase failure → surface the real error (don't retry automatically).
 
 ## Rules
+- Pass `item_id` exactly as `{cardBrandId}-{cardTemplateId}`, copied verbatim from `browse brand`; never one ID alone, a name, or an assembled or guessed ID.
 - Never expose internal IDs (brandId, templateId, cardNo) to the user.
 - Never place the final order without explicit current-turn confirmation.
 - Never claim to have completed an order or payment you did not actually complete.

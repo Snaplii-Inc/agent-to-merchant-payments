@@ -16,6 +16,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 - **One confirmation policy everywhere.** Gift-card purchases within the per-key daily limit need no per-transaction confirmation; bill payments need the user's explicit current-turn confirmation of biller, account, and amount; a final merchant order needs the summary and address confirmed. The MCP server instructions and `snaplii_billpay_pay` description, the autopilot skill, and the Claude Desktop project instructions now say the same thing the `snaplii-cli` skill already said.
 - **README rewritten for agents first.** Capabilities by country and key scope, how the skill, MCP, CLI and REST fit together, a generic Agent Skills install (`npx skills add`) with per-agent directories, both skills, and the Muse and Instinct paths come first; the product background moved to the end.
 - The `snaplii_autopilot` MCP prompt no longer asks the user for a region; the account country is fixed at login.
+- **The gift-card `item_id` format is now a stated rule everywhere an agent buys a card.** Both skills, the MCP server instructions, the `snaplii_quote` and `snaplii_purchase` parameter descriptions, the autopilot prompt, the CLI `--item-id` help and both READMEs say: exactly `{cardBrandId}-{cardTemplateId}`, copied verbatim from `browse brand`'s `denominations`, the same value for quote and purchase, never one ID alone or an assembled one. A test keeps each surface carrying the rule.
 
 ---
 
