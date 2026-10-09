@@ -18,7 +18,7 @@ import server
 from snaplii.client import GatewayClient
 from snaplii.commands.purchase import purchase_cmd
 from snaplii.commands.quote import quote_cmd
-from snaplii.exceptions import AmountValidationError
+from snaplii.exceptions import AmountValidationError, ItemIdError
 
 # Uber Eats-shaped catalog: a VARIABLE $20–$500 template + a FIXED $10 template.
 BRAND_ID = "CB0000000000264"
@@ -74,13 +74,19 @@ def test_fixed_mismatch_blocked():
 # ── fail-open: never block when the catalog can't be resolved ────────────────
 
 
-@pytest.mark.parametrize("item_id,price", [
-    (f"{BRAND_ID}-CT999999999999", "10"),  # unknown template
-    ("malformed", "10"),                   # unparseable item id
-    (VARIABLE_ITEM, "abc"),                # non-numeric price
-])
-def test_fails_open(item_id, price):
-    _client().validate_amount(item_id, price)  # no raise — server stays authority
+def test_fails_open_on_a_non_numeric_price():
+    _client().validate_amount(VARIABLE_ITEM, "abc")  # no raise — server stays authority
+
+
+def test_fails_open_when_the_catalog_cannot_be_read():
+    from snaplii.exceptions import GatewayApiError
+
+    c = GatewayClient.__new__(GatewayClient)
+
+    def unreachable(brand_id):
+        raise GatewayApiError(502, {}, "/v2/card-brands/" + brand_id)
+    c.get_card_brand_by_id = unreachable
+    c.validate_amount(VARIABLE_ITEM, "10")  # no raise — the gateway decides
 
 
 # ── the guard is actually wired into the CLI + MCP entry points ──────────────
@@ -144,3 +150,52 @@ def test_mcp_quote_blocks_out_of_range(monkeypatch):
     )[0].text)
     assert out["error"] == "amount_out_of_range"
     assert c.quoted is False
+
+
+# ── item_id: structure checked locally; the template must belong to the brand ─
+# A pair whose template belongs to another brand names a different card than the
+# one the agent browsed, so it is refused before quote or purchase.
+
+
+@pytest.mark.parametrize("item_id", [
+    BRAND_ID, "CT000000003682", "malformed", f"{BRAND_ID}CT000000003682", f"{BRAND_ID}--CT000000003682",
+    f"{VARIABLE_ITEM} ", f" {VARIABLE_ITEM}", f"{BRAND_ID}-CT000000003682-x", "",
+])
+def test_malformed_item_id_is_rejected_before_any_request(item_id):
+    c = GatewayClient.__new__(GatewayClient)
+    c.get_card_brand_by_id = lambda brand_id: pytest.fail("no catalog request for a malformed item_id")
+    with pytest.raises(ItemIdError) as ei:
+        c.validate_amount(item_id, "20")
+    d = ei.value.to_dict()
+    assert d["error"] == "invalid_item_id" and "{cardBrandId}-{cardTemplateId}" in d["message"]
+
+
+def test_template_from_another_brand_is_rejected():
+    with pytest.raises(ItemIdError) as ei:
+        _client().validate_amount(f"{BRAND_ID}-CT999999999999", "10")
+    d = ei.value.to_dict()
+    assert d["error"] == "invalid_item_id" and "CT999999999999" in d["message"] and BRAND_ID in d["message"]
+
+
+def test_a_brand_without_listed_cards_fails_open():
+    c = GatewayClient.__new__(GatewayClient)
+    c.get_card_brand_by_id = lambda brand_id: {"data": {"cardBrandId": BRAND_ID, "cards": []}}
+    c.validate_amount(f"{BRAND_ID}-CT999999999999", "10")  # nothing to compare against: the gateway decides
+
+
+def test_mcp_purchase_blocks_a_mismatched_item_id(monkeypatch):
+    c = _cli_client()
+    monkeypatch.setattr(server, "_get_client", lambda: c)
+    out = json.loads(asyncio.run(
+        server.call_tool("snaplii_purchase", {"item_id": f"{BRAND_ID}-CT999999999999", "price": "10"})
+    )[0].text)
+    assert out["error"] == "invalid_item_id"
+    assert c.purchased is False
+
+
+def test_cli_purchase_blocks_a_malformed_item_id():
+    c = _cli_client()
+    res = CliRunner().invoke(purchase_cmd, ["--item-id", "CT000000003682", "--price", "10"],
+                             obj={"client": c, "config_store": _FakeStore()}, catch_exceptions=True)
+    assert isinstance(res.exception, ItemIdError)
+    assert c.purchased is False

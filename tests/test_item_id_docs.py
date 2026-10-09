@@ -1,6 +1,6 @@
 """The gift-card item_id format must be stated prominently wherever an agent quotes or buys a card.
 
-A malformed item_id skips the local amount check, and a well-formed ID of another card buys that card,
+A well-formed ID of another card buys that card,
 so every agent-facing surface says: exactly {cardBrandId}-{cardTemplateId}, copied verbatim."""
 import asyncio
 from pathlib import Path

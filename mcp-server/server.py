@@ -28,7 +28,7 @@ from mcp import types
 from snaplii import auth
 from snaplii.client import GatewayClient
 from snaplii.config_store import ConfigStore
-from snaplii.exceptions import AmountValidationError, AuthError, ConfigError, GatewayApiError, GatewayConnectionError, TransferApiError
+from snaplii.exceptions import AmountValidationError, AuthError, ItemIdError, ConfigError, GatewayApiError, GatewayConnectionError, TransferApiError
 from snaplii.commands.transfer import decorate_transfer
 from snaplii.cards import APIKEY_CARD_HTML, APIKEY_RES_URI, MCP_APP_MIME
 
@@ -1115,7 +1115,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         else:
             return _text(f"Unknown tool: {name}")
 
-    except AmountValidationError as e:
+    except (AmountValidationError, ItemIdError) as e:
         return _text(e.to_dict())
     except AuthError as e:
         return _text(e.to_dict())

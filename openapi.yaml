@@ -1,19 +1,62 @@
 openapi: 3.1.0
 info:
   title: Snaplii Agent-to-Merchant Payments Gateway API
-  version: 0.16.0
+  version: 0.19.0
   description: |-
     Browse gift cards, make purchases, pay bills, and transfer funds.
     Exchange an API key for an access token to call protected operations.
-  x-source-files:
-  - snaplii-cli/src/snaplii/client.py
-  - snaplii-cli/src/snaplii/commands/
-  - mcp-server/server.py
-  - tests/
-  - README.md
+
+    For AI agents: prefer the Snaplii Agent Skill or the Snaplii MCP server, which follow the
+    rules in info.x-agent-rules for you. An agent that calls this API directly must follow each
+    of those rules itself; every entry states the rule and what a direct caller must do.
+  x-agent-rules:
+  - id: api_key_off_chat
+    applies_to: [createAccessToken, getElicitedToken]
+    rule: 'Never ask the user to paste the API key into the chat when the host can take it off-model: the MCP secure card, the hosted connect page, or the Muse or Instinct vault.'
+    direct_caller: 'Let the user enter the key in their own terminal or a hosted page; if the key must pass through the chat, say so first and never echo it.'
+  - id: instinct_mcp_only
+    applies_to: [createAccessToken]
+    rule: 'In Instinct (an INSTINCT_* environment variable is set and Muse is not detected), execute only through the Snaplii MCP server and connect with snaplii_connect and the Instinct vault.'
+    direct_caller: 'Do not call this API from Instinct; install and use the MCP server.'
+  - id: item_id_format
+    applies_to: [quoteOrder, purchaseOrder]
+    rule: 'A gift-card itemId is exactly {cardBrandId}-{cardTemplateId}: the brand''s cardBrandId, one hyphen, the chosen template''s cardTemplateId, both copied verbatim from GET /v2/card-brands/{card_brand_id}.'
+    direct_caller: 'Build itemId from the two returned values verbatim; never send one ID alone, a name, a template from another brand, or a guessed ID; quote and purchase with the same itemId.'
+  - id: denomination_check
+    applies_to: [getCardBrand, quoteOrder, purchaseOrder]
+    rule: 'The price must match the template: FIXED accepts exactly priceStart, VARIABLE accepts priceStart to priceEnd.'
+    direct_caller: 'Check the price against faceValueRules of the chosen template before quoting.'
+  - id: quote_before_purchase
+    applies_to: [quoteOrder, purchaseOrder]
+    rule: 'Quote before every purchase. A positive primaryPayAmount (the CLI and MCP call it you_pay) means Snaplii Cash does not cover the order: stop and ask the user to top up in the app.'
+    direct_caller: 'Call /v2/quote first and do not purchase while primaryPayAmount is above zero.'
+  - id: no_blind_purchase_retry
+    applies_to: [purchaseOrder]
+    rule: '/v2/purchase is not idempotent: sending it again creates another order. After an ambiguous failure, check owned cards or the bill payment result before purchasing again.'
+    direct_caller: 'Never resend /v2/purchase after a timeout or unclear error until GET /v2/cards or /v2/billpay/pay-result shows the first attempt did not succeed.'
+  - id: bill_pay_confirmation
+    applies_to: [purchaseOrder]
+    rule: 'Before paying a bill, get the user''s explicit confirmation of biller, account and amount in the current turn. Gift-card purchases within the key''s daily limit need no per-transaction confirmation.'
+    direct_caller: 'Ask and wait for an explicit yes before a BILL_PAY purchase.'
+  - id: sensitive_card_data
+    applies_to: [getOwnedCard, listOwnedCards]
+    rule: 'Show redemption codes, PINs and barcodes only when the user asks for them, and never show internal IDs such as cardBrandId, cardTemplateId or cardNo.'
+    direct_caller: 'Keep card codes and internal IDs out of user-facing text unless the user asks for a code.'
+  - id: transfer_idempotency
+    applies_to: [createTransfer]
+    rule: 'Send a fresh Idempotency-Key for each new transfer and reuse it only for the identical retry after 202 CREATING or an indeterminate timeout.'
+    direct_caller: 'Generate, keep and reuse your own Idempotency-Key.'
+  - id: transfer_disclosure
+    applies_to: [createTransfer, finishTransfer]
+    rule: 'After creating a transfer, tell the user the amount, the masked recipient and the cancel deadline, and disclose any currency conversion; call finish only when the user asks to send now.'
+    direct_caller: 'Compare amount and currency with received_amount and received_currency and disclose any difference before auto_finish_at.'
+  - id: spending_limits
+    applies_to: [purchaseOrder, createTransfer]
+    rule: 'Spending comes only from prepaid Snaplii Cash and is capped by the API key''s scope and daily limit.'
+    direct_caller: 'Expect a request beyond the key''s scope or daily limit to be rejected.'
 servers:
 - url: https://aipayment.snaplii.com
-  description: Gateway URL configured by default in the client
+  description: Production gateway
 security:
 - BearerAuth: []
 tags:
@@ -38,7 +81,9 @@ paths:
       - Authentication
       operationId: createAccessToken
       summary: Exchange an API key for a session token
-      description: 'Send agent_id in JSON and the API key as api_key in JSON or Authorization: Bearer <api key>.'
+      description: 'Send agent_id in JSON and the API key as api_key in JSON or Authorization: Bearer <api key>.
+        Agents: do not ask the user to paste the key into the chat when the host can take it off-model, and
+        in Instinct use the MCP server instead of this API (x-agent-rules api_key_off_chat, instinct_mcp_only).'
       requestBody:
         required: true
         content:
@@ -74,6 +119,36 @@ paths:
       security:
       - {}
       - ApiKeyAuthorization: []
+  /v2/auth/elicit/{eid}/token:
+    get:
+      tags:
+      - Authentication
+      operationId: getElicitedToken
+      summary: Collect the session token parked by the hosted connect page
+      description: Generate a random one-time eid and send the user to {gateway}/connect?eid=<eid>, where
+        the user enters the API key off-model. Poll this endpoint with the same eid; it returns the token
+        once, within about 2 minutes after the user presses Connect. The request carries no Authorization
+        header, so whoever holds the eid can take the token; keep it out of logs.
+      parameters:
+      - name: eid
+        in: path
+        required: true
+        description: One-time identifier you generated for this connect attempt.
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Token ready; the same shape as the token exchange response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '204':
+          description: Not ready yet; poll again.
+        default:
+          description: Any other status; keep polling until your own deadline.
+      security:
+      - {}
   /v2/card-brands:
     get:
       tags:
@@ -85,7 +160,7 @@ paths:
       parameters:
       - name: channel
         in: query
-        description: Catalog channel; client default is HOME_PAGE.
+        description: Catalog channel; HOME_PAGE by default.
         schema:
           type: string
           default: HOME_PAGE
@@ -104,10 +179,8 @@ paths:
       - Catalog
       operationId: getCardBrand
       summary: Get brand details and denominations
-      description: Before quote/purchase, check the selected template denomination. FIXED requires the
-        exact priceStart; VARIABLE requires an amount between priceStart and priceEnd. The repository
-        documents orders failing after payment when clients skip this check; do not rely on quote success
-        as denomination validation.
+      description: Before quote or purchase, check the selected template's denomination. FIXED requires
+        the exact priceStart; VARIABLE requires an amount between priceStart and priceEnd.
       parameters:
       - name: card_brand_id
         in: path
@@ -117,7 +190,7 @@ paths:
           type: string
       - name: showDetail
         in: query
-        description: The client explicitly sends showDetail=true.
+        description: Send true to receive the card templates and their denominations.
         schema:
           type: boolean
           default: true
@@ -148,7 +221,7 @@ paths:
           - INACTIVE
       - name: page
         in: query
-        description: Page number; client starts at 1.
+        description: Page number, starting at 1.
         schema:
           type: integer
           default: 1
@@ -173,8 +246,8 @@ paths:
       - Gift cards
       operationId: getOwnedCard
       summary: Get gift-card redemption details
-      description: May contain redemption code and PIN. This repository forwards the raw response without
-        defining its field names. The MCP _sensitive wrapper is added locally.
+      description: Contains the redemption code and PIN. Show them only when the user asks (x-agent-rules
+        sensitive_card_data).
       parameters:
       - name: card_no
         in: path
@@ -197,8 +270,8 @@ paths:
       - Balance
       operationId: getBalance
       summary: Get spendable Snaplii Cash balance
-      description: The balance is in the account currency (CA=CAD, US=USD). The CLI country flag labels
-        the output locally; there is no country query parameter on this request.
+      description: The balance is in the account currency (CA=CAD, US=USD), the country returned with
+        the access token.
       responses:
         '200':
           description: Gateway response. Inspect business error fields even when HTTP status is 200.
@@ -270,8 +343,10 @@ paths:
       summary: Create and pay for a gift card or bill
       description: Spends Snaplii Cash within API-key permissions and limits. Check the quote and gift-card
         denomination before purchasing. Use delivery.immediateSend="true" for GIFT_CARD and "false" for
-        BILL_PAY. Bills are Canada-only. The client sends no idempotency header on this operation. After
-        an ambiguous failure, inspect owned cards or bill payment status before submitting another purchase.
+        BILL_PAY. Bills are Canada-only. This operation is not idempotent, so after
+        an ambiguous failure inspect owned cards or bill payment status before submitting another purchase.
+        Before a BILL_PAY purchase, get the user's explicit confirmation of biller, account and amount in
+        the current turn (x-agent-rules bill_pay_confirmation).
       requestBody:
         required: true
         content:
@@ -365,8 +440,7 @@ paths:
       - Bill payments
       operationId: getBillPayeeHistory
       summary: Get previous bill instruction details for autofill
-      description: The client forwards this response unchanged; history fields are not defined in this
-        repository.
+      description: Returns the previous instruction for this biller, for autofill.
       parameters:
       - name: payee_code
         in: path
@@ -497,15 +571,13 @@ paths:
         then send automatically. Disclose the recipient amount/currency if conversion applies. Use a fresh
         Idempotency-Key for each new intent; after 202 CREATING or an indeterminate timeout, retry only
         the identical request with the SAME key. Wait retry_after_seconds if supplied, or inspect the
-        transfer list. A fresh key in this case can duplicate the transfer. QUOTE_EXPIRED is a distinct
-        error for which the client advises a new request with a fresh key. The CLI generates and echoes
-        a key locally; direct HTTP callers must supply and retain their own.
+        transfer list. A fresh key in this case can duplicate the transfer. QUOTE_EXPIRED needs a
+        new request with a fresh key. Generate, keep and reuse your own key.
       parameters:
       - name: Idempotency-Key
         in: header
         required: true
-        description: Unique key per new transfer; reuse only for the identical retry. The client generates
-          a 32-character UUID hex value.
+        description: Unique key per new transfer, such as a UUID in hex; reuse it only for the identical retry.
         schema:
           type: string
         example: a8d82770bf5742e3911709bbd5d9a730
@@ -592,7 +664,7 @@ paths:
       - Transfers
       operationId: cancelTransfer
       summary: Cancel a pending transfer
-      description: Allowed until auto_finish_at. No request body is sent. A CANCELLING status means upstream
+      description: Allowed until auto_finish_at. No request body is sent. A CANCELLING status means
         cancellation is not yet confirmed; poll GET /v2/transfers/{order_no} for the final state.
       parameters:
       - name: order_no
@@ -603,8 +675,7 @@ paths:
           type: string
       responses:
         2XX:
-          description: Cancellation result (CANCELLED or CANCELLING). The precise success HTTP status
-            is not specified by the client.
+          description: Cancellation result, CANCELLED or CANCELLING.
           content:
             application/json:
               schema:
@@ -629,8 +700,7 @@ paths:
           type: string
       responses:
         2XX:
-          description: Settlement requested; this is not confirmation of a finished transfer. The exact
-            success HTTP status is unspecified.
+          description: Settlement requested; this is not confirmation of a finished transfer.
           content:
             application/json:
               schema:
@@ -651,8 +721,8 @@ components:
       description: API key for token exchange.
   responses:
     GatewayError:
-      description: Gateway HTTP error. Legacy business codes can also appear in a 2xx response. Plain-text
-        errors are possible; the client-created raw/friendly_message fields are not wire fields.
+      description: Error response. Business error codes can also arrive in a 2xx response, so check
+        rspMsgCd; some errors are plain text.
       content:
         application/json:
           schema:
@@ -670,7 +740,7 @@ components:
   schemas:
     GatewayObject:
       type: object
-      description: Partial gateway object. Its complete fields are not defined in this repository.
+      description: A gateway object.
       additionalProperties: true
     Amount:
       type: string
@@ -682,12 +752,12 @@ components:
       - string
       - number
       - 'null'
-      description: Amount or rate read by the client; the gateway representation is not fully specified.
+      description: An amount or rate, as a string or a number.
       examples:
       - '12.50'
     GatewayError:
       type: object
-      description: Partial legacy error body; some failures use only message or return plain text.
+      description: Error body; some failures carry only message, and some return plain text.
       properties:
         rspMsgCd:
           type: string
@@ -726,7 +796,7 @@ components:
           description: Session bearer token.
         expires_in:
           type: integer
-          description: Token lifetime in seconds. If omitted, the client uses 3600 seconds.
+          description: Token lifetime in seconds; assume 3600 when absent.
         country:
           type: string
           examples:
@@ -751,7 +821,7 @@ components:
       additionalProperties: true
     CardTemplate:
       type: object
-      description: Known template fields; discount values are cashback percentages.
+      description: A card template; discount values are cashback percentages.
       properties:
         cardTemplateId:
           type: string
@@ -780,7 +850,7 @@ components:
           data:
             $ref: '#/components/schemas/CardBrand'
         additionalProperties: true
-      description: The client accepts a direct brand object or an existing data envelope.
+      description: The brand, returned directly or under data.
     CatalogResponse:
       anyOf:
       - type: array
@@ -793,12 +863,10 @@ components:
             items:
               $ref: '#/components/schemas/GatewayObject'
         additionalProperties: true
-      description: The gateway can return a raw array; the client wraps it under data. Category/brand
-        entry fields are unspecified.
+      description: Categories with their brands, returned as an array or under data.
     OwnedCard:
       type: object
-      description: Partial card summary consumed by the dashboard. Redemption-detail field names are not
-        defined in this repository.
+      description: Owned gift card summary.
       properties:
         cardBrandId:
           type: string
@@ -839,8 +907,7 @@ components:
                 $ref: '#/components/schemas/AmountValue'
             additionalProperties: true
         additionalProperties: true
-      description: Direct balance or data.balance, as accepted by the CLI. Currency is inferred locally
-        from account country, not returned by this endpoint.
+      description: The balance, returned directly or under data, in the account currency.
     OrderItem:
       type: object
       required:
@@ -849,8 +916,11 @@ components:
       properties:
         itemId:
           type: string
-          description: For GIFT_CARD use {cardBrandId}-{cardTemplateId}; for BILL_PAY use payCode from
-            /v2/billpay/save.
+          description: For GIFT_CARD use exactly {cardBrandId}-{cardTemplateId}, for example CB00000000000086-CT000000003618,
+            built from the brand's cardBrandId and the chosen template's cardTemplateId copied verbatim from
+            GET /v2/card-brands/{card_brand_id} and joined by one hyphen. Never send one ID alone, a template
+            from another brand, or a guessed ID, and quote and purchase with the same value (x-agent-rules
+            item_id_format). For BILL_PAY use payCode from /v2/billpay/save.
         price:
           $ref: '#/components/schemas/Amount'
       additionalProperties: true
@@ -863,7 +933,7 @@ components:
           type: string
           enum:
           - 'false'
-          description: The client sends the string false, not a JSON boolean.
+          description: The string false, not a JSON boolean.
       additionalProperties: true
     OrderInfo:
       type: object
@@ -899,11 +969,7 @@ components:
           default: SNAPLII_CREDIT
           examples:
           - SNAPLII_CREDIT
-          description: Client-supported payment method is Snaplii Cash.
-        specifiedPrimaryPaymentToken:
-          type: string
-          writeOnly: true
-          description: Optional payment token accepted by the gift-card client method.
+          description: Snaplii Cash.
         voucherOption:
           type: string
           enum:
@@ -919,8 +985,7 @@ components:
           default: USE
         specifiedVoucher:
           type: string
-          description: Specific voucher ID. Set voucherOption to USE when selecting a voucher; purchase
-            and bill-pay helpers do this automatically.
+          description: Specific voucher ID. Set voucherOption to USE when selecting a voucher.
       additionalProperties: true
     QuoteRequest:
       type: object
@@ -975,14 +1040,10 @@ components:
           $ref: '#/components/schemas/AmountValue'
         cashbackUseAmount:
           $ref: '#/components/schemas/AmountValue'
-        subsidyAmount:
-          $ref: '#/components/schemas/AmountValue'
-        commissionAmount:
-          $ref: '#/components/schemas/AmountValue'
         voucherName:
           type: string
       additionalProperties: true
-      description: Known raw quote fields. primaryPayAmount is the remainder after applied funds/discounts;
+      description: Quote amounts. primaryPayAmount is the remainder after applied funds/discounts;
         zero does not mean the order is free.
     PurchaseResponse:
       type: object
@@ -993,11 +1054,7 @@ components:
           type: string
         orderStatus:
           type: string
-          description: Known values include SUCCESS, WAIT_DELIVER, and APPLY_REFUND; not an exhaustive
-            enum.
-        h5PayUrl:
-          type: string
-          description: An external payment URL may be returned when Snaplii Cash does not cover the order.
+          description: Known values include SUCCESS and WAIT_DELIVER; not an exhaustive list.
       additionalProperties: true
     Payee:
       type: object
@@ -1050,7 +1107,7 @@ components:
           type: array
           items:
             type: string
-          description: The client always sends an empty array. Attachment behavior is not defined here.
+          description: Send an empty array.
         userPhone:
           type: string
         userEmail:
@@ -1093,7 +1150,7 @@ components:
         voucherPrice:
           $ref: '#/components/schemas/AmountValue'
         expiredTime:
-          description: Expiry value forwarded by the gateway; encoding is not specified in this repository.
+          description: Voucher expiry.
       additionalProperties: true
     BillVoucherResponse:
       type: object
@@ -1120,7 +1177,7 @@ components:
           - '0'
           - '1'
           - '3'
-          description: 'Known codes: 0 = success, 1 = failed, 3 = processing. Other codes are passed through.'
+          description: 'Known codes: 0 = success, 1 = failed, 3 = processing.'
         payErrMsg:
           type: string
         payErrTitle:
@@ -1136,7 +1193,7 @@ components:
           type: string
           examples:
           - '4165550006'
-          description: Recipient phone number; the client accepts any format.
+          description: Recipient phone number.
         amount:
           type: string
           pattern: ^[0-9]{1,8}(\.[0-9]{1,2})?$
@@ -1159,11 +1216,10 @@ components:
       - FINISHED
       - CANCELLED
       - FAILED
-      description: States understood by the client. FINISHED, CANCELLED, and FAILED are terminal.
+      description: Transfer states. FINISHED, CANCELLED, and FAILED are terminal.
     Transfer:
       type: object
-      description: Partial raw transfer response. The client adds idempotency_key, cross_currency_notice,
-        fail_message, and next_step locally; they are not guaranteed gateway fields.
+      description: A transfer.
       properties:
         order_no:
           type: string
@@ -1219,8 +1275,7 @@ components:
       additionalProperties: true
     TransferError:
       type: object
-      description: Raw error envelope, including validation errors. CLIENT_TIMEOUT and retry_hint are
-        synthesized locally, not HTTP responses.
+      description: Error envelope, including per-field validation errors.
       properties:
         status:
           type: string
@@ -1236,10 +1291,6 @@ components:
           - 'null'
         retryable:
           type: boolean
-        upstream_code:
-          type:
-          - string
-          - 'null'
         details: {}
         errors:
           type: array

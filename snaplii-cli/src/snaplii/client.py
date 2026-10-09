@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import uuid
 from urllib.parse import urlsplit
 
@@ -8,6 +9,7 @@ import httpx
 from snaplii.config_store import ConfigStore
 from snaplii import auth
 from snaplii.exceptions import (
+    ItemIdError,
     AmountValidationError,
     AuthError,
     ConfigError,
@@ -16,6 +18,17 @@ from snaplii.exceptions import (
     SnapliiCliError,
     TransferApiError,
 )
+
+
+_ITEM_ID = re.compile(r"[^\s-]+-[^\s-]+\Z")  # {cardBrandId}-{cardTemplateId}: two parts, one hyphen
+
+
+def _client_version() -> str:
+    try:
+        from importlib.metadata import version
+        return version("snaplii-cli")
+    except Exception:
+        return "unknown"
 
 
 def summarize_denominations(brand_resp: dict) -> list:
@@ -70,7 +83,14 @@ class GatewayClient:
                 "re-resolves dependencies."
             ) from e
         self._config = config_store
-        self._http = httpx.Client(timeout=30.0)
+        self._http = httpx.Client(timeout=30.0, event_hooks={"request": [self._identify]})
+
+    def _identify(self, request: httpx.Request) -> None:
+        """Name the official client on every request, e.g. `snaplii-cli/0.19.0 (mcp)`, so the
+        gateway can tell CLI and MCP traffic from agents calling the API directly. Telemetry
+        only: any caller can send this header, so it must never gate access."""
+        request.headers["X-Snaplii-Client"] = "snaplii-cli/%s (%s)" % (
+            _client_version(), getattr(self._config, "runtime", None) or "library")
 
     # ── Auth ──────────────────────────────────────────────────────
 
@@ -260,22 +280,22 @@ class GatewayClient:
     # ── Amount guard ──────────────────────────────────────────────
 
     def validate_amount(self, item_id: str, price) -> None:
-        """Guard quote/purchase: confirm `price` falls within the brand's
-        allowed denomination for `item_id` ({brandId}-{templateId}).
+        """Guard quote/purchase: `item_id` must be exactly {cardBrandId}-{cardTemplateId}
+        with a template that is a card of that brand, and `price` must fall within
+        that card's allowed denomination.
 
-        Raises AmountValidationError when the amount is confirmed out of range.
-        Fails open (returns silently) whenever the catalog can't be resolved —
+        Raises ItemIdError for a malformed item_id or a template the resolved brand
+        does not list, and AmountValidationError when the amount is confirmed out of
+        range. Fails open (returns silently) whenever the catalog can't be resolved —
         the server stays the final authority. This mirrors the app's UI check
         (DrawerBottomInputAmount) which the agent path would otherwise bypass.
         """
-        try:
-            amount = float(price)
-        except (TypeError, ValueError):
-            return  # malformed price — let the server reject it
-
-        brand_id, _, template_id = (item_id or "").partition("-")
-        if not brand_id or not template_id:
-            return  # can't parse the item id — don't block on the guard
+        if not isinstance(item_id, str) or not _ITEM_ID.match(item_id):
+            raise ItemIdError(
+                "item_id must be exactly {cardBrandId}-{cardTemplateId}, copied verbatim from "
+                "browse brand (e.g. CB00000000000086-CT000000003618); got %r." % (item_id,),
+                item_id=item_id if isinstance(item_id, str) else "")
+        brand_id, _, template_id = item_id.partition("-")
 
         try:
             detail = self.get_card_brand_by_id(brand_id)
@@ -284,10 +304,20 @@ class GatewayClient:
 
         brand = detail.get("data", detail) if isinstance(detail, dict) else {}
         cards = brand.get("cards", []) if isinstance(brand, dict) else []
-        card = next((c for c in cards if isinstance(c, dict)
-                     and c.get("cardTemplateId") == template_id), None)
+        cards = [c for c in cards or [] if isinstance(c, dict)]
+        card = next((c for c in cards if c.get("cardTemplateId") == template_id), None)
         if not card:
-            return  # unknown template — server decides
+            if cards:
+                raise ItemIdError(
+                    "Template %s is not a card of brand %s, so this item_id would buy a different "
+                    "card. Copy item_id verbatim from browse brand." % (template_id, brand_id),
+                    item_id=item_id)
+            return  # the brand lists no cards to compare against — server decides
+
+        try:
+            amount = float(price)
+        except (TypeError, ValueError):
+            return  # malformed price — let the server reject it
 
         fv = card.get("faceValueRules", {}) or {}
         ftype = fv.get("type")

@@ -103,6 +103,20 @@ class AmountValidationError(SnapliiCliError):
         return out
 
 
+class ItemIdError(SnapliiCliError):
+    """The gift-card item_id is not exactly {cardBrandId}-{cardTemplateId}, or its template
+    is not a card of that brand. Raised before quote/purchase so the order never reaches
+    the gateway with an ID that could name a different card."""
+
+    def __init__(self, message: str, *, item_id: str = ""):
+        self.message = message
+        self.item_id = item_id
+        super().__init__(message)
+
+    def to_dict(self) -> dict:
+        return {"error": "invalid_item_id", "message": self.message, "item_id": self.item_id}
+
+
 class ConfigError(SnapliiCliError):
     def __init__(self, message: str):
         self.message = message
