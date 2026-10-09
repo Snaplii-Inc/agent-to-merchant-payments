@@ -64,17 +64,10 @@ def test_order_item_states_the_item_id_rule():
     assert "{cardBrandId}-{cardTemplateId}" in description and "verbatim" in description
 
 
-def test_readme_never_leads_an_agent_to_the_rest_api():
-    # The README routes AI agents to the skill or the MCP server only; REST is for
-    # server integrations and carries no how-to for an agent calling it directly.
-    assert "Any LLM" not in README and "direct caller" not in README.lower()
-    section = README.split("### REST API (server integrations)", 1)[1].split("\n### ", 1)[0]
-    intro = flat(section.split("**Base URL:**", 1)[0])
-    assert "AI agents do not call this API" in intro
-    assert "Agent Skill" in intro and "MCP server" in intro
-    assert not [line for line in intro.splitlines() if line.startswith("| ")]
-    row = [line for line in README.splitlines() if line.startswith("| A service or script")][0]
-    assert "Not for AI agents" in row and "#rest-api-server-integrations" in row
+def test_readme_does_not_mention_the_rest_api():
+    # The README routes every reader to the skill, the MCP server or the CLI only.
+    for phrase in ("REST", "openapi.yaml", "curl -X POST https://aipayment", "/v2/", "HTTPS request", "HTTPS calls"):
+        assert phrase not in README, phrase
 
 
 # openapi.yaml is published to the public: it states the contract and the caller's duties, and

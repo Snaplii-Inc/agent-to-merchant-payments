@@ -2,7 +2,7 @@
 
 > A payment layer for AI agents: pay in the real world without handing the agent a credit card.
 
-Snaplii gives an AI agent a prepaid, scoped, revocable payment account. The agent spends only the **Snaplii Cash** the user set aside, within a per-key spending limit the user chose, and never sees the user's card or bank credentials. It ships as an **Agent Skill**, an **MCP server**, a **Python CLI**, and a **REST API**, so it works with any agent that can read a `SKILL.md`, call MCP tools, run a command, or make HTTPS calls.
+Snaplii gives an AI agent a prepaid, scoped, revocable payment account. The agent spends only the **Snaplii Cash** the user set aside, within a per-key spending limit the user chose, and never sees the user's card or bank credentials. It ships as an **Agent Skill**, an **MCP server**, and a **Python CLI**, so it works with any agent that can read a `SKILL.md`, call MCP tools, or run a command.
 
 ---
 
@@ -29,7 +29,6 @@ The account country is fixed at login and enforced by the gateway, so the catalo
 | An agent that reads `SKILL.md` (Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot, OpenClaw, Muse, and others) | The **Agent Skill**, see [Install the Agent Skill](#install-the-agent-skill) | The skill carries the rules, the flows, and the host-specific login steps. It then picks MCP or the CLI for you |
 | An MCP client (Claude Desktop, Codex, Cursor, VS Code, OpenClaw, Instinct) | The **MCP server**, see [MCP Server](#mcp-server-claude-openclaw-cursor-instinct) | 26 tools, plus an off-model login card or page on hosts that support one |
 | A terminal, a script, or an agent with only a shell | The **CLI**, see [Quick Start](#quick-start) | One command per operation, JSON on stdout |
-| A service or script without an agent runtime | The **REST API**, see [REST API](#rest-api-server-integrations) | Plain HTTPS against `aipayment.snaplii.com`. Not for AI agents: they use the skill or the MCP server |
 
 ### How Snaplii and agent tools work together
 
@@ -197,7 +196,6 @@ A connection attempt can also end in one of these states. Honor its action befor
 - [CLI Commands](#cli-commands)
 - [Integration Guides](#integration-guides)
   - [MCP Server (Claude, OpenClaw, Cursor, Instinct)](#mcp-server-claude-openclaw-cursor-instinct)
-  - [REST API (server integrations)](#rest-api-server-integrations)
 - [Components](#components)
 - [Uninstall](#uninstall)
 - [Troubleshooting](#troubleshooting)
@@ -612,67 +610,6 @@ The server also offers one MCP prompt, `snaplii_autopilot`, which carries the en
 
 ---
 
-### REST API (server integrations)
-
-For backend services that integrate Snaplii without an AI agent. AI agents do not call this API directly: they use the [Agent Skill](#install-the-agent-skill) or the [MCP server](#mcp-server-claude-openclaw-cursor-instinct). [`openapi.yaml`](openapi.yaml) is the full contract.
-
-**Base URL:** `https://aipayment.snaplii.com`
-
-#### Step 1: Authenticate
-
-```bash
-curl -X POST https://aipayment.snaplii.com/v2/auth/token \
-  -H "Content-Type: application/json" \
-  -d '{"agent_id": "my-agent", "api_key": "snp_sk_live_..."}'
-```
-
-Returns a JWT token. Use it as `Authorization: Bearer <token>` for all subsequent calls.
-
-#### Step 2: Browse gift cards
-
-```bash
-curl https://aipayment.snaplii.com/v2/card-brands?channel=HOME_PAGE \
-  -H "Authorization: Bearer <token>"
-```
-
-#### Step 3: Check the denomination
-
-```bash
-curl https://aipayment.snaplii.com/v2/card-brands/CB... \
-  -H "Authorization: Bearer <token>"
-```
-
-A `FIXED` template accepts exactly `priceStart`; a `VARIABLE` template accepts any amount from `priceStart` to `priceEnd`. Check this before quoting.
-
-#### Step 4: Get a price quote
-
-```bash
-curl -X POST https://aipayment.snaplii.com/v2/quote \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "orderInfo": {"orderType": "GIFT_CARD", "item": {"itemId": "CB...-CT...", "price": "50"}, "orderContext": {"giftOrder": "false"}, "businessChannel": "APP"},
-    "paymentContext": {"specifiedPrimaryPaymentMethod": "SNAPLII_CREDIT", "voucherOption": "BEST_FIT", "cashbackOption": "USE"}
-  }'
-```
-
-A positive `primaryPayAmount` in the response means Snaplii Cash does not fully cover the order; stop and tell the user to top up. This is the field the CLI and MCP report as `you_pay`.
-
-#### Step 5: Purchase
-
-```bash
-curl -X POST https://aipayment.snaplii.com/v2/purchase \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "orderInfo": {"orderType": "GIFT_CARD", "item": {"itemId": "CB...-CT...", "price": "50"}, "orderContext": {"giftOrder": "false"}, "businessChannel": "APP"},
-    "paymentContext": {"specifiedPrimaryPaymentMethod": "SNAPLII_CREDIT", "voucherOption": "BEST_FIT", "cashbackOption": "USE"},
-    "delivery": {"type": "WALLET", "immediateSend": "true"}
-  }'
-```
-
----
-
 ## Components
 
 ```text
@@ -685,8 +622,7 @@ agent-to-merchant-payments/
 ├── clawhub-plugin/     # ClawHub MCP bundle plugin (snaplii-a2m-mcp)
 ├── claude-desktop/     # Older project instructions for Claude Desktop; the MCP server's own instructions take precedence
 ├── scripts/            # Claude Desktop setup, skill Auth-block sync, candidate bundles
-├── tests/              # pytest suite for the CLI, the MCP server, and the skill documents
-└── openapi.yaml        # REST API contract
+└── tests/              # pytest suite for the CLI, the MCP server, and the skill documents
 ```
 
 The `skills/*.md` files and the `clawhub-*/SKILL.md` folders are kept byte-identical; `scripts/sync_muse_auth_docs.py --check` verifies that their Auth sections match the code.
@@ -768,10 +704,6 @@ When `retryable` is true, apply the `required` step's `why`, then run its `comma
 
 The registration points at `~/.snaplii-env/bin/snaplii-mcp`. Re-run the installer: it recreates the environment at the same path, so the registration works again without changes.
 
-### REST API returns `401` or `403`
-
-A `401`, or a session-rejection code such as `MCAP9999` in the body, means the session is no longer valid: call `/v2/auth/token` again with your API key. A `403` is usually a scope or permission problem: check the key's scope and limits in the app. Business errors can also arrive in a `200` body, so read `rspMsgCd` rather than relying on the status alone.
-
 ---
 
 ## Security
@@ -812,7 +744,7 @@ When the agent has the required browser capabilities, account access, and user a
 
 Traditional payments were designed for humans holding cards and entering credentials. Agentic commerce introduces a different model: intent → agent → authorization → payment → merchant. The payment layer needs to understand not only who is paying, but also which agent is acting, what it is authorized to do, how much it can spend, which payment method it can access, whether the transaction can be reused, and when authorization should expire. Snaplii is building this infrastructure for the emerging AI agent economy.
 
-Snaplii is model-agnostic. Whether you build with Claude, ChatGPT, Gemini, Llama, Mistral, OpenClaw, Muse, Instinct, or any other model or agent, if it can read a skill, call a tool, run a command, or make an HTTPS request, it can use Snaplii.
+Snaplii is model-agnostic. Whether you build with Claude, ChatGPT, Gemini, Llama, Mistral, OpenClaw, Muse, Instinct, or any other model or agent, if it can read a skill, call a tool, or run a command, it can use Snaplii.
 
 ---
 
