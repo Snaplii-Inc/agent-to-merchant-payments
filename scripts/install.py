@@ -1360,3 +1360,293 @@ def verify_mcp(venv: str, env: Dict[str, str], tmpdir: str, warnings: List[str])
     version = metadata_version(venv_python(venv), "snaplii-mcp", env)
     tools = mcp_handshake([exe], env, tmpdir, warnings)
     return {"status": "installed", "version": version, "executable": exe, "tools": tools}
+
+
+# ----------------------------------------------------------------------------
+# Report and next steps
+# ----------------------------------------------------------------------------
+def _ps_quote(part: str) -> str:
+    if re.search(r"[\s'\"$`&|;(){}]", part):
+        return "'" + part.replace("'", "''") + "'"
+    return part
+
+
+def render_command(executable: str, args: List[str], platform: Optional[str] = None) -> str:
+    platform = platform or sys.platform
+    if platform == "win32":
+        rendered = " ".join(_ps_quote(p) for p in [executable] + list(args))
+        return ("& " + rendered) if _ps_quote(executable) != executable else rendered
+    return " ".join(shlex.quote(p) for p in [executable] + list(args))
+
+
+def step(id_: str, status: str, why: str, executable: Optional[str] = None, args: Optional[List[str]] = None,
+         platform: Optional[str] = None, file: Optional[str] = None, json_: Optional[dict] = None,
+         command: Optional[str] = None) -> Dict[str, object]:
+    record = {"id": id_, "status": status, "why": why}  # type: Dict[str, object]
+    if executable is not None:
+        record.update({"executable": executable, "args": list(args or []),
+                       "command": command if command is not None else render_command(executable, args or [], platform)})
+    elif file is not None:
+        record.update({"file": file, "json": json_, "command": None})
+    else:
+        record["command"] = command
+    return record
+
+
+def claude_desktop_config(platform: str, environ: Dict[str, str]) -> str:
+    home = home_dir(environ)
+    if platform == "darwin":
+        return os.path.join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json")
+    if platform == "win32":
+        return os.path.join(environ.get("APPDATA") or os.path.join(home, "AppData", "Roaming"), "Claude", "claude_desktop_config.json")
+    return os.path.join(home, ".config", "Claude", "claude_desktop_config.json")
+
+
+def _register_step(host: Optional[str], exe: str, platform: str, environ: Dict[str, str]) -> Dict[str, object]:
+    why = "The host must start this executable; it is not on PATH."
+    snippet = {"mcpServers": {"snaplii": {"command": exe}}}
+    if host == "claude-code":
+        return step("register_mcp", "pending", why, "claude", ["mcp", "add", "snaplii", "--", exe], platform)
+    if host == "codex":
+        return step("register_mcp", "pending", why, "codex", ["mcp", "add", "snaplii", "--", exe], platform)
+    if host == "openclaw":
+        return step("register_mcp", "pending", why, "openclaw", ["mcp", "add", "snaplii", "--command", exe], platform)
+    if host == "claude-desktop":
+        return step("register_mcp", "pending", why + " Merge this into the file, then restart Claude Desktop.",
+                    file=claude_desktop_config(platform, environ), json_=snippet)
+    if host == "cursor":
+        return step("register_mcp", "pending", why + " Merge this into the project's MCP file.", file=".cursor/mcp.json", json_=snippet)
+    if host == "instinct":
+        return step("register_mcp", "pending", "Register this executable as the Snaplii MCP server as the README's Instinct "
+                    "block describes; the vault flow starts from snaplii_connect: " + README_URL, exe, [], platform)
+    return step("register_mcp", "pending", "Register this executable as the Snaplii MCP server in your host; see the "
+                "README (MCP Server section): " + README_URL, exe, [], platform)
+
+
+def _skill_step(host: Optional[str], platform: str) -> Dict[str, object]:
+    why = "The skill carries the rules and flows; the server alone does not."
+    if host == "openclaw":
+        return step("install_skill", "pending", why, "clawhub", ["install", "snaplii-a2m-payment"], platform)
+    args = ["skills", "add", REPO] + (["-a", host] if host in ("claude-code", "codex", "cursor") else [])
+    return step("install_skill", "pending", why, "npx", args, platform)
+
+
+def next_steps(host: Optional[str], detected: str, components: Dict[str, dict], venv: str,
+               failure: Optional[InstallFailure], check_mode: bool, cli_only: bool, platform: str,
+               environ: Dict[str, str], rerun: List[str]) -> List[Dict[str, object]]:
+    effective = "instinct" if detected == "instinct" else host
+    cli, mcp = components.get("cli", {}), components.get("mcp", {})
+    cli_ok, mcp_ok = cli.get("status") == "installed", mcp.get("status") == "installed"
+    steps = []  # type: List[Dict[str, object]]
+    if effective != "instinct":
+        steps.append(_skill_step(effective, platform))
+    rerun_cmd = render_command(rerun[0], rerun[1:], platform) if rerun else None
+    if mcp_ok:
+        steps.append(_register_step(effective, str(mcp["executable"]), platform, environ))
+    if failure is not None and failure.retryable:
+        steps.append(step("retry", "required", failure.remedy + "; then re-run the installer", command=rerun_cmd))
+    elif failure is not None:
+        steps.append(step("report_to_user", "required", failure.remedy, command=None))
+    elif mcp_ok:
+        pass
+    elif mcp.get("status") == "skipped" and effective == "instinct":
+        without = [a for a in rerun if a != "--cli-only"]
+        steps.append(step("retry", "required", "Instinct executes only through MCP; run the installer without --cli-only",
+                          command=render_command(without[0], without[1:], platform) if without else None))
+    elif check_mode and (mcp.get("status") == "missing" or cli.get("status") == "missing"):
+        without = [a for a in rerun if a != "--check"]
+        steps.append(step("retry", "required", "nothing is installed yet; run the installer",
+                          command=render_command(without[0], without[1:], platform) if without else None))
+    if cli_ok or mcp_ok:
+        steps.append(step("reload_host", "pending", "Skills and MCP servers load at session start; open a new session."))
+        steps.append(step("connect", "pending", "Check has_valid_token with snaplii_config_show, or with the CLI's config show; "
+                          "if false, follow its next_action. The installer never does this."))
+    if cli_ok:
+        bin_dir = os.path.dirname(str(cli["executable"]))
+        if platform == "win32":
+            cmd = "$env:Path = %s + ';' + $env:Path" % _ps_quote(bin_dir)
+            steps.append(step("cli_on_path", "optional", "Only to call snaplii by name; the absolute path always works.",
+                              "$env:Path", ["=", bin_dir], platform, command=cmd))
+        else:
+            steps.append(step("cli_on_path", "optional", "Only to call snaplii by name; the absolute path always works.",
+                              "export", ["PATH=%s:$PATH" % bin_dir], platform,
+                              command='export PATH="%s:$PATH"' % bin_dir))
+    if cli_ok and (mcp_ok or mcp.get("status") == "skipped") and failure is None:
+        steps.append(step("update", "optional", "To update later: close the host so its registered Snaplii server stops, "
+                          "re-run this installer (it upgrades both packages in place), then open a new session. "
+                          "`snaplii update` upgrades only the CLI in this environment and leaves the MCP server behind."))
+    return steps
+
+
+def compute_status(components: Dict[str, dict], failure, check_mode: bool, cli_only: bool) -> str:
+    cli_ok = components.get("cli", {}).get("status") == "installed"
+    mcp_status = components.get("mcp", {}).get("status")
+    mcp_done = mcp_status == "installed" or (cli_only and mcp_status == "skipped")
+    if check_mode:
+        return "installed" if cli_ok and mcp_done else "not_installed"
+    if cli_ok and mcp_done:
+        return "installed"
+    if cli_ok and mcp_status == "failed":
+        return "partial"
+    return "failed"
+
+
+def parse_args(argv: Optional[List[str]]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="install.py", description="Install and verify the Snaplii CLI and MCP server.")
+    parser.add_argument("--cli-only", action="store_true", help="install snaplii-cli only (refused in Instinct)")
+    parser.add_argument("--venv", help="environment path (default ~/.snaplii-env)")
+    parser.add_argument("--python", help="interpreter to try first")
+    parser.add_argument("--host", choices=HOSTS, help="tailor next_steps to this host")
+    parser.add_argument("--source", help="install from a repository clone instead of PyPI")
+    parser.add_argument("--check", action="store_true", help="verify what is present; change nothing")
+    try:
+        return parser.parse_args(argv)
+    except SystemExit as exc:
+        if exc.code == 0:
+            raise
+        raise InstallFailure("arguments", "bad_arguments", "unrecognised or invalid arguments",
+                             "run with --help and correct the command line", retryable=False)
+
+
+def _check_source(source: Optional[str], cli_only: bool) -> None:
+    if not source:
+        return
+    for folder in ["snaplii-cli"] + ([] if cli_only else ["mcp-server"]):
+        if not os.path.isdir(os.path.join(source, folder)):
+            raise InstallFailure("arguments", "source_invalid", "--source %s has no %s folder" % (source, folder),
+                                 "point --source at a clone of the repository that contains %s" % folder, retryable=False)
+
+
+def main(argv: Optional[List[str]] = None, environ: Optional[Dict[str, str]] = None) -> int:
+    global JOB
+    argv = list(sys.argv[1:] if argv is None else argv)
+    environ = dict(os.environ if environ is None else environ)
+    report = {"status": "failed", "installer_version": INSTALLER_VERSION, "host": None,
+              "python": {"executable": None, "version": None, "acquired_by": None},
+              "venv": {"path": None, "state": "absent"},
+              "components": {"cli": {"status": "not_verified"}, "mcp": {"status": "not_verified"}},
+              "warnings": [], "failure": None, "next_steps": []}  # type: Dict[str, object]
+    warnings = report["warnings"]  # type: List[str]
+    components = report["components"]  # type: Dict[str, dict]
+    failure = None  # type: Optional[InstallFailure]
+    lock = None  # type: Optional[Lock]
+    args = None
+    check_mode = cli_only = False
+    rerun = [sys.executable, os.path.abspath(__file__)] + argv
+    try:
+        host = detect_host(environ)  # first, so every report carries the host object
+        report["host"] = host
+        try:
+            args = parse_args(argv)
+        except SystemExit:
+            return 0
+        check_mode, cli_only = args.check, args.cli_only
+        if is_windows():
+            JOB = WindowsJob()
+            if not JOB.available:
+                warnings.append("windows_job_unavailable: %s; descendant cleanup is best-effort" % JOB.reason)
+        if host["detected"] == "instinct" and cli_only:
+            raise InstallFailure("arguments", "mcp_required_on_instinct", "Instinct executes only through MCP",
+                                 "run the installer without --cli-only", retryable=False)
+        if host["detected"] == "instinct" and args.host and args.host != "instinct":
+            warnings.append("--host %s ignored: Instinct was detected, so Instinct guidance is used" % args.host)
+        if args.host == "instinct" and host["detected"] != "instinct":
+            warnings.append("--host instinct given but no INSTINCT_ variable is set; Instinct guidance is used anyway")
+        if cli_only:
+            components["mcp"] = {"status": "skipped"}
+        need = NEED["cli"] if cli_only else NEED["mcp"]
+        _check_source(args.source, cli_only)
+        venv = resolve_destination(args.venv, environ)
+        report["venv"]["path"] = venv
+        lock = Lock(venv)
+        lock.acquire()
+        reservation = Reservation(venv)
+        env = child_env(environ, check_mode=check_mode)
+        mode = classify_destination(venv, reservation, check_mode, warnings)
+        tmpdir = tempfile.mkdtemp(prefix="snaplii-install-")
+        try:
+            if check_mode:
+                if mode != "ours":
+                    components["cli"] = {"status": "missing"}
+                    if not cli_only:
+                        components["mcp"] = {"status": "missing"}
+                else:
+                    info = validate_existing(venv, need, env)
+                    report["python"] = {"executable": info["executable"], "version": ".".join(map(str, info["version"])), "acquired_by": None}
+                    report["venv"]["state"] = "reused"
+                    failure = _verify_all(venv, env, tmpdir, warnings, components, cli_only)
+            else:
+                if mode == "ours":
+                    info = validate_existing(venv, need, env)
+                    report["venv"]["state"] = "reused"
+                    acquired_by = None
+                else:
+                    uv_env = child_env(environ, for_uv=True)
+                    candidates = qualifying_candidates(
+                        candidate_argvs(args.python, cli_only, environ, sys.platform, locate_uv(environ)),
+                        need, env, args.python, warnings)
+                    acquired_by = None
+                    if not candidates:
+                        acquired = acquire_python(environ, uv_env, need)
+                        acquired_by = str(acquired["acquired_by"])
+                        candidates = [acquired]
+                    report["venv"]["state"] = "reserved"
+                    info = build_venv(venv, reservation, candidates, need, env, mode)
+                    report["venv"]["state"] = info["state"]
+                report["python"] = {"executable": info["executable"], "version": ".".join(map(str, info["version"])), "acquired_by": acquired_by}
+                try:
+                    install_packages(str(info["executable"]), cli_only, args.source, env)
+                except InstallFailure:
+                    report["venv"]["state"] = "partial_install"
+                    raise
+                failure = _verify_all(venv, env, tmpdir, warnings, components, cli_only)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+    except InstallFailure as exc:
+        failure = exc
+    except Exception as exc:  # the two-state promise: never a traceback on stdout
+        failure = InstallFailure("internal", "internal_error", "%s: %s" % (type(exc).__name__, exc),
+                                 "report this failure with the diagnostics", retryable=False)
+    finally:
+        survivors = list(SURVIVORS)
+        if JOB is not None and JOB.available:
+            survivors += [p for p in JOB.terminate_members() if p not in survivors]
+        if survivors and lock is not None and lock.held:
+            lock.retain(survivors)
+            failure = InstallFailure("cleanup", "cleanup_incomplete",
+                                     "processes %s could not be stopped; the lock was kept so no other run touches the environment" % survivors,
+                                     "confirm that processes %s have exited, then delete %s" % (survivors, lock.path),
+                                     retryable=False, diagnostics="surviving pids: %s" % survivors)
+            components["cli"] = {"status": "not_verified"} if components["cli"].get("status") == "installed" else components["cli"]
+            components["mcp"] = {"status": "not_verified"} if components["mcp"].get("status") == "installed" else components["mcp"]
+        if lock is not None:
+            lock.release()
+    report["failure"] = failure.to_dict() if failure else None
+    report["status"] = compute_status(components, failure, check_mode, cli_only)
+    detected = report["host"]["detected"] if report["host"] else "unknown"
+    report["next_steps"] = next_steps(getattr(args, "host", None), detected, components, str(report["venv"]["path"]),
+                                      failure, check_mode, cli_only, sys.platform, environ, rerun)
+    sys.stdout.write(json.dumps(report, indent=2) + "\n")
+    sys.stdout.flush()
+    return 0 if report["status"] == "installed" else 1
+
+
+def _verify_all(venv: str, env: Dict[str, str], tmpdir: str, warnings: List[str], components: Dict[str, dict],
+                cli_only: bool) -> Optional[InstallFailure]:
+    failure = None
+    try:
+        components["cli"] = verify_cli(venv, env, tmpdir)
+    except InstallFailure as exc:
+        components["cli"] = {"status": "failed", "code": exc.code}
+        failure = exc
+    if not cli_only:
+        try:
+            components["mcp"] = verify_mcp(venv, env, tmpdir, warnings)
+        except InstallFailure as exc:
+            components["mcp"] = {"status": "failed", "code": exc.code}
+            failure = failure or exc
+    return failure
+
+
+if __name__ == "__main__":
+    sys.exit(main())
