@@ -996,3 +996,109 @@ def acquire_python(environ: Dict[str, str], env: Dict[str, str], need: Tuple[int
         raise download_failed("the interpreter uv provided does not qualify", "")
     info["acquired_by"] = acquired_by
     return info
+
+
+# ----------------------------------------------------------------------------
+# Virtual environment protocol
+# ----------------------------------------------------------------------------
+INFO_CODE = ("import json, sys\nprint(json.dumps({'version': list(sys.version_info[:3]), 'prefix': sys.prefix, "
+             "'executable': sys.executable}))")
+
+
+def venv_bin_dir(venv: str) -> str:
+    return os.path.join(venv, "Scripts" if is_windows() else "bin")
+
+
+def venv_python(venv: str) -> str:
+    return os.path.join(venv_bin_dir(venv), "python.exe" if is_windows() else "python")
+
+
+def venv_exe(venv: str, name: str) -> str:
+    return os.path.join(venv_bin_dir(venv), name + (".exe" if is_windows() else ""))
+
+
+def interpreter_info(python_exe: str, env: Dict[str, str]) -> Optional[Dict[str, object]]:
+    try:
+        child = run([python_exe, "-c", INFO_CODE], "probe", DEADLINES["probe"], env)
+    except InstallFailure:
+        return None
+    if child.returncode != 0:
+        return None
+    try:
+        info = json.loads(_last_line(child.stdout.text()))
+    except ValueError:
+        return None
+    return info if isinstance(info, dict) else None
+
+
+def pip_works(python_exe: str, env: Dict[str, str]) -> bool:
+    try:
+        return run([python_exe, "-m", "pip", "--version"], "probe", DEADLINES["metadata"], env).returncode == 0
+    except InstallFailure:
+        return False
+
+
+def _same_dir(a: str, b: str) -> bool:
+    return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
+
+
+def validate_existing(venv: str, need: Tuple[int, int], env: Dict[str, str]) -> Dict[str, object]:
+    broken = InstallFailure("venv", "venv_broken", "%s is an environment of this installer but it no longer works" % venv,
+                            "pass another --venv path", retryable=False)
+    python = venv_python(venv)
+    if not os.path.exists(os.path.join(venv, "pyvenv.cfg")) or not os.path.exists(python):
+        raise broken
+    info = interpreter_info(python, env)
+    if info is None or not _same_dir(str(info.get("prefix", "")), venv):
+        raise broken
+    if tuple(info["version"][:2]) < need:
+        raise InstallFailure("venv", "venv_python_too_old",
+                             "%s uses Python %s, which is too old for this install" % (venv, ".".join(map(str, info["version"]))),
+                             "pass another --venv path", retryable=False)
+    if not pip_works(python, env):
+        raise broken
+    return {"executable": python, "version": info["version"]}
+
+
+def write_marker(venv: str, creator_exe: str) -> None:
+    record = {"installer": "snaplii-install", "schema": SCHEMA, "python": creator_exe,
+              "created": utc_now(), "installer_version": INSTALLER_VERSION}
+    _write_atomic(os.path.join(venv, MARKER_NAME), json.dumps(record))
+
+
+def build_venv(venv: str, reservation: Reservation, candidates: List[Dict[str, object]], need: Tuple[int, int],
+               env: Dict[str, str], mode: str) -> Dict[str, object]:
+    if mode == "new":
+        reservation.publish({"pid": os.getpid(), "created": utc_now()})
+    record = reservation.read() or {}
+    last = ""
+    for candidate in candidates:
+        if not os.path.isdir(venv):
+            if record.get("identity") is not None:
+                record = {k: v for k, v in record.items() if k != "identity"}
+                reservation.publish(record, update=True)
+            try:
+                os.mkdir(venv)
+            except OSError as exc:
+                raise unwritable(venv, exc)
+        if record.get("identity") is None:
+            record = dict(record, identity=dir_identity(venv), python=candidate["executable"])
+            reservation.publish(record, update=True)
+        if dir_identity(venv) != list(record["identity"]):
+            raise _occupied("%s changed identity while being built" % venv)
+        log("creating virtual environment at %s with %s" % (venv, candidate["executable"]))
+        child = run(list(candidate["argv"]) + ["-m", "venv", "--clear", venv], "venv", DEADLINES["venv"], env)
+        if child.returncode != 0:
+            last = child.stderr.tail()
+            log("venv creation with %s failed; trying the next interpreter" % candidate["executable"])
+            continue
+        python = venv_python(venv)
+        info = interpreter_info(python, env)
+        if info is None or not _same_dir(str(info.get("prefix", "")), venv) or not pip_works(python, env):
+            last = "the new environment's interpreter or pip did not work"
+            continue
+        write_marker(venv, str(candidate["executable"]))
+        reservation.remove()
+        return {"executable": python, "version": info["version"], "state": "created" if mode == "new" else "rebuilt"}
+    raise InstallFailure("venv", "venv_create_failed", "no interpreter could create a virtual environment at " + venv,
+                         required_python_remedy(), retryable=True, diagnostics=last)

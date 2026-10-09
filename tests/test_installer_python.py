@@ -126,3 +126,83 @@ def test_symlinked_duplicate_is_probed_once(installer, fake_run, tmp_path):
     out = installer.qualifying_candidates([[str(real)], [str(alias)]], (3, 10), {}, None, [])
     assert [c["executable"] for c in out] == [str(real)]
     assert len(fake_run["calls"]) == 1
+
+
+def real_candidate(installer):
+    info = installer.probe([sys.executable], dict(os.environ))
+    assert info is not None, "the test interpreter must be able to create venvs"
+    return info
+
+
+def test_build_venv_new_writes_marker_and_clears_reservation(installer, tmp_path, clean_env):
+    venv = str(tmp_path / "env")
+    res = installer.Reservation(venv)
+    env = installer.child_env(dict(os.environ))
+    result = installer.build_venv(venv, res, [real_candidate(installer)], (3, 9), env, "new")
+    assert result["state"] == "created" and os.path.exists(result["executable"])
+    marker = json.load(open(os.path.join(venv, installer.MARKER_NAME)))
+    assert marker["installer"] == "snaplii-install" and marker["python"] == sys.executable
+    assert res.read() is None
+    validated = installer.validate_existing(venv, (3, 9), env)
+    assert validated["executable"] == result["executable"]
+
+
+def test_build_venv_rebuild_records_identity_before_clear_and_skips_failing_candidates(installer, tmp_path, clean_env, monkeypatch):
+    venv = str(tmp_path / "env")
+    res = installer.Reservation(venv)
+    res.publish({"pid": 1, "created": "t"})
+    os.mkdir(venv)
+    env = installer.child_env(dict(os.environ))
+    seen = []
+    original_run = installer.run
+
+    def spy(argv, stage, deadline, env, cwd=None):
+        if "--clear" in argv:
+            seen.append(res.read().get("identity"))
+        return original_run(argv, stage, deadline, env, cwd)
+    monkeypatch.setattr(installer, "run", spy)
+    bad = {"argv": [sys.executable, "-c", "import sys; sys.exit(3)"], "executable": "/bad", "version": [3, 12, 0], "venv_ok": True}
+    result = installer.build_venv(venv, res, [bad, real_candidate(installer)], (3, 9), env, "rebuild")
+    assert result["state"] == "rebuilt"
+    assert seen and all(identity == installer.dir_identity(venv) for identity in seen)
+
+
+def test_build_venv_all_candidates_fail(installer, tmp_path, clean_env):
+    venv = str(tmp_path / "env")
+    res = installer.Reservation(venv)
+    bad = {"argv": [sys.executable, "-c", "import sys; sys.exit(3)"], "executable": "/bad", "version": [3, 12, 0], "venv_ok": True}
+    with pytest.raises(installer.InstallFailure) as info:
+        installer.build_venv(venv, res, [bad], (3, 9), installer.child_env(dict(os.environ)), "new")
+    assert info.value.code == "venv_create_failed" and info.value.retryable is True
+    assert res.read() is not None                       # the reservation stays for the next run
+
+
+def test_build_venv_vanished_directory_clears_stale_identity_before_mkdir(installer, tmp_path, clean_env, monkeypatch):
+    venv = str(tmp_path / "env")
+    res = installer.Reservation(venv)
+    res.publish({"pid": 1, "created": "t", "identity": [1, 1]})
+    published = []
+    original = res.publish
+
+    def spy(record, update=False):
+        published.append((dict(record), os.path.isdir(venv)))
+        return original(record, update)
+    res.publish = spy
+    installer.build_venv(venv, res, [real_candidate(installer)], (3, 9), installer.child_env(dict(os.environ)), "rebuild")
+    assert published[0][0].get("identity") is None and published[0][1] is False   # cleared before mkdir
+    assert published[1][0]["identity"] == installer.dir_identity(venv)
+
+
+def test_validate_existing_failures(installer, tmp_path, clean_env, monkeypatch):
+    venv = str(tmp_path / "env")
+    os.mkdir(venv)
+    with pytest.raises(installer.InstallFailure) as info:
+        installer.validate_existing(venv, (3, 9), {})
+    assert info.value.code == "venv_broken"
+    good = tmp_path / "good"
+    installer.build_venv(str(good), installer.Reservation(str(good)), [real_candidate(installer)], (3, 9),
+                         installer.child_env(dict(os.environ)), "new")
+    monkeypatch.setattr(installer, "interpreter_info", lambda exe, env: {"version": [3, 8, 0], "prefix": str(good), "executable": exe})
+    with pytest.raises(installer.InstallFailure) as info:
+        installer.validate_existing(str(good), (3, 10), installer.child_env(dict(os.environ)))
+    assert info.value.code == "venv_python_too_old"
