@@ -1426,7 +1426,8 @@ def _register_step(host: Optional[str], exe: str, platform: str, environ: Dict[s
     why = "The host must start this executable; it is not on PATH."
     snippet = {"mcpServers": {"snaplii": {"command": exe}}}
     if host == "claude-code":
-        return step("register_mcp", "pending", why, "claude", ["mcp", "add", "snaplii", "--", exe], platform)
+        # User scope: the default local scope only covers the directory it was run in.
+        return step("register_mcp", "pending", why, "claude", ["mcp", "add", "--scope", "user", "snaplii", "--", exe], platform)
     if host == "codex":
         return step("register_mcp", "pending", why, "codex", ["mcp", "add", "snaplii", "--", exe], platform)
     if host == "openclaw":
@@ -1447,7 +1448,8 @@ def _skill_step(host: Optional[str], platform: str) -> Dict[str, object]:
     why = "The skill carries the rules and flows; the server alone does not."
     if host == "openclaw":
         return step("install_skill", "pending", why, "clawhub", ["install", "snaplii-a2m-payment"], platform)
-    args = ["skills", "add", REPO] + (["-a", host] if host in ("claude-code", "codex", "cursor") else [])
+    # -g installs for the user; without it the skills land in the current project.
+    args = ["skills", "add", REPO, "-g"] + (["-a", host] if host in ("claude-code", "codex", "cursor") else [])
     return step("install_skill", "pending", why, "npx", args, platform)
 
 

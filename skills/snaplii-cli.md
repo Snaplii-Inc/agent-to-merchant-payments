@@ -228,20 +228,22 @@ this does not delete the API key in the host's secure credential store.
 
 1. **Download the Snaplii App** ([iOS](https://apps.apple.com/app/snaplii/id1596924498) / [Android](https://play.google.com/store/apps/details?id=com.snaplii.app)) — register and load Snaplii Cash balance
 2. **Create an API Key** — in the app, go to **More → Payment Methods → AI Payment Management → + New API Key**
-3. **Install the CLI** — use the supplied candidate bundle's installer when testing a candidate; otherwise `pip install -U snaplii-cli` for the latest published release.
+3. **Install the CLI** — use the supplied candidate bundle's installer when testing a candidate; otherwise run the installer from the project README (`scripts/install.py`). It puts the CLI at `~/.snaplii-env/bin/snaplii` (Windows: `%USERPROFILE%\.snaplii-env\Scripts\snaplii.exe`) and the MCP server beside it.
 
 You help users browse, purchase, and manage gift cards through Snaplii.
 
 **Runtime selection.** Follow [Auth](#auth) before executing the requested task: Meta Muse uses the CLI; other agents prefer available Snaplii MCP tools. In CLI mode, use the Bash tool to execute commands, not just print them.
 
-**PATH handling (Bash mode).** The first `snaplii` call in a session may fail with `command not found` because the script is in a directory not on PATH (typical with `pip --user` / system-Python installs). When that happens:
+**PATH handling (Bash mode).** The first `snaplii` call in a session may fail with `command not found` because the CLI is in a directory not on PATH. The README's installer leaves its environment off PATH on purpose; `pip --user` and system-Python installs often do too. When that happens:
 
-1. Run `which snaplii` (Unix) or `where.exe snaplii` (Windows). If it returns a path, prepend that directory to PATH for subsequent commands in the session.
-2. If `which` finds nothing, probe the typical locations:
+1. Run `which snaplii` (Unix) or `where.exe snaplii` (Windows). If it returns a path, use it.
+2. If `which` finds nothing, probe these locations in order:
+   - The installer's environment: `~/.snaplii-env/bin` (Windows: `%USERPROFILE%\.snaplii-env\Scripts`)
    - macOS (system Python): `~/Library/Python/3.x/bin`
    - Linux / `pip --user` / pipx: `~/.local/bin`
    - Windows: `%APPDATA%\Python\Python3xx\Scripts`
-3. Only if the binary truly does not exist, ask the user to install per the project README (do **not** run `pip install` autonomously — installs vary by system).
+3. Call the CLI by the absolute path you found. Where each command runs in a fresh shell, an `export PATH=...` does not carry over to the next command.
+4. Only if the binary truly does not exist, ask the user to install per the project README (do **not** run `pip install` autonomously — installs vary by system).
 
 Never hardcode a user-specific path; always resolve it dynamically.
 
@@ -252,7 +254,7 @@ Never hardcode a user-specific path; always resolve it dynamically.
 For a supplied candidate bundle, retain its matching CLI and skill; skip automatic updates. Published stable versions can print an update notice on an interactive terminal when a newer release is available, e.g.:
 `[snaplii] Update available: 0.8.0 -> 0.9.0. Run 'snaplii update' or 'pip install -U snaplii-cli'.`
 
-If you see this notice, run `snaplii update` once, then continue. It self-installs the latest version from PyPI. The check is cached (once per day) and never blocks normal commands.
+If you see this notice and the CLI lives in `~/.snaplii-env`, it came from the README's installer: tell the user to close the host, re-run the installer, and open a new session, because the installer upgrades the CLI and the MCP server together. Otherwise run `snaplii update` once, then continue. It self-installs the latest version from PyPI. The check is cached (once per day) and never blocks normal commands.
 
 ### Step 1: Check authentication state
 

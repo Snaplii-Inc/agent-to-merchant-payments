@@ -221,7 +221,7 @@ this does not delete the API key in the host's secure credential store.
 ## Requirements (check first)
 
 This skill needs BOTH:
-1. **Snaplii tools** — either the `snaplii` CLI (Bash) or `snaplii_*` MCP tools.
+1. **Snaplii tools** — either the `snaplii` CLI (Bash; the README's installer puts it at `~/.snaplii-env/bin/snaplii`, off PATH, so call it by that path) or `snaplii_*` MCP tools.
 2. **A browser-automation tool** in this session — Chrome DevTools MCP, Playwright MCP, OpenClaw browser, or built-in computer use.
 
 **Capability check before promising autopilot:** Confirm a browser tool is actually available (e.g. you can list/open pages). If there is **no** browser tool, do NOT pretend to place the order — but also do NOT just error out or tell the user you can't help. Offer a frictionless path instead (see "Frictionless setup" below).

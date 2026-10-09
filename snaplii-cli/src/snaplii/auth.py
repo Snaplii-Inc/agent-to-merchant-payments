@@ -209,7 +209,8 @@ def secure_entry_actions() -> dict | None:
 def render_auth_skill_block() -> str:
     """Canonical Auth text for each independently distributed Snaplii skill."""
     action = build_auth_action("auth_required", host="muse")
-    command = " ".join(action["argv"])
+    # Distributed skill text names the CLI portably, never this machine's path.
+    command = " ".join(["snaplii", *action["argv"][1:]])
     secure_actions = secure_entry_actions()
     if secure_actions is None:
         invocation = ("Automatic secure-input invocation is unavailable in this version. A missing or\n"
@@ -387,6 +388,23 @@ def normalize_base_url(base_url: str) -> str:
     return origin + urlsplit(base_url).path.rstrip("/")
 
 
+def cli_executable() -> str:
+    """How a relayed command names the CLI: the bare name when `snaplii` on PATH is
+    this very CLI, else the absolute path beside this interpreter. The installer's
+    environment is deliberately not on PATH, so a bare name would not be found."""
+    import shutil
+    import sys
+    bindir = Path(sys.executable).parent
+    for name in (("snaplii.exe", "snaplii") if os.name == "nt" else ("snaplii",)):
+        local = bindir / name
+        if local.is_file():
+            found = shutil.which("snaplii")
+            if found and os.path.realpath(found) == os.path.realpath(local):
+                return "snaplii"
+            return str(local)
+    return "snaplii"
+
+
 def require_login_origin(base_url: str) -> str:
     """Return the gateway origin, or refuse when it is not a Snaplii gateway."""
     origin = normalize_origin(base_url)
@@ -437,8 +455,8 @@ def build_auth_action(state: str, *, host: str, auth_method=None, origin=DEFAULT
                 "after_success": build_auth_action("auth_required", host=host, auth_method="vault", origin=origin)}
     if state in ("secure_entry_unavailable", "credential_required", "invalid_key", "credential_lookup_failed"):
         return {"type": "offer_legacy", "requires_user_choice": True,
-                "argv": ["snaplii", "--base-url", normalize_base_url(origin), "init", "--legacy-auth"]}
-    argv = ["snaplii", "--base-url", normalize_base_url(origin), "init"]
+                "argv": [cli_executable(), "--base-url", normalize_base_url(origin), "init", "--legacy-auth"]}
+    argv = [cli_executable(), "--base-url", normalize_base_url(origin), "init"]
     if secure:
         argv.append("--vault-auth")
     action = {"type": "run_cli", "argv": argv}

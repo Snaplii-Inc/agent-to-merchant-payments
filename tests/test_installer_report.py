@@ -22,7 +22,7 @@ def test_render_command_posix_and_powershell(installer):
 
 def test_next_steps_per_host(installer):
     comps = installed(installer)
-    for host, exe, first in [("claude-code", "claude", "claude mcp add snaplii -- /home/u/.snaplii-env/bin/snaplii-mcp"),
+    for host, exe, first in [("claude-code", "claude", "claude mcp add --scope user snaplii -- /home/u/.snaplii-env/bin/snaplii-mcp"),
                              ("codex", "codex", "codex mcp add snaplii -- /home/u/.snaplii-env/bin/snaplii-mcp"),
                              ("openclaw", "openclaw", "openclaw mcp add snaplii --command /home/u/.snaplii-env/bin/snaplii-mcp")]:
         steps = installer.next_steps(host, "unknown", comps, "/home/u/.snaplii-env", None, False, False, "linux", {"HOME": "/home/u"}, ["python3", "install.py"])
@@ -30,7 +30,7 @@ def test_next_steps_per_host(installer):
         register = steps[1]
         assert register["executable"] == exe and register["command"] == first and register["status"] == "pending"
     skill = installer.next_steps("claude-code", "unknown", comps, "/v", None, False, False, "linux", {}, [])[0]
-    assert skill["args"] == ["skills", "add", "Snaplii-Inc/agent-to-merchant-payments", "-a", "claude-code"]
+    assert skill["args"] == ["skills", "add", "Snaplii-Inc/agent-to-merchant-payments", "-g", "-a", "claude-code"]
     assert installer.next_steps("openclaw", "unknown", comps, "/v", None, False, False, "linux", {}, [])[0]["command"] == "clawhub install snaplii-a2m-payment"
     desktop = installer.next_steps("claude-desktop", "unknown", comps, "/v", None, False, False, "darwin", {"HOME": "/Users/u"}, [])[1]
     assert desktop["file"].endswith("Library/Application Support/Claude/claude_desktop_config.json")

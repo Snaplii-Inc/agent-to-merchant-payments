@@ -44,10 +44,10 @@ The account country is fixed at login and enforced by the gateway, so the catalo
 One command for any agent that supports the [Agent Skills](https://agentskills.io) format, using the [`skills` installer](https://github.com/vercel-labs/skills):
 
 ```bash
-npx skills add Snaplii-Inc/agent-to-merchant-payments
+npx skills add Snaplii-Inc/agent-to-merchant-payments -g
 ```
 
-This finds both skills in this repository and installs them under their skill names (verified with `--list` against this repository). Add `--skill snaplii-cli` to install one, `-a claude-code` to target one agent, `-g` to install user-wide, or `--list` to preview without installing. The installer, not this repository, decides which agents it supports; its README lists them.
+This finds both skills in this repository and installs them under their skill names for the user (verified with `--list` against this repository). Without `-g` they go into the current project, next to its code. Add `--skill snaplii-cli` to install one, `-a claude-code` to target one agent, or `--list` to preview without installing. The installer, not this repository, decides which agents it supports; its README lists them.
 
 | Skill | Source folder | Use when |
 |---|---|---|
@@ -101,9 +101,9 @@ Invoke-WebRequest https://raw.githubusercontent.com/Snaplii-Inc/agent-to-merchan
 py -3 snaplii-install.py --host claude-code
 ```
 
-`--host` is one of `claude-code`, `claude-desktop`, `codex`, `cursor`, `openclaw`, `instinct`; omit it for generic steps. Add `--cli-only` to skip the MCP server (refused in Instinct), `--check` to verify without changing anything, `--venv PATH` to choose the environment.
+`--host` is one of `claude-code`, `claude-desktop`, `codex`, `cursor`, `openclaw`, `instinct`; omit it for generic steps. Add `--cli-only` to skip the MCP server (refused in Instinct), `--check` to verify without changing anything, `--venv PATH` to choose the environment, `--python PATH` to try a specific interpreter first, or `--source PATH` to install from a repository clone instead of PyPI.
 
-Any Python 3.8 or newer can start the script; if no Python 3.10+ is available it fetches CPython 3.12 with [uv](https://docs.astral.sh/uv/). With no Python at all, bootstrap uv first:
+Any Python 3.8 or newer can start the script; if no Python 3.10+ is available it fetches CPython 3.12 with [uv](https://docs.astral.sh/uv/). uv keeps that Python in its own data directory, and the environment depends on it. With no Python at all, bootstrap uv first:
 
 ```bash
 export UV_INSTALL_DIR="$HOME/.local/bin" UV_NO_MODIFY_PATH=1
@@ -139,7 +139,7 @@ Windows support is by construction (`Scripts\`, the `py` launcher, PowerShell qu
 
 ### Sessions and reconnecting
 
-A connection exchanges the API key once for a session token. The key is not kept, so when the session ends the key has to be supplied again, unless the host holds it (Muse's credential store, the Instinct vault). The token lives in the OS keychain, in the owner-only config file, or only in the MCP server's memory.
+A connection exchanges the API key once for a session token. The key is not kept, so when the session ends the key has to be supplied again, unless the host holds it (Muse's credential store, the Instinct vault). The token lives in the OS keychain, in the owner-only config file, or only in the MCP server's memory. The gateway sets when a session expires, so rely on `has_valid_token` rather than a fixed lifetime. The Snaplii App shows a new key only once: keep it in a password manager, because it is needed again whenever a session ends on a host that does not store it.
 
 `snaplii config show` and `snaplii_config_show` always return `has_valid_token`, `auth_state`, `host`, `auth_method`, `credential_storage`, `base_url`, and `next_action`. The states you will see:
 
@@ -162,9 +162,11 @@ A connection exchanges the API key once for a session token. The key is not kept
 | Muse | `run_cli` with `init --vault-auth`, or a `muse_secure_entry` action when the stored key is missing or rejected | The agent; the stored key is reused without asking |
 | Instinct | `call_mcp_tool` `snaplii_connect`, with the Instinct instruction attached | The agent, through the vault-filled page |
 
+`argv[0]` is `snaplii` when that name on PATH is the same CLI; otherwise it is the CLI's absolute path, such as the installer's `~/.snaplii-env/bin/snaplii`. Relay `argv` unchanged.
+
 Reconnecting by host:
 
-- **Shell-only agent.** Ask the user to run `snaplii init` in their terminal and enter the key at the hidden prompt, then run `snaplii config show` again. On a machine without an OS keychain the CLI refuses to keep a session it cannot store: `init` answers `session_cache_failed` with reason `no_persistent_storage`. The user then sets `SNAPLII_ALLOW_INSECURE=1`, or `allow_insecure_mode: true` in the config file, to keep the token in the owner-only config file, and runs `init` again.
+- **Shell-only agent.** Ask the user to run the `next_action.argv` command in their own terminal and enter the key at the hidden prompt, then check the status again. On a machine without an OS keychain the CLI refuses to keep a session it cannot store: `init` answers `session_cache_failed` with reason `no_persistent_storage`. The user then sets `allow_insecure_mode: true` in the config file, or `SNAPLII_ALLOW_INSECURE=1`, to keep the token in the owner-only config file, and runs `init` again. The config-file setting applies to every Snaplii process, including an MCP server the host starts; the environment variable reaches that server only if the host passes it on.
 - **MCP host with a card or a hosted page.** Call `snaplii_connect` only while `has_valid_token` is false. A result of `card_requested`, `pending`, `declined`, `elicit_unsupported`, or `elicit_failed` is not a connection; only `authenticated` or `already_connected` is. Re-check `snaplii_config_show` after the user finishes the card or page. A session the server could keep only in memory is gone after a restart: connect again in the restarted server.
 - **MCP host with neither.** `snaplii_connect` answers `use_terminal_or_chat_key`; offer the two ways above and re-check afterwards.
 - **Muse.** Follow `next_action`; the stored key is exchanged again without user input. Only a missing or rejected key opens Muse's native secure input.
@@ -199,6 +201,7 @@ A connection attempt can also end in one of these states. Honor its action befor
   - [MCP Server (Claude, OpenClaw, Cursor, Instinct)](#mcp-server-claude-openclaw-cursor-instinct)
   - [REST API (Any LLM)](#rest-api-any-llm)
 - [Components](#components)
+- [Uninstall](#uninstall)
 - [Troubleshooting](#troubleshooting)
 - [Security](#security)
 - [Why Snaplii](#why-snaplii)
@@ -224,23 +227,6 @@ Gift-card purchases can help users save through eligible offers and cashback. Av
 - Node.js with `npx`, only for the one-line `npx skills add` install; the manual copy needs neither
 - Snaplii Mobile App  
   _Required to generate your API key._
-
-<details>
-<summary><strong>Mac users: check your Python version</strong></summary>
-
-```bash
-python3 --version
-```
-
-If your Python version is below 3.10, install Python via Homebrew:
-
-```bash
-brew install python@3.12
-```
-
-Then use `python3.12` and `pip3.12` instead of `python3` / `pip3` in the steps below.
-
-</details>
 
 ---
 
@@ -503,10 +489,10 @@ pip3 install snaplii-mcp
 Connecting from inside the client is preferred: call `snaplii_connect`, and the host renders a secure card or opens a hosted page where the user enters the key off-model. If the client can do neither, the user authenticates in their own terminal first; an agent cannot answer the hidden prompt:
 
 ```bash
-snaplii init
+~/.snaplii-env/bin/snaplii init
 ```
 
-Enter your API key when prompted.
+Enter your API key when prompted. After a manual install that put `snaplii` on PATH, `snaplii init` is the same command.
 
 In Instinct, skip this step and follow the **Instinct** instructions under Step 3.
 
@@ -543,9 +529,14 @@ Restart Claude Desktop after saving. From a clone, `python3 scripts/setup_claude
 <details>
 <summary><strong>Claude Code</strong></summary>
 
+Register the installer's server for your user, so it works in every project, then check it:
+
 ```bash
-claude mcp add snaplii -- python3 /path/to/agent-to-merchant-payments/mcp-server/server.py
+claude mcp add --scope user snaplii -- ~/.snaplii-env/bin/snaplii-mcp
+claude mcp get snaplii   # expect "User config" and "Connected"
 ```
+
+Without `--scope user`, Claude Code registers the server only for the directory you ran the command in. If it says the server already exists, it is registered; check it with `claude mcp get snaplii`. From a clone, register the clone's Python and `mcp-server/server.py` the same way.
 
 </details>
 
@@ -714,6 +705,19 @@ agent-to-merchant-payments/
 ```
 
 The `skills/*.md` files and the `clawhub-*/SKILL.md` folders are kept byte-identical; `scripts/sync_muse_auth_docs.py --check` verifies that their Auth sections match the code.
+
+---
+
+## Uninstall
+
+Remove what the installer and the host registration added:
+
+1. Revoke the API key in the Snaplii App: **More → Payment Methods → AI Payment Management**.
+2. Sign out locally: `~/.snaplii-env/bin/snaplii config clear`. It does not delete a key the host stores (Muse, the Instinct vault).
+3. Remove the MCP registration: `claude mcp remove snaplii` in Claude Code, `codex mcp remove snaplii` in Codex, or delete the `snaplii` entry from `claude_desktop_config.json` or `.cursor/mcp.json`.
+4. Remove the skills: `npx skills remove -g snaplii-cli snaplii-autopilot`. On OpenClaw, uninstall the ClawHub skill.
+5. Delete the environment and the local configuration: `rm -rf ~/.snaplii-env ~/.snaplii` (PowerShell: `Remove-Item -Recurse -Force $HOME\.snaplii-env, $HOME\.snaplii`).
+6. If the installer fetched CPython 3.12 with uv and nothing else uses it, remove it with `uv python uninstall 3.12`. If the installer also installed uv into `~/.local/bin`, delete `uv` and `uvx` there.
 
 ---
 
