@@ -65,7 +65,7 @@ def is_windows() -> bool:
 
 
 def utc_now() -> str:
-    return datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def log(message: str) -> None:
@@ -625,3 +625,195 @@ class WindowsJob:
             if time.monotonic() >= end:
                 return self.member_pids()
             time.sleep(0.2)
+
+
+# ----------------------------------------------------------------------------
+# Ownership: lock, reservation, classification
+# ----------------------------------------------------------------------------
+def unwritable(path: str, exc: OSError) -> InstallFailure:
+    return InstallFailure("destination", "destination_unwritable",
+                          "cannot create %s: %s" % (path, exc),
+                          "pass a writable --venv path", retryable=False,
+                          diagnostics="errno %s: %s" % (exc.errno, exc.strerror))
+
+
+def _write_atomic(path: str, text: str) -> None:
+    fd, tmp = tempfile.mkstemp(prefix=os.path.basename(path) + ".", suffix=".tmp", dir=os.path.dirname(path))
+    with os.fdopen(fd, "w") as handle:
+        handle.write(text)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp, path)
+
+
+class Lock:
+    def __init__(self, venv_path: str) -> None:
+        self.path = venv_path + ".lock"
+        self.held = False
+
+    def _read(self) -> Dict[str, object]:
+        try:
+            with open(self.path, "r") as handle:
+                record = json.load(handle)
+            return record if isinstance(record, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def _locked(self) -> InstallFailure:
+        record = self._read()
+        if record.get("state") == "cleanup_incomplete":
+            pids = [int(p) for p in record.get("surviving_pids", []) if str(p).isdigit()]
+            alive = [p for p in pids if pid_alive(p)]
+            if alive or not pids:
+                remedy = ("processes %s from an earlier run may still be writing to the environment; wait "
+                          "until they have exited, then delete %s" % (alive or pids, self.path))
+            else:
+                remedy = "the earlier run's processes %s have exited; delete %s and re-run" % (pids, self.path)
+        else:
+            remedy = "wait for the other installer, or delete %s if no installer is running" % self.path
+        return InstallFailure("destination", "venv_locked", "another installer holds " + self.path,
+                              remedy, retryable=True)
+
+    def acquire(self) -> None:
+        try:
+            fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            raise self._locked()
+        except OSError as exc:
+            raise unwritable(self.path, exc)
+        with os.fdopen(fd, "w") as handle:
+            handle.write(json.dumps({"pid": os.getpid(), "created": utc_now()}))
+        self.held = True
+
+    def retain(self, surviving_pids: List[int]) -> None:
+        _write_atomic(self.path, json.dumps({"state": "cleanup_incomplete", "surviving_pids": list(surviving_pids),
+                                             "pid": os.getpid(), "created": utc_now()}))
+        self.held = False
+
+    def release(self) -> None:
+        if self.held:
+            try:
+                os.remove(self.path)
+            except OSError:
+                pass
+            self.held = False
+
+
+class ForeignFile(Exception):
+    pass
+
+
+class Reservation:
+    def __init__(self, venv_path: str) -> None:
+        self.venv = venv_path
+        self.path = venv_path + ".creating"
+        self.parent = os.path.dirname(venv_path)
+        self.name = os.path.basename(venv_path)
+
+    def read(self) -> Optional[Dict[str, object]]:
+        try:
+            with open(self.path, "r") as handle:
+                text = handle.read()
+        except FileNotFoundError:
+            return None
+        except OSError:
+            raise ForeignFile(self.path)
+        try:
+            record = json.loads(text)
+        except ValueError:
+            raise ForeignFile(self.path)
+        if not isinstance(record, dict) or record.get("installer") != "snaplii-install" or record.get("schema") != SCHEMA:
+            raise ForeignFile(self.path)
+        return record
+
+    def publish(self, record: Dict[str, object], update: bool = False) -> None:
+        payload = dict(record)
+        payload.update({"installer": "snaplii-install", "schema": SCHEMA})
+        try:
+            fd, tmp = tempfile.mkstemp(prefix=self.name + ".creating.", suffix=".tmp", dir=self.parent)
+        except OSError as exc:
+            raise unwritable(self.path, exc)
+        try:
+            with os.fdopen(fd, "w") as handle:
+                handle.write(json.dumps(payload))
+                handle.flush()
+                os.fsync(handle.fileno())
+            if update:
+                os.replace(tmp, self.path)
+            else:
+                os.link(tmp, self.path)
+                os.remove(tmp)
+        except FileExistsError:
+            os.remove(tmp)
+            raise
+        except OSError as exc:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+            raise unwritable(self.path, exc)
+
+    def remove(self) -> None:
+        try:
+            os.remove(self.path)
+        except FileNotFoundError:
+            pass
+
+    def leftovers(self) -> List[str]:
+        prefix = self.name + ".creating."
+        try:
+            names = os.listdir(self.parent)
+        except OSError:
+            return []
+        return sorted(os.path.join(self.parent, n) for n in names if n.startswith(prefix) and n.endswith(".tmp"))
+
+
+def dir_identity(path: str) -> List[int]:
+    info = os.stat(path)
+    return [int(info.st_dev), int(info.st_ino)]
+
+
+def marker_ours(venv_path: str) -> bool:
+    try:
+        with open(os.path.join(venv_path, MARKER_NAME), "r") as handle:
+            record = json.load(handle)
+    except (OSError, ValueError):
+        return False
+    return isinstance(record, dict) and record.get("installer") == "snaplii-install" and record.get("schema") == SCHEMA
+
+
+def classify_destination(venv_path: str, reservation: Reservation, check_mode: bool,
+                         warnings: List[str]) -> str:
+    for leftover in reservation.leftovers():
+        warnings.append("leftover temporary file %s from an interrupted run; delete it manually" % leftover)
+    foreign = False
+    try:
+        record = reservation.read()
+    except ForeignFile:
+        record, foreign = None, True
+    exists = os.path.isdir(venv_path)
+    if exists and marker_ours(venv_path):
+        if foreign:
+            warnings.append("%s exists but was not written by this installer; left alone" % reservation.path)
+        elif record is not None:
+            if check_mode:
+                warnings.append("leftover reservation %s; check mode leaves it in place" % reservation.path)
+            else:
+                reservation.remove()
+        return "ours"
+    if foreign:
+        raise _occupied("%s exists and was not written by this installer" % reservation.path)
+    if record is not None:
+        identity = record.get("identity")
+        if not exists:
+            return "rebuild"
+        if identity is None:
+            if not os.listdir(venv_path):
+                return "rebuild"
+            raise _occupied("%s is not empty and its reservation recorded no identity" % venv_path)
+        if dir_identity(venv_path) == list(identity):
+            return "rebuild"
+        raise _occupied("%s does not match the identity its reservation recorded" % venv_path)
+    if exists:
+        raise _occupied("%s exists and was not created by this installer" % venv_path)
+    return "new"
