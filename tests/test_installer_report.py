@@ -31,7 +31,7 @@ def test_next_steps_per_host(installer):
         assert register["executable"] == exe and register["command"] == first and register["status"] == "pending"
     skill = installer.next_steps("claude-code", "unknown", comps, "/v", None, False, False, "linux", {}, [])[0]
     assert skill["args"] == ["skills", "add", "https://github.com/Snaplii-Inc/agent-to-merchant-payments/tree/v0.19.0", "-g", "-a", "claude-code"]
-    assert installer.next_steps("openclaw", "unknown", comps, "/v", None, False, False, "linux", {}, [])[0]["command"] == "clawhub install snaplii-a2m-payment"
+    assert installer.next_steps("openclaw", "unknown", comps, "/v", None, False, False, "linux", {}, [])[0]["executable"] == "npx"
     desktop = installer.next_steps("claude-desktop", "unknown", comps, "/v", None, False, False, "darwin", {"HOME": "/Users/u"}, [])[1]
     assert desktop["file"].endswith("Library/Application Support/Claude/claude_desktop_config.json")
     assert desktop["json"] == {"mcpServers": {"snaplii": {"command": "/home/u/.snaplii-env/bin/snaplii-mcp"}}}
@@ -133,7 +133,7 @@ def test_main_install_happy_path_with_fake_stages(installer, capsys, tmp_path, m
     assert report["python"]["acquired_by"] is None and report["installer_version"] == "1"
     assert ids(report["next_steps"]) == ["install_skill", "register_mcp", "reload_host", "connect", "cli_on_path", "update"]
     update_why = [s for s in report["next_steps"] if s["id"] == "update"][0]["why"]
-    assert "quit the host" in update_why and "same flags" in update_why
+    assert "files_in_use" in update_why and "same flags" in update_why
     assert not os.path.exists(venv + ".lock")
     monkeypatch.setattr(installer, "validate_existing", lambda v, need, env: {"executable": installer.venv_python(v), "version": [3, 12, 0]})
     code, report = run_main(installer, capsys, ["--check", "--host", "claude-code"], {"HOME": str(tmp_path)})
@@ -359,3 +359,31 @@ def test_detected_muse_installs_the_cli_only(installer, capsys, tmp_path, monkey
     assert code == 0 and report["status"] == "installed" and seen["cli_only"] is True
     assert report["components"]["mcp"] == {"status": "skipped"}
     assert any(w.startswith("muse:") for w in report["warnings"])
+
+
+# Second Codex review: the report follows the one-release flow and the skill's connection rule.
+
+def test_openclaw_skill_comes_from_the_same_release(installer):
+    comps = installed(installer)
+    from_clone = installer.next_steps("openclaw", "unknown", comps, "/v", None, False, False, "linux", {}, [], source="/src")[0]
+    assert from_clone["args"] == ["skills", "add", "/src", "-g", "-a", "openclaw"]
+    from_tag = installer.next_steps("openclaw", "unknown", comps, "/v", None, False, False, "linux", {}, [])[0]
+    assert from_tag["args"] == ["skills", "add", "https://github.com/Snaplii-Inc/agent-to-merchant-payments/tree/v0.19.0", "-g", "-a", "openclaw"]
+
+
+def test_muse_skill_step_names_the_clone(installer):
+    comps = {"cli": installed(installer)["cli"], "mcp": {"status": "skipped"}}
+    skill = installer.next_steps("muse", "unknown", comps, "/v", None, False, True, "linux", {}, [], source="/src")[0]
+    assert "/src/clawhub-publish" in skill["why"]
+
+
+def test_connect_step_waits_for_a_request(installer):
+    connect = [s for s in installer.next_steps("claude-code", "unknown", installed(installer), "/v", None, False, False,
+                                               "linux", {}, []) if s["id"] == "connect"][0]
+    assert "asks to connect" in connect["why"] and "Muse" in connect["why"]
+
+
+def test_update_step_upgrades_first_and_closes_the_host_only_when_files_are_in_use(installer):
+    update = [s for s in installer.next_steps("claude-code", "unknown", installed(installer), "/v", None, False, False,
+                                              "linux", {}, []) if s["id"] == "update"][0]
+    assert "quit the host" not in update["why"] and "files_in_use" in update["why"] and "new session" in update["why"]

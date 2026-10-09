@@ -53,3 +53,48 @@ def test_small_fixes():
     troubleshooting = README.split("### The skill is installed but the agent does not use it", 1)[1].split("\n### ", 1)[0]
     assert "Muse" in troubleshooting
     assert "No credential storage" not in README
+
+
+# Second Codex review: one ordered finish, one release, no host-specific detours.
+
+def test_verify_comes_after_the_report_and_registration():
+    assert README.index("**Verify.**") > README.index("| `pending` |")
+    pending = [line for line in README.splitlines() if line.startswith("| `pending` |")][0]
+    assert "`json`" in pending and "`file`" in pending and "never run" in pending
+
+
+def test_connection_waits_for_a_request_except_a_first_muse_install():
+    verify = README.split("**Verify.**", 1)[1].split("\n\n", 1)[0]
+    assert "asks to connect" in verify and "Muse" in verify
+    rules = README.split("### Rules the skill enforces", 1)[1].split("\n### ", 1)[0]
+    assert "installing alone does not" in rules
+
+
+def test_branches_before_the_example_and_manual_copy_is_generic():
+    block = _section("### Install from a release")
+    assert block.index("Manual install") < block.index("```bash")
+    manual = README.split("**Manual install.**", 1)[1].split("Known skill directories", 1)[0]
+    assert "do not guess" in manual and "SKILLS_DIR" in manual
+
+
+def test_muse_installs_from_the_clone():
+    muse = README.split("**Muse** runs the skill", 1)[1].split("\n\n", 1)[0]
+    assert "snaplii-src/clawhub-publish" in muse and "Ask Muse" not in muse
+
+
+def test_one_release_is_the_only_install_route():
+    for route in ("clawhub install", "pipx install", "pip3 install", "/tree/v", "mcp-server/server.py",
+                  "pip install -e", "Without `--source`"):
+        assert route not in README, route
+
+
+def test_update_runs_first_and_closes_the_host_only_when_files_are_in_use():
+    update = README.split("**Updating.**", 1)[1].split("\n\n", 1)[0]
+    assert "quit the host" not in update and "files_in_use" in update and "new session" in update
+
+
+def test_second_review_small_fixes():
+    assert "`not_installed`" in README
+    assert "a new session needs it again" not in README
+    components = README.split("## Components", 1)[1].split("\n## ", 1)[0]
+    assert "install.py" in components

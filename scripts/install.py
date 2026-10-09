@@ -1447,11 +1447,10 @@ def _register_step(host: Optional[str], exe: str, platform: str, environ: Dict[s
 def _skill_step(host: Optional[str], platform: str, source: Optional[str] = None,
                 cli_version: Optional[str] = None) -> Dict[str, object]:
     why = "The skill carries the rules and flows; the server alone does not."
-    if host == "openclaw":
-        return step("install_skill", "pending", why, "clawhub", ["install", "snaplii-a2m-payment"], platform)
     if host == "muse":
-        return step("install_skill", "pending", "Muse installs skills itself: ask Muse to install the snaplii-cli skill "
-                    "(clawhub-publish/SKILL.md in this release); it lands under ~/workspace/skills/ in a folder Muse names.")
+        folder = os.path.join(source, "clawhub-publish") if source else "clawhub-publish/ in this release"
+        return step("install_skill", "pending", "Muse installs skills itself: install the snaplii-cli skill from %s "
+                    "with Muse's own skill installation; it lands under ~/workspace/skills/ in a folder Muse names." % folder)
     # The skill comes from the same release as the packages: the clone given to
     # --source, else the tag of the installed CLI, else the repository.
     if source:
@@ -1461,7 +1460,7 @@ def _skill_step(host: Optional[str], platform: str, source: Optional[str] = None
     else:
         origin = REPO
     # -g installs for the user; without it the skills land in the current project.
-    args = ["skills", "add", origin, "-g"] + (["-a", host] if host in ("claude-code", "codex", "cursor") else [])
+    args = ["skills", "add", origin, "-g"] + (["-a", host] if host in ("claude-code", "codex", "cursor", "openclaw") else [])
     return step("install_skill", "pending", why, "npx", args, platform)
 
 
@@ -1494,9 +1493,12 @@ def next_steps(host: Optional[str], detected: str, components: Dict[str, dict], 
         steps.append(step("retry", "required", "nothing is installed yet; run the installer",
                           command=render_command(without[0], without[1:], platform) if without else None))
     if cli_ok or mcp_ok:
-        steps.append(step("reload_host", "pending", "Skills and MCP servers load at session start; open a new session."))
-        steps.append(step("connect", "pending", "Check has_valid_token with snaplii_config_show, or with the CLI's config show; "
-                          "if false, follow its next_action. The installer never does this."))
+        steps.append(step("reload_host", "pending", "Most hosts load skills and MCP servers at session start; "
+                          "if yours does, open a new session."))
+        steps.append(step("connect", "pending", "When the user asks to connect or gives a Snaplii task, or right away on a "
+                          "first install in Muse: check has_valid_token with snaplii_config_show, or with the CLI's config "
+                          "show; if false, follow its next_action. Installing alone does not connect. The installer never "
+                          "does this."))
     if cli_ok:
         bin_dir = os.path.dirname(str(cli["executable"]))
         if platform == "win32":
@@ -1508,11 +1510,12 @@ def next_steps(host: Optional[str], detected: str, components: Dict[str, dict], 
                               "export", ["PATH=%s:$PATH" % bin_dir], platform,
                               command='export PATH="%s:$PATH"' % bin_dir))
     if cli_ok and (mcp_ok or mcp.get("status") == "skipped") and failure is None:
-        steps.append(step("update", "optional", "To update later: ask the user to quit the host, then clone the new "
-                          "release tag, install the skill from that clone, and run its scripts/install.py with --source "
-                          "pointing at it and the same flags; the skill, the CLI and the MCP server then come from one "
-                          "release. Do not use `snaplii update` in this environment: it upgrades only the CLI and leaves "
-                          "the MCP server on its old version."))
+        steps.append(step("update", "optional", "To update later: clone the new release tag into a fresh directory, "
+                          "install the skill from that clone, and run its scripts/install.py with --source pointing at it "
+                          "and the same flags. If it reports files_in_use, the running Snaplii server holds the files: ask "
+                          "the user to close the host and run the retry command in a terminal. Then open a new session so "
+                          "the host loads the new skill and server. Do not use `snaplii update` in this environment: it "
+                          "upgrades only the CLI and leaves the MCP server on its old version."))
     return steps
 
 

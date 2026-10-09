@@ -30,13 +30,13 @@ The account country is fixed at login, so the catalog, currency and bill pay fol
 
 ### How Snaplii and agent tools work together
 
-- **The skill tells the agent what to do; MCP and the CLI do it.** Both reach the same gateway with mostly the same operation names: `snaplii balance` is `snaplii_balance`, and the [CLI](#cli-commands) and [MCP](#available-mcp-tools) tables list the exceptions. Muse uses the CLI, Instinct uses MCP only, and every other agent prefers MCP when it is present.
-- **Check the session in the runtime that runs the task.** The CLI and MCP share `~/.snaplii/config.json` and the OS keychain, so a session stored there serves both; a session the MCP server keeps only in memory serves only that server.
-- **The API key stays out of the chat wherever the host allows it:** a secure card, the hosted connect page, or the host's own vault (Muse, Instinct). Otherwise the user runs `snaplii init` in their own terminal or, if the Snaplii MCP tools are available, pastes the key for `snaplii_init`, which passes it through the model once. Sign-in works only with the Snaplii production and staging gateways.
+- **The skill tells the agent what to do; MCP and the CLI do it**, with matching operation names (`snaplii balance` is `snaplii_balance`). Muse uses the CLI, Instinct uses MCP only, and other agents prefer MCP when present.
+- **Check the session in the runtime that runs the task.** A session in `~/.snaplii/config.json` or the OS keychain serves both; one the MCP server keeps in memory serves only that server.
+- **The API key stays out of the chat where the host allows it:** a secure card, the hosted connect page, or the host's vault (Muse, Instinct). Otherwise the user runs `snaplii init` in their own terminal or, if the Snaplii MCP tools are available, pastes the key for `snaplii_init`, which passes it through the model once. Only the Snaplii production and staging gateways accept a sign-in.
 
 ### Install from a release
 
-Install the skill, the CLI and the MCP server from one release tag, so all three come from the same commit:
+Install the skill, the CLI and the MCP server from one release tag, so all three come from the same commit. Clone once; install the skills with `npx skills` if it knows your agent, by copying the folders (**Manual install** below) if it does not or Node.js is missing, or in Muse as the **Muse** paragraph says; then run the installer from the same clone. In Claude Code:
 
 ```bash
 git clone --depth 1 --branch v0.19.0 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
@@ -44,25 +44,26 @@ npx skills add ./snaplii-src -g -a claude-code
 python3 snaplii-src/scripts/install.py --host claude-code --source ./snaplii-src
 ```
 
-- `-a` is your agent's name in the `skills` installer, such as `claude-code`, `codex`, `cursor`, `gemini-cli`, `github-copilot` or `openclaw`. Always pass it: without it the installer asks an interactive question. If it does not know your agent, copy the skill folders instead, as **Manual install** below shows.
-- `--host` takes `claude-code`, `claude-desktop`, `codex`, `cursor`, `openclaw`, `instinct` or `muse`; for any other agent, leave it out. An agent that cannot use MCP servers adds `--cli-only`. Muse gets the CLI only by itself, and Instinct needs MCP.
+- `-a` is your agent's name in the `skills` installer, such as `claude-code`, `codex`, `cursor`, `gemini-cli`, `github-copilot` or `openclaw`. Always pass it: without it the installer asks an interactive question.
+- `--host` takes `claude-code`, `claude-desktop`, `codex`, `cursor`, `openclaw`, `instinct` or `muse`; for any other agent, leave it out. An agent without MCP adds `--cli-only`; Muse gets the CLI only by itself, and Instinct needs MCP.
 - On Windows, use `py -3` in place of `python3`. The skills are copied and the packages are built into `~/.snaplii-env`, so you can delete `snaplii-src` afterwards.
 
 ### Install the Agent Skill
 
-The second line of [Install from a release](#install-from-a-release) runs the [`skills` installer](https://github.com/vercel-labs/skills), which serves any agent that supports the [Agent Skills](https://agentskills.io) format. It installs both skills under their names for the user; without `-g` they would go into the current project. Add `--skill snaplii-cli` to install one, or `--list` to preview. Without a clone, `npx skills add https://github.com/Snaplii-Inc/agent-to-merchant-payments/tree/v0.19.0 -g -a claude-code` installs the same release straight from GitHub.
+The second line of [Install from a release](#install-from-a-release) runs the [`skills` installer](https://github.com/vercel-labs/skills), which serves any [Agent Skills](https://agentskills.io) agent; `-g` installs both skills for the user instead of the current project. Add `--skill snaplii-cli` for one, or `--list` to preview.
 
 | Skill | Source folder | Use when |
 |---|---|---|
 | `snaplii-cli` | `clawhub-publish/` | Browsing, buying, and managing gift cards; balance; bill pay; P2P transfers. Works without a browser |
 | `snaplii-autopilot` | `clawhub-autopilot/` | The agent should also redeem the gift card on the merchant or delivery site and place the order. Needs a browser-automation tool |
 
-**Manual install.** For an agent the `skills` installer does not know, copy the skill folders from the release clone into the directory the agent reads skills from, named after the skill. The table below lists known directories; for any other agent, use its own documentation:
+**Manual install.** Take the agent's skills directory from its configuration or documentation, or the table below; do not guess it. Copy both folders from the release clone there, named after the skill, each with `SKILL.md` at its top level:
 
 ```bash
-mkdir -p ~/.claude/skills
-cp -r snaplii-src/clawhub-publish   ~/.claude/skills/snaplii-cli
-cp -r snaplii-src/clawhub-autopilot ~/.claude/skills/snaplii-autopilot
+SKILLS_DIR=~/.claude/skills   # the agent's user-wide skills directory
+mkdir -p "$SKILLS_DIR"
+cp -r snaplii-src/clawhub-publish   "$SKILLS_DIR/snaplii-cli"
+cp -r snaplii-src/clawhub-autopilot "$SKILLS_DIR/snaplii-autopilot"
 ```
 
 Known skill directories:
@@ -74,26 +75,17 @@ Known skill directories:
 | OpenClaw | `skills/` in the workspace | `~/.openclaw/skills/` |
 | Muse | `~/workspace/skills/` inside the Muse runtime | Same |
 
-**OpenClaw** can also install from ClawHub, which places the skill under `./skills/`:
-
-```bash
-clawhub install snaplii-a2m-payment
-clawhub install snaplii-autopilot
-```
-
-**Muse** runs the skill with the CLI, not MCP. Ask Muse to install the `snaplii-cli` skill (`clawhub-publish/SKILL.md`, on ClawHub as `snaplii-a2m-payment`); Muse puts it in a folder it names under `~/workspace/skills/`, so find it with `grep -l '^name: snaplii-cli' ~/workspace/skills/*/SKILL.md`. Install the CLI with `python3 snaplii-src/scripts/install.py --host muse --source ./snaplii-src`. On a first install the skill connects right away unless the user says to wait, reusing a stored key or asking for one only in Muse's native secure dialog; updating or reading the skill is not a connection request.
+**Muse** runs the skill with the CLI, not MCP. Muse installs the `snaplii-cli` skill from `snaplii-src/clawhub-publish/` with its own skill installation, into a folder it names under `~/workspace/skills/`; find it with `grep -l '^name: snaplii-cli' ~/workspace/skills/*/SKILL.md`. Install the CLI with `python3 snaplii-src/scripts/install.py --host muse --source ./snaplii-src`. A first install connects right away unless the user says to wait, reusing a stored key or asking only in Muse's secure dialog.
 
 **Instinct** loads the skill but executes only through MCP: install with `--host instinct` and connect through the vault, as the Instinct block under [MCP Server](#mcp-server-claude-openclaw-cursor-instinct) describes.
 
-**Verify.** Skills and MCP servers load when a session starts, so ask the user to open a new session. Then check that the skill is listed and that the runtime answers: call `snaplii_config_show` on an MCP host, or run the report's CLI path with `config show`. Report installation and connection separately; the agent is connected only when `has_valid_token` is true. Do not make a payment to test the install.
-
 ### Install the execution layer
 
-The third line of [Install from a release](#install-from-a-release) builds the CLI and the MCP server into a dedicated environment (`~/.snaplii-env`), verifies both, and prints a JSON report with the exact next steps for your host. It never asks for an API key and never edits host configuration. Without `--source` the installer fetches the latest release from PyPI instead, and its `install_skill` step then names that release's tag, so the skill still matches the packages.
+The third line of [Install from a release](#install-from-a-release) builds the CLI and the MCP server into `~/.snaplii-env`, verifies both, and prints a JSON report with the next steps for your host. It never asks for an API key or edits host configuration.
 
-`--host` is one of `claude-code`, `claude-desktop`, `codex`, `cursor`, `openclaw`, `instinct`, `muse`; omit it for generic steps. Add `--cli-only` to skip the MCP server (refused in Instinct), `--check` to verify without changing anything, `--venv PATH` to choose the environment, `--python PATH` to try a specific interpreter first, or `--source PATH` to build from a repository clone instead of PyPI.
+`--host` is one of the hosts listed above; omit it for generic steps. Add `--cli-only` to skip the MCP server (refused in Instinct), `--check` to verify without changing anything, `--venv PATH` to choose the environment, `--python PATH` to try a specific interpreter first, or `--source PATH` to build from a repository clone instead of PyPI.
 
-Any Python 3.8 or newer can start the script; if no Python 3.10+ is available it fetches CPython 3.12 with [uv](https://docs.astral.sh/uv/). uv keeps that Python in its own data directory, and the environment depends on it. With no Python at all, bootstrap uv first:
+Any Python 3.8+ can start the script; without Python 3.10+ it fetches CPython 3.12 with [uv](https://docs.astral.sh/uv/), and the environment then depends on that Python. With no Python at all, bootstrap uv first:
 
 ```bash
 export UV_INSTALL_DIR="$HOME/.local/bin" UV_NO_MODIFY_PATH=1
@@ -102,21 +94,23 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 "$("$UV_INSTALL_DIR/uv" python find --no-project --managed-python 3.12)" snaplii-src/scripts/install.py --source ./snaplii-src
 ```
 
-**Reading the report.** `status` is `installed` (exit 0), `partial` (the CLI works, the MCP server does not) or `failed`. `installed` covers the execution layer only: the skill and the host registration are separate steps listed in `next_steps`:
+**Reading the report.** `status` is `installed` (exit 0), `partial` (the CLI works, the MCP server does not) or `failed`; with `--check` it is `installed` or `not_installed`. `installed` covers the execution layer only: the skill and the host registration are separate steps listed in `next_steps`:
 
 | `next_steps[].status` | What to do |
 |---|---|
 | `required` | Blocking. Do what `why` says first, for example install Python or close the host, then run `command`, which re-runs the installer, **once**; if the same `failure.code` returns, stop and report it. When `command` is null, report `why` to the user. |
-| `pending` | Do the ones not done yet: skip `install_skill` if you already installed the skill from this release, and run `register_mcp` only when the agent uses MCP. Then `reload_host`, then `connect`, which follows the skill's Auth section. |
+| `pending` | Do the ones that apply: skip `install_skill` if the skills from this clone are installed already, and run `register_mcp` only when the agent uses MCP. `register_mcp` gives a host command, or a `file` to merge its `json` into without removing other entries, or only the server's path to register as a stdio server; never run that path. `reload_host` and `connect` are under **Verify** below. |
 | `optional` | `cli_on_path` and `update`. |
 
 `failure.retryable` says whether re-running after the remedy can succeed; when it is false, do not re-run, report the remedy.
 
-**Updating.** When the user asks to update Snaplii, ask them to quit the host, then repeat [Install from a release](#install-from-a-release) with the new release tag and the same flags, including `--source`. Do not use `snaplii update` in this environment: it upgrades only the CLI and leaves the MCP server on its old version.
+**Verify.** If the host loads skills and MCP servers only at session start, ask the user to open a new session (`reload_host`). Check that the skill is listed, then call `snaplii_config_show`, or run the report's CLI path with `config show`; use that absolute path for every CLI command. Report installation and connection separately: connect (`connect`) when the user asks to connect or gives a Snaplii task, or right away on a first install in Muse; only `has_valid_token: true` means connected. Never pay to test the install.
+
+**Updating.** When the user asks to update Snaplii, clone the new release tag into a fresh directory, install its skills, and run its installer with the same flags and `--source` set to the new clone. On `files_in_use`, the running Snaplii server holds the files: the user closes the host and runs the report's retry command in a terminal. Then open a new session. Do not use `snaplii update` here: it upgrades only the CLI, not the MCP server.
 
 ### Rules the skill enforces
 
-- Every Snaplii operation, including browsing and balance, needs `has_valid_token=true`; connect first without waiting to be asked.
+- Every Snaplii operation, including browsing and balance, needs `has_valid_token=true`. Connect when the user asks to connect or gives any Snaplii task, without asking first; installing alone does not start a connection, except a first install in Muse.
 - Gift-card purchases within the key's daily limit need **no per-transaction confirmation**. A **bill payment** needs an explicit, current-turn "yes" to biller, account and amount, and so does the **final order on a merchant site** (summary and delivery address).
 - A gift card's `item_id` is exactly `{cardBrandId}-{cardTemplateId}`, copied verbatim from the `denominations` that `browse brand` or `snaplii_browse_brand` returns. Never one ID alone, a name, or a guessed ID: a different well-formed ID buys a different card.
 - Quote before buying; if `you_pay` is above zero, ask the user to top up in the app and stop. Read the balance with the tool; never guess it.
@@ -125,7 +119,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ### Sessions and reconnecting
 
-A connection exchanges the API key once for a session token. The key is not kept, so a new session needs it again unless the host's vault holds it (Muse, Instinct). The gateway sets when a session expires, so rely on `has_valid_token` rather than a fixed lifetime. The app shows a new key only once: the user should keep it in a password manager.
+A connection exchanges the API key once for a session token. The key is not kept, so connecting again needs it again unless the host's vault holds it (Muse, Instinct). The gateway sets when a session expires, so rely on `has_valid_token` rather than a fixed lifetime. The app shows a new key only once: the user should keep it in a password manager.
 
 `snaplii config show` and `snaplii_config_show` report `has_valid_token`, `auth_state`, `host`, `credential_storage` and `next_action`. `auth_state` is `ready`, `auth_required` (never connected), `reauth_required` (expired, rejected, or a memory-only MCP session lost in a restart) or `mcp_required` (the CLI was called in Instinct). `host` is `unknown` everywhere except Muse and Instinct, which is normal. Follow `next_action`:
 
@@ -218,80 +212,6 @@ python3 snaplii-src/scripts/install.py --source ./snaplii-src
 It creates `~/.snaplii-env`, builds `snaplii-cli` and `snaplii-mcp` from the clone, verifies both, and prints the executables' absolute paths. Add `--cli-only` if you do not need the MCP server.
 
 The steps below call `snaplii` by name. Use the absolute path from the report (`~/.snaplii-env/bin/snaplii`, or `%USERPROFILE%\.snaplii-env\Scripts\snaplii.exe` on Windows), or run the report's `cli_on_path` command first.
-
-<details>
-<summary><strong>Manual install (pipx or pip)</strong></summary>
-
-Get the code:
-
-```bash
-git clone https://github.com/Snaplii-Inc/agent-to-merchant-payments.git
-cd agent-to-merchant-payments
-```
-
-`pipx` is the smoothest manual path. It installs the CLI in its own isolated environment and puts the `snaplii` executable on your `PATH`.
-
-#### macOS
-
-```bash
-brew install pipx
-pipx ensurepath
-```
-
-#### Linux
-
-```bash
-python3 -m pip install --user pipx
-python3 -m pipx ensurepath
-```
-
-#### Windows
-
-**Option A — Scoop** (recommended):
-
-```powershell
-scoop install pipx
-pipx ensurepath
-```
-
-**Option B — pip**:
-
-```powershell
-py -m pip install --user pipx
-```
-
-> If you see a warning that `pipx.exe` is not on PATH, run the following from the displayed path:
-> ```powershell
-> .\pipx.exe ensurepath
-> ```
-
-Restart your terminal after running `ensurepath`.
-
-> **Note:** If you installed Python from the Microsoft Store, use `python3` instead of `py`.
-
-#### All platforms
-
-From the clone:
-
-```bash
-pipx install -e ./snaplii-cli
-```
-
-Or the published release, without cloning:
-
-```bash
-pipx install snaplii-cli
-```
-
-Open a new terminal window so the updated `PATH` takes effect, then verify the installation:
-
-```bash
-snaplii --help
-```
-
-> If you see `command not found`, see [Troubleshooting](#troubleshooting).
-
-</details>
 
 ### 3. Authenticate
 
@@ -425,29 +345,9 @@ Run the installer from the release clone (see [Install from a release](#install-
 python3 snaplii-src/scripts/install.py --host claude-desktop --source ./snaplii-src   # or claude-code, codex, cursor, openclaw, instinct
 ```
 
-<details>
-<summary><strong>Manual install</strong></summary>
-
-From the clone:
-
-```bash
-pip3 install -e ./snaplii-cli
-pip3 install "mcp[cli]"
-```
-
-Or the published packages, without cloning:
-
-```bash
-pip3 install snaplii-mcp
-```
-
-`snaplii-mcp` installs the `snaplii-mcp` command and pulls in `snaplii-cli`. If you get an `externally-managed-environment` error, add `--break-system-packages` or use a virtual environment.
-
-</details>
-
 #### Step 2: Configure your MCP client
 
-Use the `snaplii-mcp` path from the installer's `register_mcp` step; the report already contains the exact command or snippet for your host. After a manual install, use `python3 /path/to/agent-to-merchant-payments/mcp-server/server.py` when running from the clone, or the `snaplii-mcp` command when installed from PyPI.
+Use the `snaplii-mcp` path from the installer's `register_mcp` step; the report already contains the exact command or snippet for your host.
 
 <details>
 <summary><strong>Claude Desktop</strong></summary>
@@ -484,7 +384,7 @@ claude mcp add --scope user snaplii -- ~/.snaplii-env/bin/snaplii-mcp
 claude mcp get snaplii   # expect "User config" and "Connected"
 ```
 
-Without `--scope user`, Claude Code registers the server only for the directory you ran the command in. If it says the server already exists, it is registered; check it with `claude mcp get snaplii`. From a clone, register the clone's Python and `mcp-server/server.py` the same way.
+Without `--scope user`, Claude Code registers the server only for the directory you ran the command in. If it says the server already exists, it is registered; check it with `claude mcp get snaplii`.
 
 </details>
 
@@ -497,11 +397,7 @@ Register the server with the OpenClaw CLI ([reference](https://docs.openclaw.ai/
 openclaw mcp add snaplii --command ~/.snaplii-env/bin/snaplii-mcp
 ```
 
-Then install the skill so the agent knows how to use the tools:
-
-```bash
-clawhub install snaplii-a2m-payment
-```
+Then install the skills from the same release clone, as [Install the Agent Skill](#install-the-agent-skill) shows, if you have not already.
 
 </details>
 
@@ -511,7 +407,7 @@ clawhub install snaplii-a2m-payment
 Instinct installs the MCP server with the installer and connects through the Instinct vault, so the API key never enters the chat.
 
 1. Run the installer from the release clone: `python3 snaplii-src/scripts/install.py --host instinct --source ./snaplii-src`. It refuses `--cli-only` because Instinct executes only through MCP.
-2. Register the `snaplii-mcp` executable from the report's `register_mcp` step (`~/.snaplii-env/bin/snaplii-mcp`) as a stdio MCP server in Instinct. From a clone, `python3 /path/to/agent-to-merchant-payments/mcp-server/server.py` works too.
+2. Register the `snaplii-mcp` executable from the report's `register_mcp` step (`~/.snaplii-env/bin/snaplii-mcp`) as a stdio MCP server in Instinct.
 3. Skip `snaplii init`. In Instinct the CLI only serves `help`, `update`, `--version` and `config`; everything else runs through the MCP tools.
 4. Connect right away. Call `snaplii_connect` and open the returned `connect_url` in the cloud browser. Use the Instinct vault fill action on the API key field with the returned `vault_entry`, click **Connect**, then call `snaplii_connect` again with the returned `eid` within 2 minutes. If the MCP tools only load in a new session, connect at the start of that session.
 5. If the vault has no entry yet, the agent explains how to create a key in the Snaplii App and sends the vault's encrypted submission link so you can save it there.
@@ -545,7 +441,7 @@ Connecting from inside the client is preferred: call `snaplii_connect`, and the 
 ~/.snaplii-env/bin/snaplii init
 ```
 
-Enter your API key when prompted. After a manual install that put `snaplii` on PATH, `snaplii init` is the same command.
+Enter your API key when prompted.
 
 In Instinct, skip this step and follow the **Instinct** instructions under Step 2.
 
@@ -585,7 +481,7 @@ agent-to-merchant-payments/
 ├── clawhub-autopilot/  # snaplii-autopilot skill as a SKILL.md folder (ClawHub: snaplii-autopilot)
 ├── clawhub-plugin/     # ClawHub MCP bundle plugin (snaplii-a2m-mcp)
 ├── claude-desktop/     # Older project instructions for Claude Desktop; the MCP server's own instructions take precedence
-├── scripts/            # Claude Desktop setup, skill Auth-block sync, candidate bundles
+├── scripts/            # The installer (install.py), Claude Desktop setup, skill Auth-block sync, candidate bundles
 └── tests/              # pytest suite for the CLI, the MCP server, and the skill documents
 ```
 
@@ -600,7 +496,7 @@ Remove what the installer and the host registration added:
 1. Revoke the API key in the Snaplii App: **More → Payment Methods → AI Payment Management**.
 2. Sign out locally: `~/.snaplii-env/bin/snaplii config clear`. It does not delete a key the host stores (Muse, the Instinct vault).
 3. Remove the MCP registration: `claude mcp remove snaplii` in Claude Code, `codex mcp remove snaplii` in Codex, or delete the `snaplii` entry from `claude_desktop_config.json` or `.cursor/mcp.json`.
-4. Remove the skills: `npx skills remove -g snaplii-cli snaplii-autopilot`. On OpenClaw, uninstall the ClawHub skill.
+4. Remove the skills: `npx skills remove -g snaplii-cli snaplii-autopilot`. A skill installed earlier from ClawHub is removed with ClawHub.
 5. Delete the environment and the local configuration: `rm -rf ~/.snaplii-env ~/.snaplii` (PowerShell: `Remove-Item -Recurse -Force $HOME\.snaplii-env, $HOME\.snaplii`).
 6. If the installer fetched CPython 3.12 with uv and nothing else uses it, remove it with `uv python uninstall 3.12`. If the installer also installed uv into `~/.local/bin`, delete `uv` and `uvx` there.
 
@@ -611,33 +507,6 @@ Remove what the installer and the host registration added:
 ### `snaplii: command not found` after install
 
 If you used the installer, the CLI is not on `PATH` by design: call `~/.snaplii-env/bin/snaplii` (`Scripts\snaplii.exe` on Windows) or run the report's `cli_on_path` command.
-
-After a manual install, the console script was placed somewhere not on your `PATH`. Run:
-
-```bash
-python3 -m pip show -f snaplii-cli
-```
-
-Look for an entry ending in `bin/snaplii` or `Scripts\snaplii.exe` on Windows. Then either prepend that directory to `PATH` in your shell configuration, or reinstall using `pipx`.
-
-### `externally-managed-environment` from pip
-
-Your system Python forbids global package installs. Use `pipx`, which is recommended, or a virtual environment. As a last resort, append `--break-system-packages` to the pip command.
-
-### MCP server: `ModuleNotFoundError: No module named 'mcp'` or `'snaplii'`
-
-The Python interpreter your MCP client is using does not have the required dependencies. Confirm with:
-
-```bash
-/absolute/path/to/python -c "import mcp, snaplii; print('ok')"
-```
-
-If it fails, install the missing packages into that same interpreter:
-
-```bash
-/absolute/path/to/python -m pip install -e ./snaplii-cli
-/absolute/path/to/python -m pip install "mcp[cli]"
-```
 
 ### The skill is installed but the agent does not use it
 
