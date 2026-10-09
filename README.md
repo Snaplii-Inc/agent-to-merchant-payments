@@ -37,7 +37,7 @@ The account country is fixed at login and enforced by the gateway, so the catalo
 - **MCP and the CLI are two execution layers over the same gateway.** They expose the same operations and mostly the same names: `snaplii balance` is `snaplii_balance`, but `smart cashback` is `snaplii_cashback_calc`, `smart dashboard` is `snaplii_dashboard`, and some options differ. Use the [CLI](#cli-commands) and [MCP](#available-mcp-tools) tables rather than deriving one from the other. Both read the same configuration file (`~/.snaplii/config.json`, or `SNAPLII_CONFIG_PATH`), so a session stored there or in the OS keychain is visible to both; a session an MCP server could only keep in memory is not. Always check status in the runtime that will execute the task.
 - **Which execution layer a skill uses depends on the host.** Muse uses the CLI. Instinct uses MCP only. Every other agent prefers the MCP tools when they are present and falls back to the CLI.
 - **Authentication is per host.** The skill's Auth section and the MCP server's instructions carry the exact steps for Muse, Instinct, card-rendering hosts, and plain terminals. The agent checks `has_valid_token=true` before any Snaplii operation, including read-only ones, and connects first when it is false.
-- **The API key stays out of the chat wherever the host allows it.** On hosts that render the secure card, open the hosted page, or hold the key themselves (Muse, Instinct), the key never passes through the model. A host with none of those offers the user two equal options: a hidden terminal prompt, or pasting the key for `snaplii_init`, whose argument the model does see. The key is exchanged once for a session token and is never written to disk.
+- **The API key stays out of the chat wherever the host allows it.** On hosts that render the secure card, open the hosted page, or hold the key themselves (Muse, Instinct), the key never passes through the model. A host with none of those offers the user two equal options: `snaplii init` in the user's own interactive terminal, or, if the Snaplii MCP tools are available, pasting the key for `snaplii_init`, whose argument the model does see. The key is exchanged once for a session token and is never written to disk.
 
 ### Install the Agent Skill
 
@@ -93,9 +93,51 @@ clawhub install snaplii-autopilot
 - Gift-card purchases within the key's daily limit run **without a per-transaction confirmation**; the limit the user set in the app is the consent. The skill asks for an explicit, current-turn "yes" before a **bill payment** (biller, account, and amount) and before the **final order on a merchant site** (summary and exact delivery address). The MCP server's instructions and tool descriptions apply the same rule.
 - Quote before buying. The quote's `you_pay` is the amount Snaplii Cash does not cover. If it is above zero, tell the user to top up in the app and stop.
 - Read the balance from `snaplii_balance` or `snaplii balance`; never guess it. If the lookup fails, say so and rely on the quote's `you_pay`.
-- Never ask for the API key in the chat while a card, a hosted page, or the host's own store can take it. A client with none of those offers the user two equal options: a hidden terminal prompt (`snaplii init`) or pasting the key in the chat for `snaplii_init`, which passes it through the model once. Never echo a key or token, and never show internal IDs such as `brandId`, `templateId`, or `cardNo`.
+- Never ask for the API key in the chat while a card, a hosted page, or the host's own store can take it. A client with none of those offers the user two equal options: `snaplii init` in the user's own interactive terminal, or, if the Snaplii MCP tools are available, pasting the key in the chat for `snaplii_init`, which passes it through the model once. Do not run `snaplii init` from a shell tool yourself: without a terminal it reads nothing and answers `api_key_missing`. Never echo a key or token, and never show internal IDs such as `brandId`, `templateId`, or `cardNo`.
 - After creating a transfer, tell the user the amount, the masked recipient, and the cancel deadline. If the result carries `cross_currency_notice`, show it and let the user keep or cancel the transfer. Use `finish` only when the user explicitly asks to send now.
 - Charges are sent once. On an ambiguous failure, check the result (`billpay result` with the `paymentNo`, `transfer status`) before retrying; a successful or still-processing result is not a reason to pay again. If the failure came after sending and no `paymentNo` came back, report the outcome as unknown and stop until it is reconciled in the app or with support. Retry a transfer that returned `CREATING` with the **same** key, `--idempotency-key` in the CLI or `idempotency_key` in MCP, never a fresh one; if no order number came back, check `transfer list` first.
+
+### Sessions and reconnecting
+
+A connection exchanges the API key once for a session token. The key is not kept, so when the session ends the key has to be supplied again, unless the host holds it (Muse's credential store, the Instinct vault). The token lives in the OS keychain, in the owner-only config file, or only in the MCP server's memory.
+
+`snaplii config show` and `snaplii_config_show` always return `has_valid_token`, `auth_state`, `host`, `auth_method`, `credential_storage`, `base_url`, and `next_action`. The states you will see:
+
+| `auth_state` | Meaning | What to do |
+|---|---|---|
+| `ready` | The session is valid; `next_action` is `null` | Proceed |
+| `auth_required` | Never connected in this runtime | Connect |
+| `reauth_required` | The session expired, the gateway rejected it, or the MCP server restarted and lost a memory-only session | Connect again, the same way as the first time |
+| `mcp_required` | The CLI was called in Instinct | Use `snaplii_connect` |
+
+`host` is `unknown` for every host other than Muse and Instinct; that is the normal value, not a detection failure. An `agent_id` or `country` in the status does not mean the session is valid; only `has_valid_token` does.
+
+`next_action` tells the executing runtime how to connect:
+
+| Runtime and storage | `next_action` | Who acts |
+|---|---|---|
+| CLI, any storage | `{"type": "run_cli", "argv": ["snaplii", "--base-url", "...", "init"]}` | The user, in their own terminal; the agent re-checks afterwards |
+| MCP with a memory or keychain session | `{"type": "call_mcp_tool", "tool": "snaplii_connect", "arguments": {}}` | The agent calls the tool |
+| MCP with a config-file session | `run_cli` as above | The user, in a terminal; the MCP server then reads the shared file |
+| Muse | `run_cli` with `init --vault-auth`, or a `muse_secure_entry` action when the stored key is missing or rejected | The agent; the stored key is reused without asking |
+| Instinct | `call_mcp_tool` `snaplii_connect`, with the Instinct instruction attached | The agent, through the vault-filled page |
+
+Reconnecting by host:
+
+- **Shell-only agent.** Ask the user to run `snaplii init` in their terminal and enter the key at the hidden prompt, then run `snaplii config show` again. On a machine without an OS keychain the CLI refuses to keep a session it cannot store: `init` answers `session_cache_failed` with reason `no_persistent_storage`. The user then sets `SNAPLII_ALLOW_INSECURE=1`, or `allow_insecure_mode: true` in the config file, to keep the token in the owner-only config file, and runs `init` again.
+- **MCP host with a card or a hosted page.** Call `snaplii_connect` only while `has_valid_token` is false. A result of `card_requested`, `pending`, `declined`, `elicit_unsupported`, or `elicit_failed` is not a connection; only `authenticated` or `already_connected` is. Re-check `snaplii_config_show` after the user finishes the card or page. A session the server could keep only in memory is gone after a restart: connect again in the restarted server.
+- **MCP host with neither.** `snaplii_connect` answers `use_terminal_or_chat_key`; offer the two equal options above and re-check afterwards.
+- **Muse.** Follow `next_action`; the stored key is exchanged again without user input. Only a missing or rejected key opens Muse's native secure input.
+- **Instinct.** Repeat the two `snaplii_connect` calls with the vault fill; the vault keeps the key across sessions.
+
+A connection attempt can also end in one of these states. Honor its action before looking the status up again, because a later status check only shows `auth_required` or `reauth_required`:
+
+| `auth_state` | `next_action` | What to do |
+|---|---|---|
+| `cancelled` | `stop` | The user cancelled; do not retry or switch methods |
+| `invalid_key` | `offer_legacy` with `init --legacy-auth` on ordinary hosts, `muse_secure_entry` in Muse | The key was rejected; the user enters a key again |
+| `temporary_gateway_error` | `retry_auth_later` | Snaplii was unreachable; retry later |
+| `auth_response_invalid`, `session_cache_failed` | `stop` | Report the reason; no session was established |
 
 ---
 
@@ -107,6 +149,7 @@ clawhub install snaplii-autopilot
   - [How Snaplii and agent tools work together](#how-snaplii-and-agent-tools-work-together)
   - [Install the Agent Skill](#install-the-agent-skill)
   - [Rules the skill enforces](#rules-the-skill-enforces)
+  - [Sessions and reconnecting](#sessions-and-reconnecting)
 - [How authorization works](#how-authorization-works)
 - [Requirements](#requirements)
 - [Quick Start](#quick-start)
@@ -137,6 +180,7 @@ Gift-card purchases can help users save through eligible offers and cashback. Av
 - Python 3.10+  
   _CLI works on Python 3.9+, but the MCP server requires Python 3.10+._
 - Git
+- Node.js with `npx`, only for the one-line `npx skills add` install; the manual copy needs neither
 - Snaplii Mobile App  
   _Required to generate your API key._
 
@@ -329,7 +373,7 @@ Every operation prints one JSON document on stdout, or one JSON error on stderr 
 
 | Command | Purpose |
 |---|---|
-| `snaplii init [--agent-id ID] [--vault-auth \| --legacy-auth]` | Authenticate; Muse defaults to secure credentials, with an explicit original-input fallback. Refused in Instinct |
+| `snaplii init [--agent-id ID] [--vault-auth \| --legacy-auth]` | Authenticate. Interactive: the user runs it in a terminal; needs an OS keychain or `SNAPLII_ALLOW_INSECURE=1`. Muse defaults to secure credentials, with an explicit original-input fallback. Refused in Instinct |
 | `snaplii config show` | Show current config and auth status, including `has_valid_token`, `host`, and `next_action` |
 | `snaplii config doctor` | Diagnose runtime detection (Muse, Instinct) and storage without logging in |
 | `snaplii config set --base-url URL` | Set the gateway URL |
@@ -388,7 +432,7 @@ pip3 install snaplii-mcp
 
 #### Step 2: Authenticate
 
-Connecting from inside the client is preferred: call `snaplii_connect`, and the host renders a secure card or opens a hosted page where the user enters the key off-model. If the client can do neither, authenticate in a terminal first:
+Connecting from inside the client is preferred: call `snaplii_connect`, and the host renders a secure card or opens a hosted page where the user enters the key off-model. If the client can do neither, the user authenticates in their own terminal first; an agent cannot answer the hidden prompt:
 
 ```bash
 snaplii init
@@ -627,9 +671,9 @@ If it fails, install the missing packages into that same interpreter:
 
 Check that the folder is named after the skill (`snaplii-cli` or `snaplii-autopilot`) and contains `SKILL.md` at its top level, and that it sits in the directory your agent reads (see the table under [Install the Agent Skill](#install-the-agent-skill)). Most agents load skills at session start, so open a new session after installing.
 
-### Every Snaplii call answers `auth_required` or `mcp_required`
+### Every Snaplii call answers `auth_required`, `reauth_required`, or `mcp_required`
 
-There is no valid session in the runtime that is executing the task. Run `snaplii config show` or `snaplii_config_show` and follow its `next_action`. `mcp_required` means the host is Instinct: connect with `snaplii_connect` instead of the CLI.
+There is no valid session in the runtime that is executing the task. `reauth_required` means there was one and it expired, was rejected, or was lost when the MCP server restarted. Run `snaplii config show` or `snaplii_config_show` and follow its `next_action`; [Sessions and reconnecting](#sessions-and-reconnecting) lists the actions by host. `mcp_required` means the host is Instinct: connect with `snaplii_connect` instead of the CLI.
 
 ### REST API returns `401` or `403`
 
@@ -643,7 +687,7 @@ A `401`, or a session-rejection code such as `MCAP9999` in the body, means the s
 - **Scoped API keys:** `PAY_READ` (read-only), `PAY_WRITE` (read, purchase, bill pay), `P2P` (transfers), `ALL`.
 - **Spending limits:** strict per-key consumption caps are set via the mobile app. Transfers also have a rolling 24-hour per-key limit.
 - **Consent is the daily limit, set once.** You authorize spending when you create the key and set its per-day cap in the app; within that cap the agent buys gift cards **without a per-transaction confirmation**, so the flow stays smooth. The skill and the MCP server's instructions both still ask before a bill payment and before a final merchant order. Spending is prepaid-only and the key is revocable, so the daily limit is the blast radius. On connect, the agent surfaces this once.
-- **Off-model key entry.** The API key is entered through a secure MCP Apps card rendered by the host, on the hosted connect page, in a hidden terminal prompt, or supplied by the host's credential store (Muse) or vault (Instinct). A client with none of those offers the terminal prompt and `snaplii_init` as two equal options; with `snaplii_init` the key passes through the model once. The session token is kept in the OS keychain, or in process memory for a long-lived MCP server. Recognized Muse runtimes use a private session file automatically; other keychain-less CLI environments require explicit `SNAPLII_ALLOW_INSECURE=1` opt-in for file caching.
+- **Off-model key entry.** The API key is entered through a secure MCP Apps card rendered by the host, on the hosted connect page, in a hidden terminal prompt, or supplied by the host's credential store (Muse) or vault (Instinct). A client with none of those offers the user's own terminal prompt and, where the MCP tools exist, `snaplii_init` as two equal options; with `snaplii_init` the key passes through the model once. The session token is kept in the OS keychain, or in process memory for a long-lived MCP server. Recognized Muse runtimes use a private session file automatically; other keychain-less CLI environments require explicit `SNAPLII_ALLOW_INSECURE=1` opt-in for file caching.
 - **Charges are sent once.** Charges are not auto-retried. On an ambiguous bill-pay failure, query `billpay result` by `paymentNo` before retrying rather than re-paying; without a `paymentNo`, treat the outcome as unknown and reconcile before resubmitting. Transfers carry an idempotency key; retry a `CREATING` transfer with the same key, never a fresh one.
 - **No credential storage:** API keys are used once to obtain a token and are never saved to disk.
 - **Data protection:** card redemption codes and PINs are shown only when the user asks for them or needs them to finish a purchase, and never appear in logs or summaries.
