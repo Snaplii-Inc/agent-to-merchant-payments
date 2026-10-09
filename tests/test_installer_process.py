@@ -182,3 +182,12 @@ def test_protocol_message_just_over_the_limit_split_at_a_chunk_boundary_is_rejec
     stream = io.BytesIO(b"{" + b"a" * installer.PROTOCOL_MAX_MESSAGE + b"}\n")
     installer._read_stream(stream, installer.LineBuffer(), proto)
     assert proto.take(1) is installer._Sentinel.OVERSIZE
+
+
+def test_install_stage_output_is_echoed_to_stderr_redacted(installer, fake_child, capsys):
+    argv = fake_child("import sys\nprint('Collecting https://u:SECRET7@h/x')\nsys.stderr.write('warn line\\n')")
+    installer.run(argv, "pip", 10, dict(os.environ))
+    err = capsys.readouterr().err
+    assert "Collecting https://[redacted]@h/x" in err and "warn line" in err and "SECRET7" not in err
+    installer.run(fake_child("print('probe-output')", name="probe.py"), "probe", 10, dict(os.environ))
+    assert "probe-output" not in capsys.readouterr().err

@@ -206,3 +206,19 @@ def test_validate_existing_failures(installer, tmp_path, clean_env, monkeypatch)
     with pytest.raises(installer.InstallFailure) as info:
         installer.validate_existing(str(good), (3, 10), installer.child_env(dict(os.environ)))
     assert info.value.code == "venv_python_too_old"
+
+
+def test_unusable_environment_of_ours_names_delete_and_rerun(installer, tmp_path, monkeypatch):
+    venv = str(tmp_path / "env")
+    os.mkdir(venv)
+    with pytest.raises(installer.InstallFailure) as info:
+        installer.validate_existing(venv, (3, 9), {})
+    assert info.value.code == "venv_broken" and info.value.retryable is False
+    assert "delete " + venv in info.value.remedy and "same path" in info.value.remedy
+    (tmp_path / "env" / "pyvenv.cfg").write_text("home = /x\n")
+    os.makedirs(os.path.dirname(installer.venv_python(venv)), exist_ok=True)
+    open(installer.venv_python(venv), "w").close()
+    monkeypatch.setattr(installer, "interpreter_info", lambda exe, env: {"version": [3, 9, 1], "prefix": venv, "executable": exe})
+    with pytest.raises(installer.InstallFailure) as info:
+        installer.validate_existing(venv, (3, 10), {})
+    assert info.value.code == "venv_python_too_old" and "delete " + venv in info.value.remedy

@@ -218,3 +218,56 @@ def test_next_steps_cli_failure_with_mcp_installed_still_has_a_required_step(ins
     steps = installer.next_steps("claude-code", "unknown", comps, "/v", failure, False, False, "linux", {}, ["python3", "install.py"])
     assert "register_mcp" in ids(steps) and "cli_on_path" not in ids(steps) and "update" not in ids(steps)
     assert [s["id"] for s in steps if s["status"] == "required"] == ["retry"]
+
+
+def test_check_mode_retry_step_runs_the_installer_not_another_check(installer):
+    comps = installed(installer)
+    comps["cli"] = {"status": "failed", "code": "cli_verification_failed"}
+    failure = installer.InstallFailure("verify", "cli_verification_failed", "x", "re-run the installer", retryable=True)
+    steps = installer.next_steps("claude-code", "unknown", comps, "/v", failure, True, False, "linux", {},
+                                 ["python3", "install.py", "--check", "--host", "claude-code"])
+    retry = [s for s in steps if s["status"] == "required"][0]
+    assert retry["command"] == "python3 install.py --host claude-code"
+
+
+def test_required_step_why_says_re_run_once(installer):
+    comps = {"cli": {"status": "not_verified"}, "mcp": {"status": "not_verified"}}
+    for remedy in (installer.required_python_remedy(), installer.pip_remedy("index_unreachable"), "wait for the other installer"):
+        failure = installer.InstallFailure("python", "python_too_old", "x", remedy, retryable=True)
+        steps = installer.next_steps(None, "unknown", comps, "/v", failure, False, False, "linux", {}, ["python3", "install.py"])
+        why = [s for s in steps if s["status"] == "required"][0]["why"]
+        assert why.count("re-run") == 1, why
+
+
+def test_readme_required_row_applies_the_remedy_before_the_rerun():
+    from pathlib import Path
+    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text()
+    section = readme.split("### Install the execution layer", 1)[1].split("\n### ", 1)[0]
+    row = [line for line in section.splitlines() if line.startswith("| `required` |")][0]
+    assert row.index("`why`") < row.index("`command`") and "re-runs the installer" in row
+
+
+def test_main_still_prints_json_when_report_assembly_fails(installer, capsys, tmp_path, monkeypatch):
+    def broken(*a, **k):
+        raise RuntimeError("boom")
+    monkeypatch.setattr(installer, "next_steps", broken)
+    code, report = run_main(installer, capsys, ["--check"], {"HOME": str(tmp_path)})
+    assert code == 1 and report["status"] == "failed" and report["failure"]["code"] == "internal_error"
+    assert report["host"]["detected"] == "unknown" and report["next_steps"][0]["id"] == "report_to_user"
+
+
+def test_main_lock_rewrite_failure_still_prints_json_and_keeps_the_lock(installer, capsys, tmp_path, monkeypatch):
+    monkeypatch.setattr(installer, "qualifying_candidates", lambda *a, **k: [])
+
+    def leaves_survivors(*a, **k):
+        installer.SURVIVORS.append(4242)
+        raise installer.InstallFailure("python", "python_download_failed", "x", "y", retryable=True)
+    monkeypatch.setattr(installer, "acquire_python", leaves_survivors)
+    monkeypatch.setattr(installer, "SURVIVORS", [])
+
+    def no_space(self, pids):
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(installer.Lock, "retain", no_space)
+    code, report = run_main(installer, capsys, [], {"HOME": str(tmp_path)})
+    assert code == 1 and report["failure"]["code"] == "cleanup_incomplete"
+    assert os.path.exists(str(tmp_path / ".snaplii-env.lock"))

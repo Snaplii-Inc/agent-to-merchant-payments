@@ -134,3 +134,24 @@ def test_redaction_keeps_json_documents_parseable(installer):
     parsed = json.loads(redacted)
     assert parsed["api_key"] == "[redacted]" and parsed["token"] == "[redacted]" and parsed["password"] == "[redacted]"
     assert parsed["session"] == {"id": "abc"} and parsed["version"] == "0.19.0"
+
+
+@pytest.mark.parametrize("raw, leaked", [
+    ("session_token=abc123", "abc123"),
+    ('{"refresh_token": "r3fresh"}', "r3fresh"),
+    ('"sessionToken": "s3ss"', "s3ss"),
+    ("client_secret=cl1ent", "cl1ent"),
+    ("X-Api-Key: k3yvalue", "k3yvalue"),
+    ("Authorization: Basic dXNlcjpwYXNz", "dXNlcjpwYXNz"),
+    ('password = "hunter two"', "two"),
+])
+def test_redaction_covers_common_credential_spellings(installer, raw, leaked):
+    assert leaked not in installer.redact(raw)
+
+
+def test_redaction_of_a_long_hyphenated_line_is_fast(installer):
+    import time
+    line = "a-" * 32000
+    started = time.monotonic()
+    assert installer.redact(line) == line
+    assert time.monotonic() - started < 1

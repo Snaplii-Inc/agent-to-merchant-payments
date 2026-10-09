@@ -116,7 +116,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 | `next_steps[].status` | What to do |
 |---|---|
-| `required` | Blocking. Run the step's `command` (or report its `why` to the user when `command` is null), then re-run the installer **once**. If the same `failure.code` comes back, stop and report it. |
+| `required` | Blocking. First do what its `why` says (for example install Python or close the host), then run its `command`, which re-runs the installer. Do this **once**: if the same `failure.code` comes back, stop and report it. When `command` is null, do not re-run; report `why` to the user. |
 | `pending` | Do it next: `install_skill`, `register_mcp` (exact command or config snippet for your host), `reload_host`, `connect`. |
 | `optional` | `cli_on_path` and `update`. |
 
@@ -752,14 +752,14 @@ Read `failure.code`, `failure.remedy` and `failure.retryable`:
 |---|---|---|
 | `python_too_old`, `python_download_failed`, `venv_create_failed` | No Python 3.10+ that can create an environment, and uv could not fetch one | yes, after the remedy |
 | `venv_path_occupied`, `venv_locked`, `destination_unwritable`, `source_invalid` | The destination or `--source` cannot be used as given | `venv_locked` only |
-| `venv_broken`, `venv_python_too_old` | The installer's own environment exists but cannot be reused | no: pass another `--venv` |
+| `venv_broken`, `venv_python_too_old` | The installer's own environment exists but cannot be reused, for example after the base Python was upgraded | no: delete that directory and re-run (it is recreated at the same path, so the host registration keeps working), or pass another `--venv` |
 | `index_unreachable`, `disk_full`, `files_in_use` | pip could not download or write | yes |
 | `index_auth_failed`, `tls_failed`, `package_unavailable`, `build_failed`, `permission_denied`, `dependency_conflict`, `pip_failed` | pip failed for a reason a re-run will not fix | no |
 | `cli_missing`, `mcp_missing`, `cli_verification_failed`, `mcp_handshake_failed`, `*_timeout` | The installed component is missing or did not answer as expected | yes |
 | `bad_arguments`, `mcp_required_on_instinct`, `*_spawn_failed`, `internal_error` | The command line cannot work here, or the installer hit a bug | no |
 | `cleanup_incomplete` | A helper process could not be stopped; the lock file was kept on purpose | no: wait for the listed pids, delete the lock, re-run |
 
-When `retryable` is true, run the `required` step and re-run once; if the same code returns, report it. `files_in_use` means the host's registered Snaplii server holds the files: close the host, then re-run.
+When `retryable` is true, apply the `required` step's `why`, then run its `command` once; if the same code returns, report it. `files_in_use` means the host's registered Snaplii server holds the files: close the host, then re-run.
 
 ### The host's Snaplii server stopped working after `~/.snaplii-env` was deleted
 

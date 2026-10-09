@@ -198,3 +198,27 @@ def test_classify_rebuild_windows_and_identity_mismatch(installer, tmp_path):
     res.publish({"pid": 1, "created": "t", "identity": installer.dir_identity(venv)}, update=True)
     installer.classify_destination(venv, res, False, warnings)
     assert any("leftover temporary file" in w for w in warnings)
+
+
+def test_lock_write_failure_removes_the_lock_and_is_destination_unwritable(installer, tmp_path, monkeypatch):
+    venv = str(tmp_path / "env")
+
+    class Full:
+        def __init__(self, fd):
+            self.fd = fd
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            os.close(self.fd)
+
+        def write(self, text):
+            raise OSError(28, "No space left on device")
+    lock = installer.Lock(venv)
+    with monkeypatch.context() as m:
+        m.setattr(installer.os, "fdopen", lambda fd, *a, **k: Full(fd))
+        with pytest.raises(installer.InstallFailure) as info:
+            lock.acquire()
+    assert info.value.code == "destination_unwritable"
+    assert not os.path.exists(lock.path)

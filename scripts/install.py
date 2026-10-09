@@ -17,7 +17,6 @@ import re
 import shlex
 import shutil
 import signal
-import stat
 import subprocess
 import sys
 import tempfile
@@ -42,6 +41,7 @@ NEED = {"mcp": (3, 10), "cli": (3, 9)}
 DEADLINES = {"probe": 15, "metadata": 30, "version": 60, "doctor": 60, "venv": 120,
              "mcp": 20, "pip": 900, "uv": 600}
 CLEANUP_BOUND = 10.0
+ECHO_STAGES = ("pip", "uv", "venv")  # long-running stages whose redacted output is logged to stderr
 MAX_LINE = 64 * 1024
 MAX_LINES = 2000
 MAX_BYTES = 256 * 1024
@@ -94,19 +94,24 @@ class InstallFailure(Exception):
 # ----------------------------------------------------------------------------
 _URL_CREDENTIALS = re.compile(r"(://)([^/\s@]+)@")
 _SNAPLII_KEY = re.compile(r"snp_sk_[A-Za-z0-9_\-]+")
-_BEARER = re.compile(r"(?i)(\bBearer\s+)[A-Za-z0-9._\-]+")
+_BEARER = re.compile(r"(?i)(\b(?:Bearer|Basic)\s+)[A-Za-z0-9._~+/=\-]+")
+# A key is a whole word (letters, digits, _ and -) that ends in one of the sensitive names, so
+# session_token, sessionToken, client_secret and X-Api-Key are covered. The look-behind anchors
+# the match at the start of the word, which keeps long hyphenated lines linear.
 _KEY_VALUE = re.compile(
-    r"(?i)\b(token|access_token|api_key|apikey|session|password|secret|x-amz-signature|sig)"
-    r"(\"?)(\s*[=:]\s*)(\"?)([^\s&\"',;}]+)")
+    r"(?i)(?<![\w-])([\w-]*?(?:token|secret|password|passwd|session|signature|sig|api[_-]?key|access[_-]?key))"
+    r"(\"?)(\s*[=:]\s*)(?:(\")([^\"]*)|([^\s&\"',;}]+))")
 
 
 def _redact_value(match) -> str:
-    key, key_quote, separator, value_quote, value = match.groups()
-    if key_quote and not value_quote:
-        if value[:1] in "{[":
+    key, key_quote, separator, value_quote, _quoted, bare = match.groups()
+    if value_quote:
+        return key + key_quote + separator + value_quote + "[redacted]"  # the closing quote follows
+    if key_quote:
+        if bare[:1] in "{[":
             return match.group(0)  # a JSON object or array: its own keys are redacted one by one
         return key + key_quote + separator + '"[redacted]"'  # keep a JSON document parseable
-    return key + key_quote + separator + value_quote + "[redacted]"
+    return key + key_quote + separator + "[redacted]"
 
 
 def redact(text: str) -> str:
@@ -120,10 +125,11 @@ def redact(text: str) -> str:
 class LineBuffer:
     """Redacted, bounded capture of complete lines; overlong lines are discarded whole."""
 
-    def __init__(self) -> None:
+    def __init__(self, echo: Optional[str] = None) -> None:
         self.lines = collections.deque()  # type: collections.deque
         self.bytes = 0
         self.discarded = 0
+        self.echo = echo  # prefix for copying each redacted line to stderr, or None
 
     def add_bytes(self, line: bytes) -> None:
         if len(line) > MAX_LINE:
@@ -137,6 +143,9 @@ class LineBuffer:
 
     def add_text(self, text: str, already_safe: bool = False) -> None:
         text = text if already_safe else redact(text)
+        if self.echo is not None:
+            sys.stderr.write(self.echo + text + "\n")
+            sys.stderr.flush()
         self.lines.append(text)
         self.bytes += len(text)
         while self.lines and (self.bytes > MAX_BYTES or len(self.lines) > MAX_LINES):
@@ -399,7 +408,8 @@ class Child:
                  cwd: Optional[str] = None, pipe_stdin: bool = False, protocol: bool = False) -> None:
         self.argv, self.stage, self.deadline, self.env, self.cwd = list(argv), stage, float(deadline), env, cwd
         self.pipe_stdin, self.protocol = pipe_stdin, protocol
-        self.stdout, self.stderr = LineBuffer(), LineBuffer()
+        echo = "  | " if stage in ECHO_STAGES else None
+        self.stdout, self.stderr = LineBuffer(echo), LineBuffer(echo)
         self.messages = ProtocolQueue() if protocol else None
         self.proc = None
         self.threads = []  # type: List[threading.Thread]
@@ -690,9 +700,13 @@ class Lock:
             raise self._locked()
         except OSError as exc:
             raise unwritable(self.path, exc)
-        with os.fdopen(fd, "w") as handle:
-            handle.write(json.dumps({"pid": os.getpid(), "created": utc_now()}))
-        self.held = True
+        self.held = True  # the file exists from here on; release() must be able to remove it
+        try:
+            with os.fdopen(fd, "w") as handle:
+                handle.write(json.dumps({"pid": os.getpid(), "created": utc_now()}))
+        except OSError as exc:
+            self.release()
+            raise unwritable(self.path, exc)
 
     def retain(self, surviving_pids: List[int]) -> None:
         _write_atomic(self.path, json.dumps({"state": "cleanup_incomplete", "surviving_pids": list(surviving_pids),
@@ -1051,9 +1065,15 @@ def _same_dir(a: str, b: str) -> bool:
     return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
 
 
+def own_env_remedy(venv: str) -> str:
+    return ("this environment was created by this installer and holds nothing else: delete %s and re-run the "
+            "installer, which recreates it at the same path so the host registration keeps working; or pass "
+            "another --venv path" % venv)
+
+
 def validate_existing(venv: str, need: Tuple[int, int], env: Dict[str, str]) -> Dict[str, object]:
     broken = InstallFailure("venv", "venv_broken", "%s is an environment of this installer but it no longer works" % venv,
-                            "pass another --venv path", retryable=False)
+                            own_env_remedy(venv), retryable=False)
     python = venv_python(venv)
     if not os.path.exists(os.path.join(venv, "pyvenv.cfg")) or not os.path.exists(python):
         raise broken
@@ -1063,7 +1083,7 @@ def validate_existing(venv: str, need: Tuple[int, int], env: Dict[str, str]) -> 
     if tuple(info["version"][:2]) < need:
         raise InstallFailure("venv", "venv_python_too_old",
                              "%s uses Python %s, which is too old for this install" % (venv, ".".join(map(str, info["version"]))),
-                             "pass another --venv path", retryable=False)
+                             own_env_remedy(venv), retryable=False)
     if not pip_works(python, env):
         raise broken
     return {"executable": python, "version": info["version"]}
@@ -1440,11 +1460,13 @@ def next_steps(host: Optional[str], detected: str, components: Dict[str, dict], 
     steps = []  # type: List[Dict[str, object]]
     if effective != "instinct":
         steps.append(_skill_step(effective, platform))
-    rerun_cmd = render_command(rerun[0], rerun[1:], platform) if rerun else None
+    install_argv = [a for a in rerun if a != "--check"]  # a repair is an install, never another check
+    rerun_cmd = render_command(install_argv[0], install_argv[1:], platform) if install_argv else None
     if mcp_ok:
         steps.append(_register_step(effective, str(mcp["executable"]), platform, environ))
     if failure is not None and failure.retryable:
-        steps.append(step("retry", "required", failure.remedy + "; then re-run the installer", command=rerun_cmd))
+        why = failure.remedy if "re-run" in failure.remedy else failure.remedy + "; then re-run the installer"
+        steps.append(step("retry", "required", why, command=rerun_cmd))
     elif failure is not None:
         steps.append(step("report_to_user", "required", failure.remedy, command=None))
     elif mcp_ok:
@@ -1612,23 +1634,45 @@ def main(argv: Optional[List[str]] = None, environ: Optional[Dict[str, str]] = N
         if JOB is not None and JOB.available:
             survivors += [p for p in JOB.terminate_members() if p not in survivors]
         if survivors and lock is not None and lock.held:
-            lock.retain(survivors)
+            note = ""
+            try:
+                lock.retain(survivors)
+            except OSError as exc:
+                lock.held = False  # leave the original lock file in place: those processes may still write
+                note = "; the lock file could not be rewritten (%s) and was left as it was" % exc
             failure = InstallFailure("cleanup", "cleanup_incomplete",
                                      "processes %s could not be stopped; the lock was kept so no other run touches the environment" % survivors,
                                      "confirm that processes %s have exited, then delete %s" % (survivors, lock.path),
-                                     retryable=False, diagnostics="surviving pids: %s" % survivors)
+                                     retryable=False, diagnostics="surviving pids: %s%s" % (survivors, note))
             components["cli"] = {"status": "not_verified"} if components["cli"].get("status") == "installed" else components["cli"]
             components["mcp"] = {"status": "not_verified"} if components["mcp"].get("status") == "installed" else components["mcp"]
         if lock is not None:
             lock.release()
-    report["failure"] = failure.to_dict() if failure else None
-    report["status"] = compute_status(components, failure, check_mode, cli_only)
-    detected = report["host"]["detected"] if report["host"] else "unknown"
-    report["next_steps"] = next_steps(getattr(args, "host", None), detected, components, str(report["venv"]["path"]),
-                                      failure, check_mode, cli_only, sys.platform, environ, rerun)
-    sys.stdout.write(json.dumps(report, indent=2) + "\n")
+    try:
+        report["failure"] = failure.to_dict() if failure else None
+        report["status"] = compute_status(components, failure, check_mode, cli_only)
+        detected = report["host"]["detected"] if report["host"] else "unknown"
+        report["next_steps"] = next_steps(getattr(args, "host", None), detected, components, str(report["venv"]["path"]),
+                                          failure, check_mode, cli_only, sys.platform, environ, rerun)
+        text = json.dumps(report, indent=2)
+    except Exception as exc:  # the last guard of the two-state promise: still a JSON report, never a traceback
+        report = _fallback_report(report, exc)
+        text = json.dumps(report, indent=2, default=str)
+    sys.stdout.write(text + "\n")
     sys.stdout.flush()
     return 0 if report["status"] == "installed" else 1
+
+
+def _fallback_report(report: Dict[str, object], exc: BaseException) -> Dict[str, object]:
+    venv = report.get("venv") if isinstance(report.get("venv"), dict) else {}
+    failure = InstallFailure("internal", "internal_error", "building the report failed: %s: %s" % (type(exc).__name__, exc),
+                             "report this failure with the diagnostics", retryable=False)
+    return {"status": "failed", "installer_version": INSTALLER_VERSION, "host": report.get("host"),
+            "python": {"executable": None, "version": None, "acquired_by": None},
+            "venv": {"path": venv.get("path"), "state": venv.get("state", "absent")},
+            "components": {"cli": {"status": "not_verified"}, "mcp": {"status": "not_verified"}},
+            "warnings": [], "failure": failure.to_dict(),
+            "next_steps": [step("report_to_user", "required", failure.remedy, command=None)]}
 
 
 def _verify_all(venv: str, env: Dict[str, str], tmpdir: str, warnings: List[str], components: Dict[str, dict],
