@@ -125,3 +125,12 @@ def test_child_env_check_mode_and_uv_scrub(installer):
         assert gone not in env
     for kept in ("UV_PYTHON_INSTALL_MIRROR", "UV_INSTALL_DIR", "UV_CACHE_DIR", "UV_NATIVE_TLS", "HTTP_PROXY"):
         assert env[kept] == base[kept]
+
+
+def test_redaction_keeps_json_documents_parseable(installer):
+    import json
+    doc = '{"api_key": null, "token": 12345, "session": {"id": "abc"}, "password": "pw", "version": "0.19.0"}'
+    redacted = installer.redact(doc)
+    parsed = json.loads(redacted)
+    assert parsed["api_key"] == "[redacted]" and parsed["token"] == "[redacted]" and parsed["password"] == "[redacted]"
+    assert parsed["session"] == {"id": "abc"} and parsed["version"] == "0.19.0"

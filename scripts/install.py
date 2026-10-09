@@ -97,14 +97,23 @@ _SNAPLII_KEY = re.compile(r"snp_sk_[A-Za-z0-9_\-]+")
 _BEARER = re.compile(r"(?i)(\bBearer\s+)[A-Za-z0-9._\-]+")
 _KEY_VALUE = re.compile(
     r"(?i)\b(token|access_token|api_key|apikey|session|password|secret|x-amz-signature|sig)"
-    r"(\"?\s*[=:]\s*\"?)([^\s&\"',;}]+)")
+    r"(\"?)(\s*[=:]\s*)(\"?)([^\s&\"',;}]+)")
+
+
+def _redact_value(match) -> str:
+    key, key_quote, separator, value_quote, value = match.groups()
+    if key_quote and not value_quote:
+        if value[:1] in "{[":
+            return match.group(0)  # a JSON object or array: its own keys are redacted one by one
+        return key + key_quote + separator + '"[redacted]"'  # keep a JSON document parseable
+    return key + key_quote + separator + value_quote + "[redacted]"
 
 
 def redact(text: str) -> str:
     text = _URL_CREDENTIALS.sub(r"\1[redacted]@", text)
     text = _SNAPLII_KEY.sub("[redacted]", text)
     text = _BEARER.sub(r"\1[redacted]", text)
-    text = _KEY_VALUE.sub(lambda m: m.group(1) + m.group(2) + "[redacted]", text)
+    text = _KEY_VALUE.sub(_redact_value, text)
     return text
 
 
@@ -1207,3 +1216,147 @@ def install_packages(python_exe: str, cli_only: bool, source: Optional[str], env
     if check.returncode != 0:
         raise InstallFailure("pip", "dependency_conflict", "pip check reported a conflict", pip_remedy("dependency_conflict"),
                              retryable=False, diagnostics=check.stdout.tail() or check.stderr.tail())
+
+
+# ----------------------------------------------------------------------------
+# Verification
+# ----------------------------------------------------------------------------
+ISOLATED_KEYRING = "keyring.backends.fail.Keyring"
+
+
+def metadata_version(python_exe: str, dist: str, env: Dict[str, str]) -> str:
+    code = "import importlib.metadata as m, sys; print(m.version(sys.argv[1]))"
+    try:
+        child = run([python_exe, "-c", code, dist], "metadata", DEADLINES["metadata"], env)
+    except InstallFailure:
+        return ""
+    return _last_line(child.stdout.text()) if child.returncode == 0 else ""
+
+
+def _cli_failed(detail: str, child: Optional[Child] = None) -> InstallFailure:
+    return InstallFailure("verify", "cli_verification_failed", detail, "re-run the installer; if it repeats, report the diagnostics",
+                          retryable=True, diagnostics=child.stderr.tail() if child else "")
+
+
+def verify_cli(venv: str, env: Dict[str, str], tmpdir: str) -> Dict[str, object]:
+    exe = venv_exe(venv, "snaplii")
+    if not os.path.exists(exe):
+        raise InstallFailure("verify", "cli_missing", "the snaplii executable is missing at " + exe,
+                             "re-run the installer", retryable=True)
+    child = run([exe, "--version"], "version", DEADLINES["version"], env)
+    match = re.match(r"snaplii, version (\S+)", child.stdout.text().strip())
+    if child.returncode != 0 or not match:
+        raise _cli_failed("unexpected output from snaplii --version", child)
+    version = match.group(1)
+    meta = metadata_version(venv_python(venv), "snaplii-cli", env)
+    if meta != version:
+        raise _cli_failed("metadata reports snaplii-cli %s but --version prints %s" % (meta or "nothing", version))
+    config = os.path.join(tmpdir, "doctor-config.json")
+    doctor_env = dict(env, SNAPLII_CONFIG_PATH=config, PYTHON_KEYRING_BACKEND=ISOLATED_KEYRING)
+    child = run([exe, "config", "doctor"], "doctor", DEADLINES["doctor"], doctor_env)
+    try:
+        doctor = json.loads(child.stdout.text())
+    except ValueError:
+        raise _cli_failed("snaplii config doctor did not print JSON", child)
+    auth = doctor.get("authentication") if isinstance(doctor, dict) else None
+    if child.returncode != 0 or "version" not in doctor or not isinstance(auth, dict) or "host" not in auth:
+        raise _cli_failed("snaplii config doctor returned an unexpected document", child)
+    return {"status": "installed", "version": version, "executable": exe, "host_seen_by_cli": auth["host"]}
+
+
+_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def valid_protocol_date(value) -> bool:
+    if not isinstance(value, str) or not _DATE.match(value):
+        return False
+    try:
+        datetime.datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        return False
+    return value >= MIN_PROTOCOL
+
+
+def _mcp_failed(detail: str, child: Optional[Child] = None) -> InstallFailure:
+    return InstallFailure("verify", "mcp_handshake_failed", detail, "re-run the installer; if it repeats, report the diagnostics",
+                          retryable=True, diagnostics=child.stderr.tail() if child else "")
+
+
+def _await_response(child: Child, wanted: int) -> Dict[str, object]:
+    while True:
+        line = child.recv()
+        try:
+            message = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(message, dict) or message.get("id") != wanted:
+            continue
+        if "error" in message:
+            raise ProtocolError("error response: %s" % json.dumps(message["error"])[:200])
+        result = message.get("result")
+        if not isinstance(result, dict):
+            raise ProtocolError("malformed result for id %d" % wanted)
+        return result
+
+
+def mcp_handshake(argv: List[str], env: Dict[str, str], tmpdir: str, warnings: List[str]) -> int:
+    config = os.path.join(tmpdir, "config.json")
+    env = dict(env, SNAPLII_CONFIG_PATH=config, PYTHON_KEYRING_BACKEND=ISOLATED_KEYRING)
+    count = 0
+    with Child(argv, "mcp", DEADLINES["mcp"], env, cwd=tmpdir, pipe_stdin=True, protocol=True) as child:
+        try:
+            child.send(json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+                "protocolVersion": KNOWN_PROTOCOL, "capabilities": {},
+                "clientInfo": {"name": "snaplii-install", "version": INSTALLER_VERSION}}}))
+            result = _await_response(child, 1)
+            version = result.get("protocolVersion")
+            if not valid_protocol_date(version):
+                raise _mcp_failed("unsupported protocolVersion %r" % (version,), child)
+            if version > KNOWN_PROTOCOL:
+                warnings.append("the MCP server negotiated protocol %s, newer than the %s this installer knows"
+                                % (version, KNOWN_PROTOCOL))
+            capabilities = result.get("capabilities")
+            if not isinstance(capabilities, dict) or "tools" not in capabilities:
+                raise _mcp_failed("the server reports no tools capability", child)
+            child.send(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}))
+            found, cursor, next_id, pages = False, None, 2, 0
+            while True:
+                params = {"cursor": cursor} if cursor else {}
+                child.send(json.dumps({"jsonrpc": "2.0", "id": next_id, "method": "tools/list", "params": params}))
+                result = _await_response(child, next_id)
+                next_id += 1
+                pages += 1
+                for tool in result.get("tools") or []:
+                    count += 1
+                    if isinstance(tool, dict) and tool.get("name") == "snaplii_config_show":
+                        found = True
+                if pages > 16 or count > 10000:
+                    raise _mcp_failed("tools/list did not terminate within 16 pages", child)
+                cursor = result.get("nextCursor")
+                if not cursor:
+                    break
+            if not found:
+                raise _mcp_failed("snaplii_config_show is not among the server's tools", child)
+        except ProtocolError as exc:
+            raise _mcp_failed("transport failure: %s" % exc.reason, child)
+        except OSError as exc:  # the server closed its input, e.g. a broken pipe on send
+            raise _mcp_failed("transport failure: %s" % exc, child)
+        finally:
+            child.close_stdin()
+            try:
+                child.proc.wait(5)
+            except subprocess.TimeoutExpired:
+                pass
+    if os.path.exists(config):
+        raise _mcp_failed("the server created a configuration file during verification")
+    return count
+
+
+def verify_mcp(venv: str, env: Dict[str, str], tmpdir: str, warnings: List[str]) -> Dict[str, object]:
+    exe = venv_exe(venv, "snaplii-mcp")
+    if not os.path.exists(exe):
+        raise InstallFailure("verify", "mcp_missing", "the snaplii-mcp executable is missing at " + exe,
+                             "re-run the installer", retryable=True)
+    version = metadata_version(venv_python(venv), "snaplii-mcp", env)
+    tools = mcp_handshake([exe], env, tmpdir, warnings)
+    return {"status": "installed", "version": version, "executable": exe, "tools": tools}
