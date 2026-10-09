@@ -122,9 +122,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 `failure.retryable` says whether re-running after the remedy can succeed; when it is false, do not re-run, report the remedy. The JSON keys are a contract: within an `installer_version` keys are only added; renaming or removing one, or changing a status vocabulary or exit code, bumps `installer_version`.
 
-**Updating.** Close the host so its registered Snaplii server stops, re-run the installer (it upgrades both packages in place), then open a new session. `snaplii update` upgrades only the CLI inside this environment and leaves the MCP server behind. Mirrors and proxies are read from `PIP_INDEX_URL`, `PIP_EXTRA_INDEX_URL`, `PIP_TRUSTED_HOST`, `PIP_CERT`, `PIP_PROXY` and the usual proxy variables; `pip.conf` is not read.
-
-Windows support is by construction (`Scripts\`, the `py` launcher, PowerShell quoting) and has not yet been verified on a Windows machine.
+**Updating.** When the user asks to update Snaplii, ask them to quit the host, then download the installer again and run it with the same flags; it upgrades the CLI and the MCP server together. Do not use `snaplii update` in this environment: it upgrades only the CLI and leaves the MCP server on its old version.
 
 ### Rules the skill enforces
 

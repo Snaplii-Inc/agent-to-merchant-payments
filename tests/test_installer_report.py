@@ -132,7 +132,8 @@ def test_main_install_happy_path_with_fake_stages(installer, capsys, tmp_path, m
     assert code == 0 and report["status"] == "installed" and report["venv"] == {"path": venv, "state": "created"}
     assert report["python"]["acquired_by"] is None and report["installer_version"] == "1"
     assert ids(report["next_steps"]) == ["install_skill", "register_mcp", "reload_host", "connect", "cli_on_path", "update"]
-    assert "close the host" in [s for s in report["next_steps"] if s["id"] == "update"][0]["why"]
+    update_why = [s for s in report["next_steps"] if s["id"] == "update"][0]["why"]
+    assert "quit the host" in update_why and "same flags" in update_why
     assert not os.path.exists(venv + ".lock")
     monkeypatch.setattr(installer, "validate_existing", lambda v, need, env: {"executable": installer.venv_python(v), "version": [3, 12, 0]})
     code, report = run_main(installer, capsys, ["--check", "--host", "claude-code"], {"HOME": str(tmp_path)})

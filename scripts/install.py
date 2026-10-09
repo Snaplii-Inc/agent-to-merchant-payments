@@ -1496,9 +1496,10 @@ def next_steps(host: Optional[str], detected: str, components: Dict[str, dict], 
                               "export", ["PATH=%s:$PATH" % bin_dir], platform,
                               command='export PATH="%s:$PATH"' % bin_dir))
     if cli_ok and (mcp_ok or mcp.get("status") == "skipped") and failure is None:
-        steps.append(step("update", "optional", "To update later: close the host so its registered Snaplii server stops, "
-                          "re-run this installer (it upgrades both packages in place), then open a new session. "
-                          "`snaplii update` upgrades only the CLI in this environment and leaves the MCP server behind."))
+        steps.append(step("update", "optional", "To update later: ask the user to quit the host, then download this "
+                          "installer again and run it with the same flags; it upgrades the CLI and the MCP server together. "
+                          "Do not use `snaplii update` in this environment: it upgrades only the CLI and leaves the MCP "
+                          "server on its old version."))
     return steps
 
 
