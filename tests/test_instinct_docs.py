@@ -22,7 +22,7 @@ def test_readme_instinct_section_skips_cli_login_and_states_the_risk():
 
 
 def test_readme_cli_login_step_points_instinct_elsewhere():
-    step = README.split("#### Step 2: Authenticate", 1)[1].split("#### Step 3", 1)[0]
+    step = README.split("#### Step 3: Connect", 1)[1].split("\n####", 1)[0]
     assert "In Instinct, skip this step" in step
 
 

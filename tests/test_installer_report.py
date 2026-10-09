@@ -323,3 +323,39 @@ def test_relative_source_is_resolved_for_the_install_and_the_report(installer, c
     assert code == 0 and seen["source"] == str(src)
     skill = [s for s in report["next_steps"] if s["id"] == "install_skill"][0]
     assert skill["args"][2] == str(src)
+
+
+# Muse runs the CLI and installs skills itself.
+
+def test_host_muse_is_accepted(installer):
+    assert installer.parse_args(["--host", "muse"]).host == "muse"
+
+
+def test_muse_steps_skip_npx_and_mcp_registration(installer):
+    comps = {"cli": installed(installer)["cli"], "mcp": {"status": "skipped"}}
+    for host, detected in (("muse", "unknown"), (None, "muse")):
+        steps = installer.next_steps(host, detected, comps, "/v", None, False, True, "linux", {}, [])
+        skill = [s for s in steps if s["id"] == "install_skill"][0]
+        assert skill["command"] is None and "Muse installs" in skill["why"]
+        assert "register_mcp" not in ids(steps) and not any(s["status"] == "required" for s in steps)
+
+
+def test_detected_muse_installs_the_cli_only(installer, capsys, tmp_path, monkeypatch):
+    monkeypatch.setattr(installer, "detect_host", lambda environ, **k: {"detected": "muse", "instinct_variables": [], "platform": sys.platform})
+    monkeypatch.setattr(installer, "locate_uv", lambda environ, **k: None)
+    monkeypatch.setattr(installer, "qualifying_candidates", lambda *a, **k: [{"argv": [sys.executable], "executable": sys.executable, "version": [3, 12, 0], "venv_ok": True}])
+
+    def fake_build(venv_path, reservation, candidates, need, env, mode):
+        os.makedirs(venv_path, exist_ok=True)
+        installer.write_marker(venv_path, sys.executable)
+        reservation.remove()
+        return {"executable": installer.venv_python(venv_path), "version": [3, 12, 0], "state": "created"}
+    seen = {}
+    monkeypatch.setattr(installer, "build_venv", fake_build)
+    monkeypatch.setattr(installer, "install_packages", lambda py, cli_only, source, env: seen.setdefault("cli_only", cli_only))
+    monkeypatch.setattr(installer, "verify_cli", lambda v, env, t: {"status": "installed", "version": "0.19.0", "executable": installer.venv_exe(v, "snaplii"), "host_seen_by_cli": "muse"})
+    monkeypatch.setattr(installer, "verify_mcp", lambda *a, **k: pytest.fail("Muse does not run the MCP server"))
+    code, report = run_main(installer, capsys, [], {"HOME": str(tmp_path), "PATH": os.environ.get("PATH", "")})
+    assert code == 0 and report["status"] == "installed" and seen["cli_only"] is True
+    assert report["components"]["mcp"] == {"status": "skipped"}
+    assert any(w.startswith("muse:") for w in report["warnings"])

@@ -54,8 +54,8 @@ def test_skill_install_is_user_wide(installer, host, tail):
 
 
 def test_readme_skill_command_is_user_wide():
-    first = README.split("### Install the Agent Skill", 1)[1].split("```bash", 1)[1].split("```", 1)[0]
-    assert first.strip() == "npx skills add ./snaplii-src -g"
+    block = README.split("### Install from a release", 1)[1].split("\n### ", 1)[0]
+    assert "npx skills add ./snaplii-src -g -a claude-code" in block
 
 
 # 2. relayed commands name a CLI that exists

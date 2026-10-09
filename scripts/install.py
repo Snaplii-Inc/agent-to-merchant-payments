@@ -36,7 +36,7 @@ INSTINCT_PREFIX = "INSTINCT_"
 ACQUIRE_VERSION = "3.12"
 MIN_PROTOCOL = "2024-11-05"
 KNOWN_PROTOCOL = "2025-06-18"
-HOSTS = ("claude-code", "claude-desktop", "codex", "cursor", "openclaw", "instinct")
+HOSTS = ("claude-code", "claude-desktop", "codex", "cursor", "openclaw", "instinct", "muse")
 NEED = {"mcp": (3, 10), "cli": (3, 9)}
 DEADLINES = {"probe": 15, "metadata": 30, "version": 60, "doctor": 60, "venv": 120,
              "mcp": 20, "pip": 900, "uv": 600}
@@ -1449,6 +1449,9 @@ def _skill_step(host: Optional[str], platform: str, source: Optional[str] = None
     why = "The skill carries the rules and flows; the server alone does not."
     if host == "openclaw":
         return step("install_skill", "pending", why, "clawhub", ["install", "snaplii-a2m-payment"], platform)
+    if host == "muse":
+        return step("install_skill", "pending", "Muse installs skills itself: ask Muse to install the snaplii-cli skill "
+                    "(clawhub-publish/SKILL.md in this release); it lands under ~/workspace/skills/ in a folder Muse names.")
     # The skill comes from the same release as the packages: the clone given to
     # --source, else the tag of the installed CLI, else the repository.
     if source:
@@ -1465,7 +1468,7 @@ def _skill_step(host: Optional[str], platform: str, source: Optional[str] = None
 def next_steps(host: Optional[str], detected: str, components: Dict[str, dict], venv: str,
                failure: Optional[InstallFailure], check_mode: bool, cli_only: bool, platform: str,
                environ: Dict[str, str], rerun: List[str], source: Optional[str] = None) -> List[Dict[str, object]]:
-    effective = "instinct" if detected == "instinct" else host
+    effective = detected if detected in ("instinct", "muse") else host
     cli, mcp = components.get("cli", {}), components.get("mcp", {})
     cli_ok, mcp_ok = cli.get("status") == "installed", mcp.get("status") == "installed"
     steps = []  # type: List[Dict[str, object]]
@@ -1608,6 +1611,13 @@ def main(argv: Optional[List[str]] = None, environ: Optional[Dict[str, str]] = N
             warnings.append("--host %s ignored: Instinct was detected, so Instinct guidance is used" % args.host)
         if args.host == "instinct" and host["detected"] != "instinct":
             warnings.append("--host instinct given but no INSTINCT_ variable is set; Instinct guidance is used anyway")
+        if host["detected"] == "muse" and args.host and args.host != "muse":
+            warnings.append("--host %s ignored: Muse was detected, so Muse guidance is used" % args.host)
+        if args.host == "muse" and host["detected"] != "muse":
+            warnings.append("--host muse given but Muse was not detected; Muse guidance is used anyway")
+        if (host["detected"] == "muse" or args.host == "muse") and not cli_only:
+            cli_only = True
+            warnings.append("muse: Muse runs the Snaplii CLI, not an MCP server, so only the CLI is installed")
         if cli_only:
             components["mcp"] = {"status": "skipped"}
         need = NEED["cli"] if cli_only else NEED["mcp"]
