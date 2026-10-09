@@ -46,16 +46,20 @@ def test_readme_claude_code_block_matches_the_installer():
 
 # 4. the skill install never writes into the current project
 
-@pytest.mark.parametrize("host,tail", [("claude-code", ["-g", "-a", "claude-code"]), ("codex", ["-g", "-a", "codex"]),
-                                       ("cursor", ["-g", "-a", "cursor"]), (None, ["-g"])])
+@pytest.mark.parametrize("host,tail", [("claude-code", ["-g", "-a", "claude-code", "-y"]), ("codex", ["-g", "-a", "codex", "-y"]),
+                                       ("cursor", ["-g", "-a", "cursor", "-y"]), (None, ["-g", "-a", "AGENT", "-y"])])
 def test_skill_install_is_user_wide(installer, host, tail):
-    args = _steps(installer, host)["install_skill"]["args"]
-    assert args == ["skills", "add", "https://github.com/Snaplii-Inc/agent-to-merchant-payments/tree/v0.19.0"] + tail
+    skill = _steps(installer, host)["install_skill"]
+    words = ["--yes", "skills", "add", "https://github.com/Snaplii-Inc/agent-to-merchant-payments/tree/v0.19.0"] + tail
+    if host is None:
+        assert "npx " + " ".join(words) in skill["why"]
+    else:
+        assert skill["args"] == words
 
 
 def test_readme_skill_command_is_user_wide():
     block = README.split("### Install from a release", 1)[1].split("\n### ", 1)[0]
-    assert "npx skills add ./snaplii-src -g -a claude-code" in block
+    assert "npx --yes skills add ./snaplii-src -g -a claude-code -y" in block
 
 
 # 2. relayed commands name a CLI that exists
@@ -138,7 +142,7 @@ def test_skill_copies_stay_identical():
 def test_readme_has_an_uninstall_section():
     assert re.search(r"^#+ Uninstall$", README, re.M)
     section = README.split("Uninstall\n", 1)[1].split("\n## ", 1)[0]
-    for needle in ("claude mcp remove snaplii", "npx skills remove -g snaplii-cli snaplii-autopilot",
+    for needle in ("claude mcp remove snaplii", "npx --yes skills remove -g -y snaplii-cli snaplii-autopilot",
                    "config clear", "rm -rf ~/.snaplii-env", "Revoke", "uv python uninstall 3.12"):
         assert needle in section, needle
     assert "(#uninstall)" in README.split("## Table of Contents", 1)[1].split("\n## ", 1)[0]
@@ -150,9 +154,8 @@ def test_readme_drops_the_manual_python_upgrade_for_mac():
 
 
 def test_readme_lists_every_installer_flag():
-    flags = README.split("`--host` is one of", 1)[1].split("\n\n", 1)[0]
-    for flag in ("--cli-only", "--check", "--venv", "--python", "--source"):
-        assert flag in flags, flag
+    flags = README.split("`--host` also takes", 1)[1].split("\n\n", 1)[0]
+    assert "`--help`" in flags  # the installer's own --help owns the flag list
 
 
 def test_readme_sessions_cover_key_keeping_and_shared_storage():

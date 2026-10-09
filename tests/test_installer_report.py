@@ -30,7 +30,7 @@ def test_next_steps_per_host(installer):
         register = steps[1]
         assert register["executable"] == exe and register["command"] == first and register["status"] == "pending"
     skill = installer.next_steps("claude-code", "unknown", comps, "/v", None, False, False, "linux", {}, [])[0]
-    assert skill["args"] == ["skills", "add", "https://github.com/Snaplii-Inc/agent-to-merchant-payments/tree/v0.19.0", "-g", "-a", "claude-code"]
+    assert skill["args"] == ["--yes", "skills", "add", "https://github.com/Snaplii-Inc/agent-to-merchant-payments/tree/v0.19.0", "-g", "-a", "claude-code", "-y"]
     assert installer.next_steps("openclaw", "unknown", comps, "/v", None, False, False, "linux", {}, [])[0]["executable"] == "npx"
     desktop = installer.next_steps("claude-desktop", "unknown", comps, "/v", None, False, False, "darwin", {"HOME": "/Users/u"}, [])[1]
     assert desktop["file"].endswith("Library/Application Support/Claude/claude_desktop_config.json")
@@ -244,7 +244,7 @@ def test_readme_required_row_applies_the_remedy_before_the_rerun():
     from pathlib import Path
     readme = (Path(__file__).resolve().parents[1] / "README.md").read_text()
     section = readme.split("### Install the execution layer", 1)[1].split("\n### ", 1)[0]
-    row = [line for line in section.splitlines() if line.startswith("| `required` |")][0]
+    row = [line for line in section.splitlines() if line.startswith("- `required`:")][0]
     assert row.index("`why`") < row.index("`command`") and "re-runs the installer" in row
 
 
@@ -279,20 +279,42 @@ def test_main_lock_rewrite_failure_still_prints_json_and_keeps_the_lock(installe
 def test_skill_step_installs_from_the_source_clone(installer):
     steps = installer.next_steps("claude-code", "unknown", installed(installer), "/v", None, False, False, "linux", {}, [],
                                  source="/home/u/snaplii-src")
-    assert steps[0]["args"] == ["skills", "add", "/home/u/snaplii-src", "-g", "-a", "claude-code"]
+    assert steps[0]["args"] == ["--yes", "skills", "add", "/home/u/snaplii-src", "-g", "-a", "claude-code", "-y"]
 
 
 def test_skill_step_pins_the_tag_of_the_installed_cli(installer):
     steps = installer.next_steps("codex", "unknown", installed(installer), "/v", None, False, False, "linux", {}, [])
-    assert steps[0]["args"] == ["skills", "add", "https://github.com/Snaplii-Inc/agent-to-merchant-payments/tree/v0.19.0",
-                                "-g", "-a", "codex"]
+    assert steps[0]["args"] == ["--yes", "skills", "add", "https://github.com/Snaplii-Inc/agent-to-merchant-payments/tree/v0.19.0",
+                                "-g", "-a", "codex", "-y"]
 
 
 def test_skill_step_without_a_known_version_uses_the_repository(installer):
     comps = {"cli": {"status": "missing"}, "mcp": {"status": "missing"}}
     steps = installer.next_steps(None, "unknown", comps, "/v", None, True, False, "linux", {}, ["python3", "install.py", "--check"])
     skill = [s for s in steps if s["id"] == "install_skill"][0]
-    assert skill["args"] == ["skills", "add", "Snaplii-Inc/agent-to-merchant-payments", "-g"]
+    assert skill["command"] is None
+    assert "npx --yes skills add Snaplii-Inc/agent-to-merchant-payments -g -a AGENT -y" in skill["why"]
+
+
+def test_skill_step_runs_without_prompts(installer):
+    # A shell tool has no TTY: the skills installer aborts on its prompts unless -y is given.
+    for host in ("claude-code", "codex", "cursor", "openclaw"):
+        skill = installer.next_steps(host, "unknown", installed(installer), "/v", None, False, False, "linux", {}, [])[0]
+        assert skill["args"][-3:] == ["-a", host, "-y"], host
+        assert skill["args"][0] == "--yes" and skill["command"].startswith("npx --yes skills add"), host
+    # Without a known agent, -y would install into every agent the skills installer knows.
+    # Without a known agent the step is a template, never a command missing -a and -y.
+    generic = installer.next_steps(None, "unknown", installed(installer), "/v", None, False, False, "linux", {}, [])[0]
+    assert generic["command"] is None and "args" not in generic
+    assert "-a AGENT -y" in generic["why"] and "Supported Agents" in generic["why"] and "Manual install" in generic["why"]
+    assert "without -g" in generic["why"] and "project root" in generic["why"]
+
+
+def test_connect_step_names_both_hosts_that_connect_on_install(installer):
+    # The MCP server tells Instinct to connect right after install; the skill tells Muse the same.
+    connect = [s for s in installer.next_steps("instinct", "instinct", installed(installer), "/v", None, False, False,
+                                               "linux", {}, []) if s["id"] == "connect"][0]
+    assert "Muse" in connect["why"] and "Instinct" in connect["why"] and "Installing alone does not connect" in connect["why"]
 
 
 def test_update_step_points_at_a_release_tag(installer):
@@ -322,7 +344,7 @@ def test_relative_source_is_resolved_for_the_install_and_the_report(installer, c
     code, report = run_main(installer, capsys, ["--source", "snaplii-src", "--host", "claude-code"], {"HOME": str(tmp_path), "PATH": os.environ.get("PATH", "")})
     assert code == 0 and seen["source"] == str(src)
     skill = [s for s in report["next_steps"] if s["id"] == "install_skill"][0]
-    assert skill["args"][2] == str(src)
+    assert skill["args"][3] == str(src)
 
 
 # Muse runs the CLI and installs skills itself.
@@ -366,9 +388,9 @@ def test_detected_muse_installs_the_cli_only(installer, capsys, tmp_path, monkey
 def test_openclaw_skill_comes_from_the_same_release(installer):
     comps = installed(installer)
     from_clone = installer.next_steps("openclaw", "unknown", comps, "/v", None, False, False, "linux", {}, [], source="/src")[0]
-    assert from_clone["args"] == ["skills", "add", "/src", "-g", "-a", "openclaw"]
+    assert from_clone["args"] == ["--yes", "skills", "add", "/src", "-g", "-a", "openclaw", "-y"]
     from_tag = installer.next_steps("openclaw", "unknown", comps, "/v", None, False, False, "linux", {}, [])[0]
-    assert from_tag["args"] == ["skills", "add", "https://github.com/Snaplii-Inc/agent-to-merchant-payments/tree/v0.19.0", "-g", "-a", "openclaw"]
+    assert from_tag["args"] == ["--yes", "skills", "add", "https://github.com/Snaplii-Inc/agent-to-merchant-payments/tree/v0.19.0", "-g", "-a", "openclaw", "-y"]
 
 
 def test_muse_skill_step_names_the_clone(installer):

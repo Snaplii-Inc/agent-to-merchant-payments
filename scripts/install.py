@@ -1460,8 +1460,15 @@ def _skill_step(host: Optional[str], platform: str, source: Optional[str] = None
     else:
         origin = REPO
     # -g installs for the user; without it the skills land in the current project.
-    args = ["skills", "add", origin, "-g"] + (["-a", host] if host in ("claude-code", "codex", "cursor", "openclaw") else [])
-    return step("install_skill", "pending", why, "npx", args, platform)
+    # npx --yes and skills -y skip the two layers of prompts; -y only with -a, alone it installs into every known agent.
+    if host in ("claude-code", "codex", "cursor", "openclaw"):
+        return step("install_skill", "pending", why, "npx", ["--yes", "skills", "add", origin, "-g", "-a", host, "-y"], platform)
+    # Unknown agent: a template, so nobody runs a command that prompts or installs into every agent.
+    template = render_command("npx", ["--yes", "skills", "add", origin, "-g", "-a", "AGENT", "-y"], platform)
+    return step("install_skill", "pending", why + " Run " + template + " with AGENT set to your agent's value in the "
+                "skills installer's Supported Agents list, without -g and from the project root if that list gives it no "
+                "global path; if it is not listed, copy the skill folders as the README's "
+                "Manual install shows.")
 
 
 def next_steps(host: Optional[str], detected: str, components: Dict[str, dict], venv: str,
@@ -1496,9 +1503,9 @@ def next_steps(host: Optional[str], detected: str, components: Dict[str, dict], 
         steps.append(step("reload_host", "pending", "Most hosts load skills and MCP servers at session start; "
                           "if yours does, open a new session."))
         steps.append(step("connect", "pending", "When the user asks to connect or gives a Snaplii task, or right away on a "
-                          "first install in Muse: check has_valid_token with snaplii_config_show, or with the CLI's config "
-                          "show; if false, follow its next_action. Installing alone does not connect. The installer never "
-                          "does this."))
+                          "first install in Muse or Instinct: check has_valid_token with snaplii_config_show, or with the CLI's config "
+                          "show; if false, follow its next_action. Installing alone does not connect elsewhere. The installer "
+                          "never does this."))
     if cli_ok:
         bin_dir = os.path.dirname(str(cli["executable"]))
         if platform == "win32":
@@ -1539,7 +1546,7 @@ def parse_args(argv: Optional[List[str]]) -> argparse.Namespace:
     parser.add_argument("--python", help="interpreter to try first")
     parser.add_argument("--host", choices=HOSTS, help="tailor next_steps to this host")
     parser.add_argument("--source", help="install from a repository clone instead of PyPI")
-    parser.add_argument("--check", action="store_true", help="verify what is present; change nothing")
+    parser.add_argument("--check", action="store_true", help="report what is present; install nothing")
     try:
         return parser.parse_args(argv)
     except SystemExit as exc:

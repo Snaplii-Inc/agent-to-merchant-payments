@@ -21,7 +21,7 @@ def test_readme_installs_all_three_from_one_clone():
     bash = block.split("```bash", 1)[1].split("```", 1)[0]
     lines = [line.strip() for line in bash.strip().splitlines()]
     assert lines[0] == CLONE
-    assert lines[1] == "npx skills add ./snaplii-src -g -a claude-code"
+    assert lines[1] == "npx --yes skills add ./snaplii-src -g -a claude-code -y"
     assert lines[2] == "python3 snaplii-src/scripts/install.py --host claude-code --source ./snaplii-src"
     assert "delete" in block and "same commit" in block
 
@@ -32,7 +32,7 @@ def test_readme_no_longer_installs_from_main():
 
 
 def test_readme_update_uses_a_new_release_tag():
-    update = README.split("**Updating.**", 1)[1].split("\n\n", 1)[0]
+    update = README.split("## Updating\n\n", 1)[1].split("\n\n", 1)[0]
     assert "release tag" in update and "--source" in update and "snaplii update" in update
 
 

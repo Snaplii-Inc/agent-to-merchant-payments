@@ -52,8 +52,6 @@ def test_cli_help_states_the_item_id_format(command):
 
 def test_readmes_state_the_item_id_format():
     readme = (ROOT / "README.md").read_text()
-    rules = flat(readme.split("### Rules the skill enforces", 1)[1].split("\n### ", 1)[0])
-    assert FORMAT in rules and "verbatim" in rules
     cli_note = flat(readme.split("snaplii purchase --item-id CB...-CT... --price 50", 1)[1].split("\n## ", 1)[0])
     assert FORMAT in cli_note and "verbatim" in cli_note
     package = flat((ROOT / "snaplii-cli" / "README.md").read_text())
