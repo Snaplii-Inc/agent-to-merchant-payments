@@ -47,3 +47,36 @@ def _no_instinct_environment(monkeypatch):
     for name in list(os.environ):
         if name.startswith("INSTINCT_"):
             monkeypatch.delenv(name)
+
+
+import importlib.util
+import textwrap
+
+
+@pytest.fixture
+def installer():
+    """Load scripts/install.py as a module without importing anything from src/."""
+    path = Path(__file__).resolve().parents[1] / "scripts" / "install.py"
+    spec = importlib.util.spec_from_file_location("snaplii_install", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture
+def clean_env(monkeypatch):
+    """Strip host-detection, uv, pip and Python variables so tests see a neutral environment."""
+    for name in list(os.environ):
+        if name.startswith(("INSTINCT_", "UV_", "PIP_", "PYTHON", "SNAPLII_")):
+            monkeypatch.delenv(name, raising=False)
+    return dict(os.environ)
+
+
+@pytest.fixture
+def fake_child(tmp_path):
+    """Write a small Python child script and return its argv."""
+    def make(body, name="child.py"):
+        script = tmp_path / name
+        script.write_text(textwrap.dedent(body))
+        return [sys.executable, str(script)]
+    return make
