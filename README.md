@@ -15,7 +15,7 @@ This section is the short version. The rest of this file is reference material f
 | Capability | What happens | Canada (CAD) | United States (USD) | Key scope |
 |---|---|---|---|---|
 | Buy gift cards | Browse 500+ brands, quote the exact price with vouchers and up to 10% cashback, buy, then read the redemption code | Yes | Yes | `PAY_WRITE` |
-| Pay a merchant with the card | Redeem the code on the merchant or delivery site and place the order. Needs a browser-automation tool and the `snaplii-autopilot` skill | Yes | Yes | `PAY_WRITE` |
+| Pay a merchant with the card | Redeem the code on the merchant or delivery site and place the order. Needs a browser-automation tool; the `snaplii-autopilot` skill or the `snaplii_autopilot` MCP prompt carries the flow | Yes | Yes | `PAY_WRITE` |
 | Check balance and cards | Spendable Snaplii Cash, owned cards, cashback estimates | Yes | Yes | `PAY_READ` |
 | Pay bills | Supported utility, telecom and other billers, paid from Snaplii Cash | Yes | No | `PAY_WRITE` |
 | Send money (P2P) | Send Snaplii Cash to another Snaplii user's phone number; cancellable for about 5 minutes, then it sends itself | Yes | Yes | `P2P` or `ALL` |
@@ -325,7 +325,7 @@ snaplii transfer list                                          # List transfers,
 
 ## CLI Commands
 
-Every operation prints one JSON document on stdout, or one JSON error on stderr with exit code 1; `help`, `--help`, and `--version` print plain text, and `init` writes its hidden prompt to stderr. A refused connection is reported as JSON too, but another transport failure during a read, such as a timeout, can still surface as a Python traceback. Authentication errors carry `auth_state` and a `next_action` the agent can follow.
+Every operation prints one JSON document on stdout, or one JSON error on stderr with exit code 1; `help`, `--help`, and `--version` print plain text, and `init` writes its hidden prompt to stderr. A refused connection is reported as JSON too, but another transport failure during a read, such as a timeout, can still surface as a Python traceback. A few lookups report a not-found condition as an `error` field inside the stdout JSON with exit code 0, for example `smart cashback` when no denomination matches, so inspect the body as well as the exit code. Authentication errors carry `auth_state` and a `next_action` the agent can follow.
 
 | Command | Purpose |
 |---|---|
