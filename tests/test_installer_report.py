@@ -32,11 +32,13 @@ def test_next_steps_per_host(installer):
     skill = installer.next_steps("claude-code", "unknown", comps, "/v", None, False, False, "linux", {}, [])[0]
     assert skill["args"] == ["--yes", "skills", "add", "https://github.com/Snaplii-Inc/agent-to-merchant-payments/tree/v0.19.0", "-g", "-a", "claude-code", "-y"]
     assert installer.next_steps("openclaw", "unknown", comps, "/v", None, False, False, "linux", {}, [])[0]["executable"] == "npx"
-    desktop = installer.next_steps("claude-desktop", "unknown", comps, "/v", None, False, False, "darwin", {"HOME": "/Users/u"}, [])[1]
+    desktop = [s for s in installer.next_steps("claude-desktop", "unknown", comps, "/v", None, False, False, "darwin",
+                                               {"HOME": "/Users/u"}, []) if s["id"] == "register_mcp"][0]
     assert desktop["file"].endswith("Library/Application Support/Claude/claude_desktop_config.json")
     assert desktop["json"] == {"mcpServers": {"snaplii": {"command": "/home/u/.snaplii-env/bin/snaplii-mcp"}}}
     cursor = installer.next_steps("cursor", "unknown", comps, "/v", None, False, False, "linux", {}, [])[1]
-    assert cursor["file"] == ".cursor/mcp.json" and cursor["json"]["mcpServers"]["snaplii"]["command"].endswith("snaplii-mcp")
+    assert cursor["file"] == os.path.join(installer.home_dir({}), ".cursor", "mcp.json")  # user-wide, like the -g skills
+    assert cursor["json"]["mcpServers"]["snaplii"]["command"].endswith("snaplii-mcp")
     instinct = installer.next_steps("codex", "instinct", comps, "/v", None, False, False, "linux", {}, [])
     assert "install_skill" not in ids(instinct) and "snaplii_connect" in instinct[0]["why"] and instinct[0]["id"] == "register_mcp"
     generic = installer.next_steps(None, "unknown", comps, "/v", None, False, False, "linux", {}, [])[1]
@@ -93,6 +95,19 @@ def test_main_instinct_refuses_cli_only_before_any_subprocess(installer, capsys,
     code, report = run_main(installer, capsys, ["--cli-only"], {"HOME": str(tmp_path), "INSTINCT_X": "1"})
     assert code == 1 and report["failure"]["code"] == "mcp_required_on_instinct" and report["failure"]["retryable"] is False
     assert report["host"]["detected"] == "instinct" and report["host"]["instinct_variables"] == ["INSTINCT_X"]
+
+
+def test_main_host_instinct_refuses_cli_only_without_an_instinct_variable(installer, capsys, tmp_path, monkeypatch):
+    monkeypatch.setattr(installer, "run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no subprocess expected")))
+    code, report = run_main(installer, capsys, ["--host", "instinct", "--cli-only"], {"HOME": str(tmp_path)})
+    assert code == 1 and report["failure"]["code"] == "mcp_required_on_instinct" and report["failure"]["retryable"] is False
+
+
+def test_claude_desktop_gets_no_skill_step(installer):
+    # Claude Desktop loads no skill folders, so the report must not ask for one.
+    steps = installer.next_steps("claude-desktop", "unknown", installed(installer), "/v", None, False, False,
+                                 "darwin", {"HOME": "/Users/u"}, [])
+    assert "install_skill" not in ids(steps) and steps[0]["id"] == "register_mcp"
 
 
 def test_main_source_invalid_and_host_precedence_warnings(installer, capsys, tmp_path):
@@ -306,8 +321,9 @@ def test_skill_step_runs_without_prompts(installer):
     # Without a known agent the step is a template, never a command missing -a and -y.
     generic = installer.next_steps(None, "unknown", installed(installer), "/v", None, False, False, "linux", {}, [])[0]
     assert generic["command"] is None and "args" not in generic
-    assert "-a AGENT -y" in generic["why"] and "Supported Agents" in generic["why"] and "Manual install" in generic["why"]
-    assert "without -g" in generic["why"] and "project root" in generic["why"]
+    # Same two routes as the README's table: an agent with an -a value runs the template, any other copies.
+    assert "-a AGENT -y" in generic["why"] and "README's table" in generic["why"] and "Manual install" in generic["why"]
+    assert "Supported Agents" not in generic["why"]
 
 
 def test_connect_step_names_both_hosts_that_connect_on_install(installer):

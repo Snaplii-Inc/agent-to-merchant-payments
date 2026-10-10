@@ -29,7 +29,7 @@ Install the skills, the CLI and the MCP server from one release tag, so all thre
 | Gemini CLI | `gemini-cli` | leave it out |
 | GitHub Copilot | `github-copilot` | leave it out |
 | Muse | skip this command, see **Muse** below | `muse` |
-| Instinct | skip this command, then follow the **Instinct** block under [MCP Server](#mcp-server-claude-openclaw-cursor-instinct) | `instinct` |
+| Instinct | skip both this command and **Manual install**; Instinct runs Snaplii through the MCP server, as the **Instinct** block under [MCP Server](#mcp-server-claude-openclaw-cursor-instinct) describes | `instinct` |
 | Any other agent | skip this command, use **Manual install** | leave it out; add `--cli-only` unless you know how your agent registers an MCP server |
 
 - `--yes` and `-y` skip prompts a shell tool cannot answer interactively. Always pair `-y` with `-a`, or the skills go to every agent the installer finds.
@@ -42,6 +42,7 @@ python3 snaplii-src/scripts/install.py --host claude-code --source ./snaplii-src
 ```
 
 - On Windows, use `py -3` in place of `python3`, and run **Manual install** in Git Bash, which comes with Git for Windows. The skills are copied and the packages are built into `~/.snaplii-env`, so you can delete `snaplii-src` afterwards.
+- To install again or update, run the three commands from a directory with no `snaplii-src` folder.
 
 **Manual install.** Use it only when the second command cannot run. Set `SKILLS_DIR` to your agent's user-wide skills directory, or its project skills directory if it has none. The commands copy both skills, each with `SKILL.md` at its top level, and update the files in place when repeated.
 
@@ -58,12 +59,12 @@ cp -R snaplii-src/clawhub-autopilot/. "$SKILLS_DIR/snaplii-autopilot/"
 
 The third command builds the CLI and the MCP server into `~/.snaplii-env` and prints a JSON report with the next steps; it never asks for an API key or edits host configuration. `--host` also takes `claude-desktop`; see `--help` for other flags and [No Python on the machine](#no-python-on-the-machine) if Python is missing.
 
-**Reading the report.** `status: installed` (exit 0) means every component you asked for works; `--check` reports `installed` or `not_installed` (exit 1). Work through `next_steps` in order:
+**Reading the report.** `status: installed` (exit 0) means every component you asked for works; `--check` reports `installed` (exit 0) or `not_installed` (exit 1). Work through `next_steps` in order:
 
 - `required`: blocking. Do what `why` says, then run `command`, which re-runs the installer, **once**; if the same `failure.code` returns, or `failure.retryable` is false, stop and report it. When `command` is null, report `why` to the user.
 - `pending`: do the ones that apply: skip `install_skill` if this clone's skills are installed already, and `register_mcp` if your agent uses the CLI only. `register_mcp` gives a command to run, a `file` to merge its `json` into without removing other entries, or only a path to register as a stdio server; never run that path.
 
-**Verify.** `npx skills list -g` shows `snaplii-cli` and `snaplii-autopilot` after the second command, where `Agents: not linked` is normal for agents that read `~/.agents/skills`, and `ls "$SKILLS_DIR"` does after **Manual install**; Muse installs `snaplii-cli` only. Your agent loads them after the new session the report's `reload_host` step may need. Then check through the route your agent uses: call the `snaplii_config_show` tool if it uses MCP, or run the report's CLI path with `config show` after `--cli-only`; use that absolute path for every CLI command. Never buy anything to test the install.
+**Verify.** `npx skills list -g` shows `snaplii-cli` and `snaplii-autopilot` after the second command, where `Agents: not linked` is normal for agents that read `~/.agents/skills`, and `ls "$SKILLS_DIR"` does after **Manual install**; Muse installs `snaplii-cli` only. Your agent loads them after the new session the report's `reload_host` step may need. Then check the connection state: in this session, run the report's CLI path with `config show`, and use that absolute path for every CLI command; if your agent uses MCP, also call the `snaplii_config_show` tool once it loads in the new session. Never buy anything to test the install.
 
 ---
 
@@ -398,7 +399,7 @@ The one-time `eid` in the connect link is visible to the agent. Whoever holds it
 <details>
 <summary><strong>Cursor / VS Code / Other MCP clients</strong></summary>
 
-Any MCP-compatible client can start the Snaplii MCP server over stdio. Register the absolute `snaplii-mcp` path from the report's `register_mcp` step as a stdio server; most clients take a JSON entry like this:
+Any MCP-compatible client can start the Snaplii MCP server over stdio. Register the absolute `snaplii-mcp` path from the report's `register_mcp` step as a stdio server; for Cursor, that step names `~/.cursor/mcp.json`. Most clients take a JSON entry like this:
 
 ```json
 {
@@ -470,7 +471,7 @@ The `skills/*.md` files and the `clawhub-*/SKILL.md` folders are kept byte-ident
 
 ## Updating
 
-When the user asks to update Snaplii, clone the new release tag into a fresh directory and repeat the three commands with `--source` set to the new clone. On `files_in_use`, the running Snaplii server holds the files: the user closes the host and runs the report's retry command in a terminal; then open a new session. Do not use `snaplii update` here: it upgrades only the CLI, not the MCP server.
+When the user asks to update Snaplii, repeat the three commands with the new release tag, from a directory with no `snaplii-src` folder, so `--source` points at the new clone. On `files_in_use`, the running Snaplii server holds the files: the user closes the host and runs the report's retry command in a terminal; then open a new session. Do not use `snaplii update` here: it upgrades only the CLI, not the MCP server.
 
 ---
 
@@ -480,7 +481,7 @@ Remove what the installer and the host registration added:
 
 1. Revoke the API key in the Snaplii App: **More → Payment Methods → AI Payment Management**.
 2. Sign out locally: `~/.snaplii-env/bin/snaplii config clear`. It does not delete a key the host stores (Muse, the Instinct vault).
-3. Remove the MCP registration: `claude mcp remove snaplii` in Claude Code, `codex mcp remove snaplii` in Codex, or delete the `snaplii` entry from `claude_desktop_config.json` or `.cursor/mcp.json`.
+3. Remove the MCP registration: `claude mcp remove snaplii` in Claude Code, `codex mcp remove snaplii` in Codex, or delete the `snaplii` entry from `claude_desktop_config.json` or `~/.cursor/mcp.json`.
 4. Remove the skills: `npx --yes skills remove -g -y snaplii-cli snaplii-autopilot`. After **Manual install**, delete the two folders from that skills directory instead; a skill installed earlier from ClawHub is removed with ClawHub.
 5. Delete the environment and the local configuration: `rm -rf ~/.snaplii-env ~/.snaplii` (PowerShell: `Remove-Item -Recurse -Force $HOME\.snaplii-env, $HOME\.snaplii`).
 6. If the installer fetched CPython 3.12 with uv and nothing else uses it, remove it with `uv python uninstall 3.12`. If the installer also installed uv into `~/.local/bin`, delete `uv` and `uvx` there.

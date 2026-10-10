@@ -142,7 +142,7 @@ def test_windows_fallbacks_name_their_shell():
 
 def test_verify_checks_discovery_in_the_agent_and_mcp_examples_are_config():
     verify = README.split("**Verify.**", 1)[1].split("\n\n", 1)[0]
-    assert "`npx skills list -g` shows `snaplii-cli` and `snaplii-autopilot`" in verify and "`Agents: not linked` is normal" in verify and "if it uses MCP" in verify and "after `--cli-only`" in verify
+    assert "`npx skills list -g` shows `snaplii-cli` and `snaplii-autopilot`" in verify and "`Agents: not linked` is normal" in verify and "in this session" in verify and "if your agent uses MCP" in verify
     other = README.split("<summary><strong>Cursor / VS Code / Other MCP clients</strong></summary>", 1)[1].split("</details>", 1)[0]
     assert "```json" in other and "```bash" not in other
 

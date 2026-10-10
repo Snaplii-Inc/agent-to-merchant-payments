@@ -1436,7 +1436,8 @@ def _register_step(host: Optional[str], exe: str, platform: str, environ: Dict[s
         return step("register_mcp", "pending", why + " Merge this into the file, then restart Claude Desktop.",
                     file=claude_desktop_config(platform, environ), json_=snippet)
     if host == "cursor":
-        return step("register_mcp", "pending", why + " Merge this into the project's MCP file.", file=".cursor/mcp.json", json_=snippet)
+        return step("register_mcp", "pending", why + " Merge this into Cursor's user-wide MCP file.",
+                    file=os.path.join(home_dir(environ), ".cursor", "mcp.json"), json_=snippet)
     if host == "instinct":
         return step("register_mcp", "pending", "Register this executable as the Snaplii MCP server as the README's Instinct "
                     "block describes; the vault flow starts from snaplii_connect: " + README_URL, exe, [], platform)
@@ -1465,10 +1466,9 @@ def _skill_step(host: Optional[str], platform: str, source: Optional[str] = None
         return step("install_skill", "pending", why, "npx", ["--yes", "skills", "add", origin, "-g", "-a", host, "-y"], platform)
     # Unknown agent: a template, so nobody runs a command that prompts or installs into every agent.
     template = render_command("npx", ["--yes", "skills", "add", origin, "-g", "-a", "AGENT", "-y"], platform)
-    return step("install_skill", "pending", why + " Run " + template + " with AGENT set to your agent's value in the "
-                "skills installer's Supported Agents list, without -g and from the project root if that list gives it no "
-                "global path; if it is not listed, copy the skill folders as the README's "
-                "Manual install shows.")
+    return step("install_skill", "pending", why + " If your agent has an -a value in the README's table, run " + template +
+                " with AGENT set to it; otherwise copy both skill folders from " + origin + " into your agent's skills "
+                "directory, as the README's Manual install shows.")
 
 
 def next_steps(host: Optional[str], detected: str, components: Dict[str, dict], venv: str,
@@ -1478,7 +1478,7 @@ def next_steps(host: Optional[str], detected: str, components: Dict[str, dict], 
     cli, mcp = components.get("cli", {}), components.get("mcp", {})
     cli_ok, mcp_ok = cli.get("status") == "installed", mcp.get("status") == "installed"
     steps = []  # type: List[Dict[str, object]]
-    if effective != "instinct":
+    if effective not in ("instinct", "claude-desktop"):  # neither loads skill folders from disk
         steps.append(_skill_step(effective, platform, source, cli.get("version") if cli_ok else None))
     install_argv = [a for a in rerun if a != "--check"]  # a repair is an install, never another check
     rerun_cmd = render_command(install_argv[0], install_argv[1:], platform) if install_argv else None
@@ -1614,7 +1614,7 @@ def main(argv: Optional[List[str]] = None, environ: Optional[Dict[str, str]] = N
             JOB = WindowsJob()
             if not JOB.available:
                 warnings.append("windows_job_unavailable: %s; descendant cleanup is best-effort" % JOB.reason)
-        if host["detected"] == "instinct" and cli_only:
+        if (host["detected"] == "instinct" or args.host == "instinct") and cli_only:
             raise InstallFailure("arguments", "mcp_required_on_instinct", "Instinct executes only through MCP",
                                  "run the installer without --cli-only", retryable=False)
         if host["detected"] == "instinct" and args.host and args.host != "instinct":
