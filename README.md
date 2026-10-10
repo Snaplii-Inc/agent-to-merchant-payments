@@ -41,7 +41,7 @@ npx --yes skills add ./snaplii-src -g -a claude-code -y
 python3 snaplii-src/scripts/install.py --host claude-code --source ./snaplii-src
 ```
 
-- On Windows, use `py -3` in place of `python3`, and run **Manual install** in Git Bash, which comes with Git for Windows. The skills are copied and the packages are built into `~/.snaplii-env`, so you can delete `snaplii-src` afterwards.
+- On Windows, use `py -3` in place of `python3`, and run **Manual install** in Git Bash. The skills are copied and the packages built into `~/.snaplii-env`, so you can delete `snaplii-src` afterwards.
 - To install again or update, run the three commands from a directory with no `snaplii-src` folder.
 
 **Manual install.** Use it only when the second command cannot run. Set `SKILLS_DIR` to your agent's user-wide skills directory, or its project skills directory if it has none. The commands copy both skills, each with `SKILL.md` at its top level, and update the files in place when repeated.
@@ -61,8 +61,8 @@ The third command builds the CLI and the MCP server into `~/.snaplii-env` and pr
 
 **Reading the report.** `status: installed` (exit 0) means every component you asked for works; `--check` reports `installed` (exit 0) or `not_installed` (exit 1). Work through `next_steps` in order:
 
-- `required`: blocking. Do what `why` says, then run `command`, which re-runs the installer, **once**; if the same `failure.code` returns, or `failure.retryable` is false, stop and report it. When `command` is null, report `why` to the user.
-- `pending`: do the ones that apply: skip `install_skill` if this clone's skills are installed already, and `register_mcp` if your agent uses the CLI only. `register_mcp` gives a command to run, a `file` to merge its `json` into without removing other entries, or only a path to register as a stdio server; never run that path.
+- `required`: blocking. Do what `why` says, then run `command`, which re-runs the installer, **once**; if the same `failure.code` returns, or `failure.retryable` is false, stop and report `failure.remedy` to the user. Carry out a remedy that deletes files only when the user agrees. When `command` is null, report `why` to the user.
+- `pending`: do the ones that apply: skip `install_skill` if this clone's skills are installed already, and `register_mcp` if your agent uses the CLI only. `register_mcp` gives a command to run, a `file` to merge its `json` into without removing other entries, or only a path to register as a stdio server; never run that path. If `snaplii` is already registered, it must start the report's path; replace it if not.
 
 **Verify.** `npx skills list -g` shows `snaplii-cli` and `snaplii-autopilot` after the second command, where `Agents: not linked` is normal for agents that read `~/.agents/skills`, and `ls "$SKILLS_DIR"` does after **Manual install**; Muse installs `snaplii-cli` only. Your agent loads them after the new session the report's `reload_host` step may need. Then check the connection state: in this session, run the report's CLI path with `config show`, and use that absolute path for every CLI command; if your agent uses MCP, also call the `snaplii_config_show` tool once it loads in the new session. Never buy anything to test the install.
 
@@ -348,7 +348,7 @@ claude mcp add --scope user snaplii -- ~/.snaplii-env/bin/snaplii-mcp
 claude mcp get snaplii   # expect "User config" and "Connected"
 ```
 
-Without `--scope user`, Claude Code registers the server only for the directory you ran the command in. If it says the server already exists, it is registered; check it with `claude mcp get snaplii`.
+Without `--scope user`, Claude Code registers the server only for the directory you ran the command in. If it says the server already exists, check that `claude mcp get snaplii` shows the report's path; if it does not, run `claude mcp remove snaplii` and add it again.
 
 </details>
 
@@ -385,8 +385,8 @@ Instinct installs the MCP server with the installer and connects through the Ins
 1. Run the installer from the release clone: `python3 snaplii-src/scripts/install.py --host instinct --source ./snaplii-src`. It refuses `--cli-only` because Instinct executes only through MCP.
 2. Register the `snaplii-mcp` executable from the report's `register_mcp` step (`~/.snaplii-env/bin/snaplii-mcp`) as a stdio MCP server in Instinct.
 3. Skip `snaplii init`. In Instinct the CLI only serves `help`, `update`, `--version` and `config`; everything else runs through the MCP tools.
-4. Connect right after the first install, without waiting for a request. Call `snaplii_connect` and open the returned `connect_url` in the cloud browser. Use the Instinct vault fill action on the API key field with the returned `vault_entry`, click **Connect**, then call `snaplii_connect` again with the returned `eid` within 2 minutes. If the MCP tools only load in a new session, connect at the start of that session.
-5. If the vault has no entry yet, the agent explains how to create a key in the Snaplii App and sends the vault's encrypted submission link so you can save it there.
+4. Make sure the Instinct vault holds the entry named below. If it does not, the agent explains how to create a key in the Snaplii App and sends the vault's encrypted submission link so you can save it there.
+5. Connect right after the first install, without waiting for a request. Call `snaplii_connect` and open the returned `connect_url` in the cloud browser. Use the Instinct vault fill action on the API key field with the returned `vault_entry`, click **Connect**, then call `snaplii_connect` again with the returned `eid` within 2 minutes. If the MCP tools only load in a new session, connect at the start of that session.
 
 The vault entry is `Snaplii API Key` for the production gateway. Other gateways append their host, for example `Snaplii API Key aipay.stage.snaplii.com`.
 

@@ -166,3 +166,35 @@ def test_manual_install_snippet_runs_and_refuses_an_unset_directory(tmp_path):
     for name in ("snaplii-cli", "snaplii-autopilot"):
         assert (tmp_path / "skills" / name / "SKILL.md").is_file()
         assert not any(p.name.startswith("clawhub-") for p in (tmp_path / "skills" / name).iterdir())
+
+
+# Codex review, 2026-10-10: reinstall, recovery and update paths.
+
+SKILL = (Path(__file__).resolve().parents[1] / "clawhub-publish" / "SKILL.md").read_text()
+
+
+def test_skill_prefers_the_installer_cli_over_path():
+    path_section = SKILL.split("**PATH handling (Bash mode).**", 1)[1].split("## Decision Flow", 1)[0]
+    assert path_section.index("~/.snaplii-env/bin/snaplii") < path_section.index("which snaplii")
+
+
+def test_existing_mcp_registration_must_match_the_report():
+    pending = [line for line in README.splitlines() if line.startswith("- `pending`:")][0]
+    assert "already registered" in pending and "report's path" in pending
+    claude = README.split("<summary><strong>Claude Code</strong></summary>", 1)[1].split("</details>", 1)[0]
+    assert "claude mcp remove snaplii" in claude and "it is registered;" not in claude
+
+
+def test_destructive_remedies_wait_for_the_user():
+    required = [line for line in README.splitlines() if line.startswith("- `required`:")][0]
+    assert "failure.remedy" in required and "only when the user agrees" in required
+
+
+def test_instinct_checks_the_vault_before_connecting():
+    block = README.split("<summary><strong>Instinct</strong></summary>", 1)[1].split("</details>", 1)[0]
+    assert block.index("encrypted submission link") < block.index("Call `snaplii_connect`")
+
+
+def test_skill_update_uses_a_new_release_tag():
+    step0 = SKILL.split("### Step 0", 1)[1].split("### Step 1", 1)[0]
+    assert "new release tag" in step0 and "snaplii-src" in step0 and "re-run the installer" not in step0
