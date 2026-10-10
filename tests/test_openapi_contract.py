@@ -13,7 +13,7 @@ SPEC = yaml.safe_load((ROOT / "openapi.yaml").read_text())
 README = (ROOT / "README.md").read_text()
 REQUIRED_RULES = {
     "api_key_off_chat", "instinct_mcp_only", "item_id_format", "denomination_check", "quote_before_purchase",
-    "no_blind_purchase_retry", "bill_pay_confirmation", "sensitive_card_data", "transfer_idempotency",
+    "no_blind_purchase_retry", "bill_pay_irreversible", "sensitive_card_data", "transfer_idempotency",
     "transfer_disclosure", "spending_limits",
 }
 
@@ -52,6 +52,12 @@ def test_spec_carries_every_agent_rule_with_what_a_direct_caller_must_do():
         assert set(rule) == {"id", "applies_to", "rule", "direct_caller"}, rule_id
         assert flat(rule["rule"]) and flat(rule["direct_caller"]), rule_id
         assert set(rule["applies_to"]) <= known, rule_id
+
+
+def test_bill_pay_rule_states_irreversibility_not_a_confirmation_script():
+    rule = {r["id"]: r for r in SPEC["info"]["x-agent-rules"]}["bill_pay_irreversible"]
+    text = flat(rule["rule"] + " " + rule["direct_caller"]).lower()
+    assert "cannot be undone" in text and "current turn" not in text and "explicit" not in text
 
 
 def test_spec_tells_agents_to_prefer_the_skill_or_mcp():

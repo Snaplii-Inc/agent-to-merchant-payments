@@ -42,7 +42,7 @@ record or a cross-agent lock; do not claim guaranteed once-only execution.
 
 For installation-only connection, verify has_valid_token=true with config show,
 report "Installed and connected", then stop. Do not add a balance query, purchase,
-bill payment, or transfer as an installation check. A connected session does not
+bill, or transfer as an installation check. A connected session does not
 prove all business permissions. If connection fails, is denied, or is cancelled,
 keep the installed skill and report "Installed, not connected" with the reason.
 Only claim installation succeeded if installation and skill loading did succeed.
@@ -116,7 +116,7 @@ cache errors mean authentication is incomplete; report them without asking for a
 After successful initialization, re-read authentication state in the runtime that
 will execute the task. Continue only when has_valid_token=true. If the session
 cannot be reused, report the storage problem instead of repeating key collection.
-Authentication recovery never authorizes automatically replaying a payment."""
+Authentication recovery never authorizes automatically replaying a charge."""
 
 
 INSTINCT_ENV_PREFIX = "INSTINCT_"
@@ -158,7 +158,7 @@ Connection flow:
 
 Select the vault actions from your actual capabilities; do not invent tool
 names. If the vault cannot fill fields or create links, explain the limitation
-and stop. Authentication recovery never authorizes replaying a payment."""
+and stop. Authentication recovery never authorizes replaying a charge."""
 
 
 def instinct_env_names(environ=None) -> list[str]:
@@ -245,7 +245,7 @@ use its installer and retain the prerelease instead of replacing it from PyPI.
    `snaplii_config_show` for MCP operations, using the same gateway as the task.
 2. Every Snaplii business operation requires `has_valid_token=true` (the JSON
    boolean): browsing, balance, gift-card lists/details, quotes, purchases,
-   cashback calculations, dashboards, all bill-pay and transfer actions, including
+   cashback calculations, dashboards, all bill and transfer actions, including
    history, status, and cancellation. Read-only operations are not exempt.
    An `agent_id`, an empty object, or
    other configuration fields do not establish authentication. If the field is
@@ -300,7 +300,7 @@ state after login; report unusable storage instead of repeatedly requesting a ke
 On `auth_required`, `reauth_required`, HTTP 401, or an explicit session-rejection
 code, return to this gate. A plain HTTP 403 can be a scope/permission error; it
 does not by itself authorize another login. Honor stop and retry-later actions.
-Report cache/configuration errors as such. Before retrying a submitted payment,
+Report cache/configuration errors as such. Before retrying a submitted charge,
 establish its outcome and preserve any transfer idempotency key; do not replay it
 automatically. Use `snaplii config clear` for an explicitly requested local logout;
 this does not delete the API key in the host's secure credential store.

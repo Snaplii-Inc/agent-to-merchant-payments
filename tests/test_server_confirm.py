@@ -1,11 +1,12 @@
-"""Purchase / bill-pay charge directly with no confirmation token. Consent is the
-per-key daily limit set in the app, enforced server-side by the gateway."""
+"""Purchase / bill-pay charge directly with no confirmation token; the per-key daily
+limit set in the app is enforced server-side by the gateway."""
 
 import asyncio
 import json
 from pathlib import Path
 
 import server
+from snaplii.commands import billpay, purchase
 
 
 class FakeClient:
@@ -95,23 +96,72 @@ def test_billpay_passes_voucher_id(monkeypatch):
     assert client.last_kwargs["specified_voucher"] == "V-9"
 
 
-# ── policy: bills are confirmed, gift cards are not ───────────────────────────
+# ── policy: the text gives facts; the agent decides when to ask the user ───────
 
 ROOT = Path(__file__).resolve().parents[1]
 
-
-def test_instructions_require_bill_confirmation_but_not_gift_card_confirmation():
-    tools = {t.name: t for t in asyncio.run(server.list_tools())}
-    bill = tools["snaplii_billpay_pay"].description
-    assert "no per-transaction confirmation" not in bill
-    assert "confirm" in bill.lower()
-    assert "no per-transaction confirmation" in tools["snaplii_purchase"].description
-    text = server._SERVER_INSTRUCTIONS
-    assert "bill payments within the daily limit need no per-transaction confirmation" not in text
-    assert "bill payment" in text.lower() and "confirm" in text.lower()
+# Wording that tells the agent whether to confirm, in either direction.
+DIRECTIVES = ("proceed confidently", "do not refuse", "don't refuse", "per-transaction confirmation",
+              "no confirmation is needed", "no confirmation needed", "needs no confirmation", "heavy risk warnings",
+              "pre-authorized", "current-turn", "current turn", 'explicit "yes"', "explicit yes", "still ask before")
+# The one gate the owner kept: the final order on a merchant site.
+FINAL_ORDER = ("final order", "place order", "place it", "final merchant order")
 
 
-def test_autopilot_skill_does_not_ask_before_the_gift_card_purchase():
+def _without_final_order_gate(text):
+    return "\n".join(line for line in text.splitlines() if not any(k in line.lower() for k in FINAL_ORDER))
+
+
+def _surfaces():
+    tools = {t.name: t.description for t in asyncio.run(server.list_tools())}
+    return {
+        "server instructions": server._SERVER_INSTRUCTIONS,
+        "autopilot prompt": server._AUTOPILOT_WORKFLOW,
+        "purchase tool": tools["snaplii_purchase"],
+        "billpay_pay tool": tools["snaplii_billpay_pay"],
+        "giftcard_detail tool": tools["snaplii_giftcard_detail"],
+        "cli purchase help": purchase.purchase_cmd.help,
+        "cli billpay pay help": billpay.pay_cmd.help,
+        "cli skill": (ROOT / "clawhub-publish/SKILL.md").read_text(),
+        "autopilot skill": (ROOT / "clawhub-autopilot/SKILL.md").read_text(),
+        "README": (ROOT / "README.md").read_text(),
+        "claude desktop": (ROOT / "claude-desktop/PROJECT_INSTRUCTIONS.md").read_text(),
+        "plugin README": (ROOT / "clawhub-plugin/README.md").read_text(),
+    }
+
+
+def test_agent_text_carries_no_confirmation_directives():
+    for name, text in _surfaces().items():
+        body = _without_final_order_gate(text).lower()
+        for phrase in DIRECTIVES:
+            assert phrase.lower() not in body, (name, phrase)
+
+
+FACTS = {
+    "server instructions": ("prepaid", "daily limit", "revocable", "cannot be undone", "5 minutes"),
+    "cli skill": ("prepaid", "daily limit", "revocable", "cannot be undone", "5 minutes"),
+    "autopilot skill": ("prepaid", "daily limit"),
+    "README": ("prepaid", "daily limit", "revoc", "cannot be undone", "5 minutes"),
+    "claude desktop": ("prepaid", "daily limit", "cannot be undone"),
+    "plugin README": ("prepaid", "daily limit", "cannot be undone", "5-minute"),
+    "billpay_pay tool": ("cannot be undone",),
+    "cli billpay pay help": ("cannot be undone",),
+    "purchase tool": ("daily limit",),
+}
+
+
+def test_agent_text_states_the_facts_the_agent_judges_by():
+    surfaces = _surfaces()
+    for name, needles in FACTS.items():
+        text = surfaces[name].lower()
+        for needle in needles:
+            assert needle in text, (name, needle)
+
+
+def test_autopilot_keeps_its_final_order_gate():
+    skill = (ROOT / "clawhub-autopilot/SKILL.md").read_text()
+    assert "Place Order" in skill and 'explicit "yes"' in skill
+    assert "CONFIRM (final order)" in server._AUTOPILOT_WORKFLOW
     for relative in ("skills/snaplii-autopilot.md", "clawhub-autopilot/SKILL.md"):
         assert "Confirm & buy" not in (ROOT / relative).read_text()
     assert (ROOT / "skills/snaplii-autopilot.md").read_bytes() == (ROOT / "clawhub-autopilot/SKILL.md").read_bytes()

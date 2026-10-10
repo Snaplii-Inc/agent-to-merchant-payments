@@ -1,6 +1,6 @@
 # snaplii-cli
 
-Command-line client for [Snaplii Agent-to-Merchant (A2M) payments](https://github.com/Snaplii-Inc/agent-to-merchant-payments). It lets AI agents and scripts buy gift cards from 500+ brands, pay bills, and send P2P transfers — all from a prepaid Snaplii Cash balance, with cashback on every purchase and no checkout or card sharing.
+Command-line client for the [Snaplii wallet](https://github.com/Snaplii-Inc/agent-to-merchant-payments). It lets AI agents and scripts spend a prepaid Snaplii Cash balance: buy gift cards with cashback, cover bills (Canada), and send Snaplii Cash to another user — with no checkout and no card sharing.
 
 Every command prints JSON, so any agent that can run a shell command can use it.
 

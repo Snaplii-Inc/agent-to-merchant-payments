@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
-  title: Snaplii Agent-to-Merchant Payments Gateway API
+  title: Snaplii Wallet Gateway API
   version: 0.19.0
   description: |-
-    Browse gift cards, make purchases, pay bills, and transfer funds.
+    Browse gift cards, buy them, cover bills, and transfer Snaplii Cash.
     Exchange an API key for an access token to call protected operations.
 
     For AI agents: prefer the Snaplii Agent Skill or the Snaplii MCP server, which follow the
@@ -34,10 +34,10 @@ info:
     applies_to: [purchaseOrder]
     rule: '/v2/purchase is not idempotent: sending it again creates another order. After an ambiguous failure, check owned cards or the bill payment result before purchasing again.'
     direct_caller: 'Never resend /v2/purchase after a timeout or unclear error until GET /v2/cards or /v2/billpay/pay-result shows the first attempt did not succeed.'
-  - id: bill_pay_confirmation
+  - id: bill_pay_irreversible
     applies_to: [purchaseOrder]
-    rule: 'Before paying a bill, get the user''s explicit confirmation of biller, account and amount in the current turn. Gift-card purchases within the key''s daily limit need no per-transaction confirmation.'
-    direct_caller: 'Ask and wait for an explicit yes before a BILL_PAY purchase.'
+    rule: 'A BILL_PAY purchase cannot be undone once submitted, and one sent to the wrong biller or account cannot be recovered. The caller decides what to check with the user before submitting it.'
+    direct_caller: 'Verify biller, account and amount before a BILL_PAY purchase; it cannot be reversed.'
   - id: sensitive_card_data
     applies_to: [getOwnedCard, listOwnedCards]
     rule: 'Show redemption codes, PINs and barcodes only when the user asks for them, and never show internal IDs such as cardBrandId, cardTemplateId or cardNo.'
@@ -345,8 +345,7 @@ paths:
         denomination before purchasing. Use delivery.immediateSend="true" for GIFT_CARD and "false" for
         BILL_PAY. Bills are Canada-only. This operation is not idempotent, so after
         an ambiguous failure inspect owned cards or bill payment status before submitting another purchase.
-        Before a BILL_PAY purchase, get the user's explicit confirmation of biller, account and amount in
-        the current turn (x-agent-rules bill_pay_confirmation).
+        A BILL_PAY purchase cannot be undone once submitted (x-agent-rules bill_pay_irreversible).
       requestBody:
         required: true
         content:
