@@ -380,7 +380,7 @@ snaplii purchase --item-id "CB...-CT..." --price 50
 
 If purchase fails, **do not retry automatically**. Show the user the error and ask. Common failure modes:
 
-- `MACP6005` → payment service error. May be temporary — ask the user to wait a moment and retry. If it persists, check Snaplii Cash balance in the app. Do NOT assume it's always "insufficient balance".
+- `MACP6005` → payment service error. Check `outcome` first: if it is `"indeterminate"`, follow the rule for that below and do not buy again until you know whether the first purchase went through. Otherwise the purchase was rejected; report the error, and if it keeps happening check the Snaplii Cash balance in the app. Do NOT assume it's always "insufficient balance".
 - Authentication rejection → follow [Auth](#auth), without replaying the purchase. A plain `403` may mean the key lacks `PAY_WRITE`; check the error before requesting another login.
 - `"outcome": "indeterminate"` (a timeout, a lost connection, a `5xx` or an unreadable reply) → the purchase may have gone through, and `purchase` is not idempotent: run `snaplii giftcard list` (every page) and look for the new card before buying again. If you cannot tell whether it went through, stop and report that instead of buying again.
 

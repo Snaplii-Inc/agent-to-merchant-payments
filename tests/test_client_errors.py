@@ -146,6 +146,30 @@ def test_payment_business_rejection_is_not_indeterminate(client, pay):
     assert out["error_code"] == "ORDER_CREATION_FAILED"
 
 
+@pytest.mark.parametrize("status", [302, 403, 422])
+@pytest.mark.parametrize("pay", _PAYMENTS, ids=["gift-card", "bill-pay"])
+def test_unreadable_payment_reply_is_indeterminate_at_any_status(client, pay, status):
+    # Business rejections come back readable; an unreadable reply proves nothing.
+    client._http = httpx.Client(transport=_answering_transport(status, "<html>blocked</html>"))
+    with pytest.raises(GatewayApiError) as info:
+        pay(client)
+    out = info.value.to_dict()
+    assert out["outcome"] == "indeterminate"
+    assert out["status_code"] == status
+    assert "html" not in json.dumps(out)
+
+
+@pytest.mark.parametrize("pay", _PAYMENTS, ids=["gift-card", "bill-pay"])
+def test_payment_401_stays_a_session_rejection(client, pay):
+    # A rejected session never reaches the payment, so nothing was charged.
+    client._http = httpx.Client(transport=_answering_transport(401, "<html>401</html>"))
+    with pytest.raises(GatewayApiError) as info:
+        pay(client)
+    out = info.value.to_dict()
+    assert "outcome" not in out
+    assert out["reason_code"] == "session_rejected"
+
+
 def test_quote_502_still_suggests_a_retry():
     out = GatewayApiError(502, {}, "/v2/quote").to_dict()
     assert "try again" in out["error"]
@@ -224,3 +248,13 @@ def test_all_owned_cards_are_read_page_by_page(client, total):
 def test_a_server_that_ignores_paging_is_not_counted_twice(client):
     client._http = httpx.Client(transport=_card_pages(300, ignores_page=True))
     assert len(client.list_all_user_cards()) == 100
+
+
+def test_skill_checks_the_outcome_before_any_macp6005_retry():
+    # A 5xx can carry MACP6005 and still be indeterminate: the outcome rule comes first.
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    for skill in ("clawhub-publish/SKILL.md", "skills/snaplii-cli.md"):
+        line = next(l for l in (root / skill).read_text().splitlines() if "`MACP6005`" in l)
+        assert "retry" not in line.lower() and "try again" not in line.lower()
+        assert "indeterminate" in line

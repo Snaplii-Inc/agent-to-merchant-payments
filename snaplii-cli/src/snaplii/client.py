@@ -822,9 +822,10 @@ class GatewayClient:
         try:
             body = resp.json()
         except Exception:
-            if resp.is_success:
-                # A 2xx we cannot read is not a result; after a purchase it means
-                # the outcome is unknown, never that the purchase succeeded.
+            if resp.is_success or path == "/v2/purchase":
+                # A reply we cannot read is not a result. After a purchase it leaves
+                # the outcome unknown whatever its status: a business rejection is
+                # readable, and a rejected session never reaches this point.
                 raise GatewayApiError(resp.status_code, {"unreadable": True}, path)
             body = {"raw": resp.text}
         if resp.is_success:
