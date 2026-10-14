@@ -246,15 +246,26 @@ def _finish_elicit_connect(client, token_data: dict) -> dict:
     }
 
 
-def _terminal_init_command() -> str:
+def _powershell_arg(part: str) -> str:
+    """Quote one argument the way the installer's PowerShell commands do."""
+    if re.search(r"[\s'\"$`&|;(){}]", part):
+        return "'" + part.replace("'", "''") + "'"
+    return part
+
+
+def _terminal_init_command(windows: bool | None = None) -> str:
     """The terminal login for this server's gateway. It names the installed CLI, whose
     environment the installer keeps off PATH, and carries --base-url so the session
-    lands on the gateway this server uses."""
+    lands on the gateway this server uses. On Windows it is a PowerShell command, which
+    runs a quoted executable only through the call operator."""
     import os
     import shlex
-    import subprocess
     argv = [auth.cli_executable(), "--base-url", auth.normalize_base_url(_base_url()), "init"]
-    return subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)
+    if os.name == "nt" if windows is None else windows:
+        parts = [_powershell_arg(part) for part in argv]
+        call = "& " if parts[0] != argv[0] else ""
+        return "the PowerShell command " + call + " ".join(parts)
+    return shlex.join(argv)
 
 
 def _key_fallback(lead: str, storage) -> str:

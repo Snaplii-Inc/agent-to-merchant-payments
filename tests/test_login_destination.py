@@ -258,3 +258,19 @@ def test_terminal_fallback_names_the_installed_cli_and_this_gateway(monkeypatch,
     message = json.loads(asyncio.run(server.call_tool("snaplii_connect", {}))[0].text)["message"]
     command = shlex.join([cli, "--base-url", "https://aipay.stage.snaplii.com/gw", "init"])
     assert f"run {command} in their own terminal" in message
+
+
+@pytest.mark.parametrize("cli,expected", [
+    (r"C:\Users\Jo Doe\.snaplii-env\Scripts\snaplii.exe",
+     r"& 'C:\Users\Jo Doe\.snaplii-env\Scripts\snaplii.exe' --base-url https://aipay.stage.snaplii.com/gw init"),
+    (r"C:\Users\Jo\.snaplii-env\Scripts\snaplii.exe",
+     r"C:\Users\Jo\.snaplii-env\Scripts\snaplii.exe --base-url https://aipay.stage.snaplii.com/gw init"),
+    (r"C:\Users\O'Neil\.snaplii-env\Scripts\snaplii.exe",
+     r"& 'C:\Users\O''Neil\.snaplii-env\Scripts\snaplii.exe' --base-url https://aipay.stage.snaplii.com/gw init"),
+], ids=["spaced", "plain", "apostrophe"])
+def test_windows_terminal_command_runs_in_powershell(monkeypatch, cli, expected):
+    # PowerShell runs a quoted executable only through the call operator, and quotes
+    # with single quotes, as the installer's own Windows commands do.
+    monkeypatch.setattr(server.auth, "cli_executable", lambda: cli)
+    monkeypatch.setattr(server, "_base_url", lambda: "https://aipay.stage.snaplii.com/gw")
+    assert server._terminal_init_command(windows=True) == "the PowerShell command " + expected
