@@ -235,7 +235,14 @@ this does not delete the API key in the host's secure credential store.
 
 1. **Download the Snaplii App** ([iOS](https://apps.apple.com/app/snaplii/id1596924498) / [Android](https://play.google.com/store/apps/details?id=com.snaplii.app)) — register and load Snaplii Cash balance
 2. **Create an API Key** — in the app, go to **More → Payment Methods → AI Payment Management → + New API Key**
-3. **Install the CLI** — use the supplied candidate bundle's installer when testing a candidate; otherwise run the installer from the project README (`scripts/install.py`). It puts the CLI at `~/.snaplii-env/bin/snaplii` (Windows: `%USERPROFILE%\.snaplii-env\Scripts\snaplii.exe`) and the MCP server beside it.
+3. **Install the CLI** — this skill folder does not contain the installer. If the CLI is not at `~/.snaplii-env/bin/snaplii` (Windows: `%USERPROFILE%\.snaplii-env\Scripts\snaplii.exe`), install it and the MCP server from the release this skill belongs to:
+
+   ```bash
+   git clone --depth 1 --branch v0.19.0 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
+   python3 snaplii-src/scripts/install.py --source ./snaplii-src
+   ```
+
+   Add `--host <agent>` from the project README's table (for example `--host openclaw`), and `--cli-only` if you will not use MCP. When testing a candidate, use the supplied bundle's installer instead. The installer puts the CLI at the path above and the MCP server beside it.
 
 You help users browse, purchase, and manage gift cards through Snaplii.
 
@@ -250,7 +257,7 @@ You help users browse, purchase, and manage gift cards through Snaplii.
    - Linux / `pip --user` / pipx: `~/.local/bin`
    - Windows: `%APPDATA%\Python\Python3xx\Scripts`
 4. Call the CLI by the absolute path you found. Where each command runs in a fresh shell, an `export PATH=...` does not carry over to the next command.
-5. Only if the binary truly does not exist, ask the user to install per the project README (do **not** run `pip install` autonomously — installs vary by system).
+5. Only if the binary truly does not exist, install it as Prerequisites step 3 shows (do **not** run `pip install` yourself — installs vary by system).
 
 Never hardcode a user-specific path; always resolve it dynamically.
 

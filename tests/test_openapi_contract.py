@@ -1,7 +1,7 @@
-"""openapi.yaml is what an agent reads when it calls the gateway without the skill or MCP.
+"""openapi.yaml is the gateway contract for Snaplii's own CLI and MCP server.
 
-It must stay current and carry, machine-readably, every rule the skill, MCP server and CLI
-apply for the agent, so a direct caller can apply them too."""
+It must stay current, carry machine-readably the rules the skill, MCP server and CLI apply
+for the agent, and tell AI agents not to call the gateway directly."""
 import re
 from pathlib import Path
 
@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SPEC = yaml.safe_load((ROOT / "openapi.yaml").read_text())
 README = (ROOT / "README.md").read_text()
 REQUIRED_RULES = {
-    "api_key_off_chat", "instinct_mcp_only", "muse_stored_key_only", "item_id_format", "denomination_check", "quote_before_purchase",
+    "agents_use_skill_or_mcp", "api_key_off_chat", "instinct_mcp_only", "muse_stored_key_only", "item_id_format", "denomination_check", "quote_before_purchase",
     "no_blind_purchase_retry", "bill_pay_irreversible", "sensitive_card_data", "transfer_idempotency",
     "transfer_disclosure", "spending_limits",
 }
@@ -44,25 +44,29 @@ def test_every_gateway_path_the_clients_call_is_documented():
     assert used - documented == set()
 
 
-def test_spec_carries_every_agent_rule_with_what_a_direct_caller_must_do():
+def test_spec_carries_every_agent_rule():
     rules = {rule["id"]: rule for rule in SPEC["info"]["x-agent-rules"]}
     assert REQUIRED_RULES <= set(rules)
     known = operation_ids()
     for rule_id, rule in rules.items():
-        assert set(rule) == {"id", "applies_to", "rule", "direct_caller"}, rule_id
-        assert flat(rule["rule"]) and flat(rule["direct_caller"]), rule_id
+        assert set(rule) == {"id", "applies_to", "rule"}, rule_id
+        assert flat(rule["rule"]), rule_id
         assert set(rule["applies_to"]) <= known, rule_id
 
 
 def test_bill_pay_rule_states_irreversibility_not_a_confirmation_script():
     rule = {r["id"]: r for r in SPEC["info"]["x-agent-rules"]}["bill_pay_irreversible"]
-    text = flat(rule["rule"] + " " + rule["direct_caller"]).lower()
+    text = flat(rule["rule"]).lower()
     assert "cannot be undone" in text and "current turn" not in text and "explicit" not in text
 
 
-def test_spec_tells_agents_to_prefer_the_skill_or_mcp():
+def test_spec_tells_agents_not_to_call_it_directly():
     description = flat(SPEC["info"]["description"])
+    assert "AI agents must not call it directly" in description
     assert "Agent Skill" in description and "MCP server" in description and "x-agent-rules" in description
+    text = (ROOT / "openapi.yaml").read_text().lower()
+    for phrase in ("direct_caller", "direct caller", "calls this api directly", "prefer the snaplii"):
+        assert phrase not in text, phrase
 
 
 def test_order_item_states_the_item_id_rule():

@@ -6,58 +6,49 @@ info:
     Browse gift cards, make purchases, pay bills, and transfer funds.
     Exchange an API key for an access token to call protected operations.
 
-    For AI agents: prefer the Snaplii Agent Skill or the Snaplii MCP server, which follow the
-    rules in info.x-agent-rules for you. An agent that calls this API directly must follow each
-    of those rules itself; every entry states the rule and what a direct caller must do.
+    This is the contract between the gateway and Snaplii's own clients, the Snaplii CLI and the
+    Snaplii MCP server. AI agents must not call it directly: use the Snaplii Agent Skill with the
+    CLI, or the Snaplii MCP server, which apply the rules in info.x-agent-rules.
   x-agent-rules:
+  - id: agents_use_skill_or_mcp
+    applies_to: [createAccessToken, getElicitedToken]
+    rule: 'AI agents must not call this API directly or rebuild its requests. Sign in and act only through the Snaplii Agent Skill with the Snaplii CLI, or through the Snaplii MCP server.'
   - id: api_key_off_chat
     applies_to: [createAccessToken, getElicitedToken]
     rule: 'Never ask the user to paste the API key into the chat when the host can take it off-model: the MCP secure card, the hosted connect page, or the Muse or Instinct vault.'
-    direct_caller: 'Let the user enter the key in their own terminal or a hosted page; if the key must pass through the chat, say so first and never echo it.'
   - id: instinct_mcp_only
     applies_to: [createAccessToken]
     rule: 'In Instinct (an INSTINCT_* environment variable is set and Muse is not detected), execute only through the Snaplii MCP server and connect with snaplii_connect and the Instinct vault.'
-    direct_caller: 'Do not call this API from Instinct; install and use the MCP server.'
   - id: muse_stored_key_only
     applies_to: [createAccessToken]
     rule: 'In Meta Muse the API key is in Muse''s secure credential store. Sign in with the Snaplii CLI''s `snaplii init --vault-auth`, which uses that stored key. Never type, guess, rebuild or copy a key into a request, including one pasted into the chat: the value visible there may not be the real key.'
-    direct_caller: 'Do not call this API from Muse; run snaplii init --vault-auth.'
   - id: item_id_format
     applies_to: [quoteOrder, purchaseOrder]
     rule: 'A gift-card itemId is exactly {cardBrandId}-{cardTemplateId}: the brand''s cardBrandId, one hyphen, the chosen template''s cardTemplateId, both copied verbatim from GET /v2/card-brands/{card_brand_id}.'
-    direct_caller: 'Build itemId from the two returned values verbatim; never send one ID alone, a name, a template from another brand, or a guessed ID; quote and purchase with the same itemId.'
   - id: denomination_check
     applies_to: [getCardBrand, quoteOrder, purchaseOrder]
     rule: 'The price must match the template: FIXED accepts exactly priceStart, VARIABLE accepts priceStart to priceEnd.'
-    direct_caller: 'Check the price against faceValueRules of the chosen template before quoting.'
   - id: quote_before_purchase
     applies_to: [quoteOrder, purchaseOrder]
     rule: 'Quote before every purchase. A positive primaryPayAmount (the CLI and MCP call it you_pay) means Snaplii Cash does not cover the order: stop and ask the user to top up in the app.'
-    direct_caller: 'Call /v2/quote first and do not purchase while primaryPayAmount is above zero.'
   - id: no_blind_purchase_retry
     applies_to: [purchaseOrder]
     rule: '/v2/purchase is not idempotent: sending it again creates another order. After an ambiguous failure, check owned cards or the bill payment result before purchasing again.'
-    direct_caller: 'Never resend /v2/purchase after a timeout or unclear error until GET /v2/cards or /v2/billpay/pay-result shows the first attempt did not succeed.'
   - id: bill_pay_irreversible
     applies_to: [purchaseOrder]
     rule: 'A BILL_PAY purchase cannot be undone once submitted, and one sent to the wrong biller or account cannot be recovered. The caller decides what to check with the user before submitting it.'
-    direct_caller: 'Verify biller, account and amount before a BILL_PAY purchase; it cannot be reversed.'
   - id: sensitive_card_data
     applies_to: [getOwnedCard, listOwnedCards]
     rule: 'Show redemption codes, PINs and barcodes only when the user asks for them, and never show internal IDs such as cardBrandId, cardTemplateId or cardNo.'
-    direct_caller: 'Keep card codes and internal IDs out of user-facing text unless the user asks for a code.'
   - id: transfer_idempotency
     applies_to: [createTransfer]
     rule: 'Send a fresh Idempotency-Key for each new transfer and reuse it only for the identical retry after 202 CREATING or an indeterminate timeout.'
-    direct_caller: 'Generate, keep and reuse your own Idempotency-Key.'
   - id: transfer_disclosure
     applies_to: [createTransfer, finishTransfer]
     rule: 'After creating a transfer, tell the user the amount, the masked recipient and the cancel deadline, and disclose any currency conversion; call finish only when the user asks to send now.'
-    direct_caller: 'Compare amount and currency with received_amount and received_currency and disclose any difference before auto_finish_at.'
   - id: spending_limits
     applies_to: [purchaseOrder, createTransfer]
     rule: 'Spending comes only from prepaid Snaplii Cash and is capped by the API key''s scope and daily limit.'
-    direct_caller: 'Expect a request beyond the key''s scope or daily limit to be rejected.'
 servers:
 - url: https://aipayment.snaplii.com
   description: Production gateway
@@ -86,9 +77,9 @@ paths:
       operationId: createAccessToken
       summary: Exchange an API key for a session token
       description: 'Send agent_id in JSON and the API key as api_key in JSON or Authorization: Bearer <api key>.
-        Agents: do not ask the user to paste the key into the chat when the host can take it off-model,
-        in Instinct use the MCP server, and in Muse sign in with the CLI and the key Muse stores instead of
-        calling this API (x-agent-rules api_key_off_chat, instinct_mcp_only, muse_stored_key_only).'
+        AI agents must not call this endpoint: sign in with the Snaplii CLI or the Snaplii MCP server,
+        which keep the key out of the chat where the host allows it (x-agent-rules agents_use_skill_or_mcp,
+        api_key_off_chat, instinct_mcp_only, muse_stored_key_only).'
       requestBody:
         required: true
         content:
