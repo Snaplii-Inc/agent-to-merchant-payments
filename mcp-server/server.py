@@ -26,7 +26,7 @@ from mcp.server.stdio import stdio_server
 from mcp import types
 
 from snaplii import auth
-from snaplii.client import GatewayClient
+from snaplii.client import GatewayClient, brand_detail, card_cashback_percent
 from snaplii.config_store import ConfigStore
 from snaplii.exceptions import AmountValidationError, AuthError, ItemIdError, ConfigError, GatewayApiError, GatewayConnectionError, TransferApiError
 from snaplii.commands.transfer import decorate_transfer
@@ -75,6 +75,10 @@ _ELICIT_POLL_INTERVAL_S = 1.5
 # one, so a key the user submits after a poll gave up is not lost. The gateway
 # keeps a submitted token for 2 minutes and accepts a resubmission for the eid.
 _pending_connect_eid: str | None = None
+# Consecutive failures to open the secure page for a reason other than "not
+# supported". One failure does not show the page is unavailable, so the key
+# fallback waits for a second one.
+_elicit_failures = 0
 
 
 def _base_url() -> str:
@@ -764,7 +768,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 # page — off the model AND off this client. The spec mandates URL mode
                 # (not form) for secrets like API keys. A one-time eid ties the page
                 # submission to the token we then poll for.
-                global _pending_connect_eid
+                global _pending_connect_eid, _elicit_failures
                 eid = _pending_connect_eid
                 retry = ("Check the network, then run snaplii_connect again; it collects "
                          "the connection from the page that is already open, where a "
@@ -796,11 +800,21 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                     # Some clients advertise a bare elicitation capability but reject a
                     # URL-mode request at runtime (e.g. claude-code returns JSON-RPC
                     # -32602 "Client does not support URL-mode elicitation requests").
-                    # Distinguish that "not supported here" case from a real failure so
-                    # the message reads clearly; both fall back to terminal `snaplii init`
-                    # or pasting the key in chat for snaplii_init.
+                    # That "not supported here" case falls back to terminal `snaplii init`
+                    # or pasting the key in chat for snaplii_init at once. Any other
+                    # failure retries the same page once before that fallback.
                     msg = str(e)
                     unsupported = "-32602" in msg or "does not support" in msg.lower()
+                    if not unsupported and _elicit_failures == 0:
+                        _elicit_failures = 1
+                        return _text({
+                            "status": "elicit_failed",
+                            "message": (
+                                "Couldn't open the secure Snaplii page. Run snaplii_connect "
+                                "again once; it reopens the same page. Do not ask for the "
+                                "key in chat."),
+                        })
+                    _elicit_failures = 0
                     return _text({
                         "status": "elicit_unsupported" if unsupported else "elicit_failed",
                         "message": _key_fallback(
@@ -809,6 +823,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                             if unsupported
                             else "Couldn't start secure web connect. ", storage),
                     })
+                _elicit_failures = 0
                 if getattr(result, "action", None) != "accept":
                     return _text({
                         "status": "declined",
@@ -994,7 +1009,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         elif name == "snaplii_cashback_calc":
             client = _get_client()
             detail = client.get_card_brand_by_id(arguments["brand_id"])
-            cards = detail.get("data", {}).get("cards", [])
+            cards = brand_detail(detail).get("cards", [])
             amount = float(arguments["amount"])
             best = None
             for c in cards:
@@ -1006,7 +1021,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                     if float(fv.get("priceStart", 0)) <= amount <= float(fv.get("priceEnd", 0)):
                         best = c
             if best:
-                pct = float(best.get("discount", 0) or 0)
+                pct = float(card_cashback_percent(best) or 0)
                 savings = amount * pct / 100
                 return _text({
                     "amount": f"${amount:.2f}",

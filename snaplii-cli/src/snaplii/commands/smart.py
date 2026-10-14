@@ -1,6 +1,6 @@
 import click
 
-from snaplii.client import GatewayClient
+from snaplii.client import GatewayClient, brand_detail, card_cashback_percent
 from snaplii.output import print_json
 
 
@@ -19,9 +19,7 @@ def cashback_cmd(ctx, brand_id, amount):
     """Calculate cashback savings for a specific brand and amount."""
     client: GatewayClient = ctx.obj["client"]
     detail = client.get_card_brand_by_id(brand_id)
-    # Accept the brand detail directly or wrapped in "data"
-    brand_data = detail.get("data", detail) if isinstance(detail.get("data"), dict) else detail
-    cards = brand_data.get("cards", [])
+    cards = brand_detail(detail).get("cards", [])
 
     best_match = None
     for c in cards:
@@ -36,7 +34,7 @@ def cashback_cmd(ctx, brand_id, amount):
                 best_match = c
 
     if best_match:
-        discount_pct = float(best_match.get("discount", 0) or 0)
+        discount_pct = float(card_cashback_percent(best_match) or 0)
         savings = amount * discount_pct / 100
         print_json({
             "brand_id": brand_id,

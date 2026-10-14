@@ -285,6 +285,7 @@ def _wire_elicit(monkeypatch, action, captured):
     monkeypatch.setattr(server, "_ELICIT_POLL_MAX_ATTEMPTS", 2)
     monkeypatch.setattr(server, "_ELICIT_POLL_INTERVAL_S", 0)
     monkeypatch.setattr(server, "_pending_connect_eid", None)
+    monkeypatch.setattr(server, "_elicit_failures", 0)
 
 
 def test_connect_elicit_opens_page_polls_and_caches_token(monkeypatch):
@@ -575,3 +576,55 @@ def test_balance_falls_back_when_country_unknown(monkeypatch):
     out = _call("snaplii_balance", {})
     assert "currency" not in out
     assert "currency_note" in out
+
+
+class _FailingSession:
+    """elicit_url stub that raises, recording the eid of each page it was asked to open."""
+    def __init__(self, exc, captured):
+        self._exc = exc
+        self._captured = captured
+        captured["eids"] = []
+
+    async def elicit_url(self, message, url, elicitation_id):
+        self._captured["eids"].append(elicitation_id)
+        raise self._exc
+
+
+def test_connect_elicit_failure_retries_the_page_before_any_fallback(monkeypatch):
+    captured = {}
+    _wire_elicit(monkeypatch, "accept", captured)
+    monkeypatch.setattr(server, "app", _FakeApp(_FailingSession(TimeoutError("slow"), captured)))
+    monkeypatch.setattr(server, "_get_client", lambda: _ParkedClient({}))
+    first = _call("snaplii_connect", {})
+    assert first["status"] == "elicit_failed"
+    text = first["message"].lower()
+    # One failure does not show the secure page is unavailable: no key in chat yet.
+    assert "paste" not in text and "snaplii init" not in text
+    assert "do not ask for the key in chat" in text
+    second = _call("snaplii_connect", {})
+    assert second["status"] == "elicit_failed"
+    assert "snaplii init" in second["message"]  # a second failure opens the fallback
+    assert captured["eids"][0] == captured["eids"][1]  # the retry reused the same page
+
+
+def test_connect_elicit_unsupported_falls_back_at_once(monkeypatch):
+    captured = {}
+    _wire_elicit(monkeypatch, "accept", captured)
+    err = RuntimeError("-32602 Client does not support URL-mode elicitation requests")
+    monkeypatch.setattr(server, "app", _FakeApp(_FailingSession(err, captured)))
+    out = _call("snaplii_connect", {})
+    assert out["status"] == "elicit_unsupported"
+    assert "snaplii init" in out["message"]
+
+
+def test_connect_elicit_failure_count_resets_after_the_page_opens(monkeypatch):
+    captured = {}
+    _wire_elicit(monkeypatch, "accept", captured)
+    monkeypatch.setattr(server, "_get_client", lambda: _ParkedClient({}))
+    monkeypatch.setattr(server, "app", _FakeApp(_FailingSession(TimeoutError("slow"), captured)))
+    _call("snaplii_connect", {})
+    monkeypatch.setattr(server, "app", _FakeApp(_FakeSession("accept", captured)))
+    assert _call("snaplii_connect", {})["status"] == "pending"
+    monkeypatch.setattr(server, "app", _FakeApp(_FailingSession(TimeoutError("slow"), captured)))
+    out = _call("snaplii_connect", {})
+    assert "snaplii init" not in out["message"]  # a fresh first failure, not a second one

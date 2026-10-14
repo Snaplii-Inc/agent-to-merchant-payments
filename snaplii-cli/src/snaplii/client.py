@@ -31,6 +31,19 @@ def _client_version() -> str:
         return "unknown"
 
 
+def brand_detail(brand_resp) -> dict:
+    """The brand object of a brand-detail reply, given directly or wrapped in "data"."""
+    if not isinstance(brand_resp, dict):
+        return {}
+    data = brand_resp.get("data")
+    return data if isinstance(data, dict) else brand_resp
+
+
+def card_cashback_percent(card: dict):
+    """A card's cashback percent as the catalog states it: discount, else regularDiscount."""
+    return card.get("discount") or card.get("regularDiscount")
+
+
 def summarize_denominations(brand_resp: dict) -> list:
     """Extract the real, structured denominations from a brand-detail response.
 
@@ -57,7 +70,7 @@ def summarize_denominations(brand_resp: dict) -> list:
             entry["max"] = fv.get("priceEnd")
         else:
             entry["amount"] = fv.get("priceStart")
-        disc = c.get("discount") or c.get("regularDiscount")
+        disc = card_cashback_percent(c)
         if disc:
             entry["cashback_percent"] = disc
         out.append(entry)
