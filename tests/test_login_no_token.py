@@ -46,7 +46,7 @@ def test_200_without_token_raises_and_caches_nothing(httpx_mock):
     # HTTP 200 with a plain-text body labeled application/json.
     httpx_mock.add_response(
         method="POST", url="https://aipayment.snaplii.com/v2/auth/token", status_code=200,
-        content=b"Snaplii core did not return an access token in the x-auth-token header",
+        content=b"opaque reply text without a session",
         headers={"Content-Type": "application/json"},
     )
     store = _RecordingStore()
@@ -54,13 +54,13 @@ def test_200_without_token_raises_and_caches_nothing(httpx_mock):
         _client(store).login("agent-1", "snp_sk_live_bogus000000000000000000000000000")
     out = exc.value.to_dict()
     assert "did not return an access token" in out["error"]
-    assert "x-auth-token header" not in out["error"]  # no raw upstream text
+    assert "opaque reply text" not in out["error"]  # no raw reply text
     assert store.cached is None
 
 
 def test_200_with_core_business_error_surfaces_rspmsginf(httpx_mock):
-    # Once the gateway passes core's rspMsgCd/rspMsgInf through, the CLI must
-    # show that reason rather than a generic message.
+    # A login reply carrying a business error code: the CLI must show that
+    # reason rather than a generic message.
     httpx_mock.add_response(
         method="POST", url="https://aipayment.snaplii.com/v2/auth/token", status_code=200,
         json={"rspMsgCd": "MCA20102", "rspMsgInf": "API key has been deactivated"},

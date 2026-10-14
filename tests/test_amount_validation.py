@@ -39,7 +39,7 @@ def _client():
 
 def test_variable_below_min_blocked():
     with pytest.raises(AmountValidationError) as ei:
-        _client().validate_amount(VARIABLE_ITEM, "10")  # the actual incident
+        _client().validate_amount(VARIABLE_ITEM, "10")
     d = ei.value.to_dict()
     assert d["error"] == "amount_out_of_range"
     assert d["min_amount"] == 20.0 and d["max_amount"] == 500.0

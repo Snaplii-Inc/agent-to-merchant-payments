@@ -211,8 +211,8 @@ class GatewayClient:
         body = self._parse_login_response(httpx.Response(status, text=raw), "vault")
         return self._finish_login(body, agent_id=agent_id, auth_method="vault")
 
-    # The agent gateway's own 401 when the core refused the key; its message may
-    # carry the core's code, e.g. "... (MCA20101: ...)".
+    # The gateway's reply when it refuses a key; its message may carry an error
+    # code, e.g. "... (MCA20101: ...)".
     _GATEWAY_KEY_REJECTION = "Snaplii core rejected the credentials"
     # In Muse the user's key is in the secure credential store, so a raw key that
     # fails was typed or rebuilt by the agent: send it back to the stored one.
@@ -637,7 +637,7 @@ class GatewayClient:
 
     def transfer_finish(self, order_no: str) -> dict:
         """Send the transfer now (moves auto_finish_at to now). The response is
-        still PENDING — the background sweeper settles it within ~15s; poll
+        still PENDING and normally settles within ~15s; poll
         transfer_get for the outcome."""
         return self._transfer_request("POST", f"/v2/transfers/{order_no}/finish")
 
@@ -844,9 +844,13 @@ class GatewayClient:
         # Non-success HTTP. If the body carries a business error code (e.g. a 422
         # business rejection like a spending-limit hit), surface its real message
         # instead of a generic status-based fallback.
+        rsp_code = body.get("rspMsgCd", "") if isinstance(body, dict) else ""
+        if path == "/v2/purchase" and not (isinstance(body, dict) and body
+                                           and isinstance(rsp_code, str)):
+            # Only a readable rejection says the payment did not happen.
+            raise GatewayApiError(resp.status_code, {"unreadable": True}, path)
         if not isinstance(body, dict):
             body = {"raw": body}
-        rsp_code = body.get("rspMsgCd", "")
         if not isinstance(rsp_code, str):
             raise GatewayApiError(resp.status_code, {}, path)
         if rsp_code:

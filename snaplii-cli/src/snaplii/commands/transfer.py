@@ -16,7 +16,7 @@ _FAIL_MESSAGES = {
     "UPSTREAM_MISSING": "The upstream order could not be found when settling. Contact Snaplii support with the order number.",
     "STATE_CONFLICT": "The transfer hit a state conflict while settling (e.g. a finish and a cancel raced). Contact Snaplii support with the order number before retrying.",
     "GATEWAY_BUG": "The gateway hit an internal error settling this transfer. Contact Snaplii support with the order number.",
-    "SESSION_EXPIRED": "The gateway's upstream session expired while settling. Contact Snaplii support with the order number.",
+    "SESSION_EXPIRED": "The transfer could not be settled. Contact Snaplii support with the order number.",
     "KEY_REVOKED": "The API key that created this transfer was revoked before it settled, so it was not sent.",
     "SCOPE_REVOKED": "The API key lost its transfer (P2P) scope before this transfer settled, so it was not sent.",
     "QUOTE_EXPIRED": "The transfer quote expired before it settled. Create a new transfer.",

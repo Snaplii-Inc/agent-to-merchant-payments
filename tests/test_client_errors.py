@@ -159,6 +159,32 @@ def test_unreadable_payment_reply_is_indeterminate_at_any_status(client, pay, st
     assert "html" not in json.dumps(out)
 
 
+@pytest.mark.parametrize("body", ["null", "[]", '"SECRET-TEXT"', "{}", '{"rspMsgCd": 123}'],
+                         ids=["null", "list", "string", "empty-object", "numeric-code"])
+@pytest.mark.parametrize("status", [400, 422])
+@pytest.mark.parametrize("pay", _PAYMENTS, ids=["gift-card", "bill-pay"])
+def test_malformed_payment_error_reply_is_indeterminate(client, pay, status, body):
+    # Valid JSON that is not a readable rejection says nothing about the charge.
+    client._http = httpx.Client(transport=_answering_transport(status, body))
+    with pytest.raises(GatewayApiError) as info:
+        pay(client)
+    out = info.value.to_dict()
+    assert out["outcome"] == "indeterminate"
+    assert out["status_code"] == status
+    assert "SECRET-TEXT" not in json.dumps(out)
+
+
+@pytest.mark.parametrize("pay", _PAYMENTS, ids=["gift-card", "bill-pay"])
+def test_payment_rejection_with_only_a_message_stays_plain(client, pay):
+    body = {"status": "error", "message": "amount: must be positive"}
+    client._http = httpx.Client(transport=_answering_transport(400, json.dumps(body)))
+    with pytest.raises(GatewayApiError) as info:
+        pay(client)
+    out = info.value.to_dict()
+    assert "outcome" not in out
+    assert "must be positive" in out["error"]
+
+
 @pytest.mark.parametrize("pay", _PAYMENTS, ids=["gift-card", "bill-pay"])
 def test_payment_401_stays_a_session_rejection(client, pay):
     # A rejected session never reaches the payment, so nothing was charged.
