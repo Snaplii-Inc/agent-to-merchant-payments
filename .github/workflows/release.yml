@@ -44,13 +44,15 @@ jobs:
       # Deps come from the packages themselves, so CI can't drift from what ships
       # (the mcp<2 ceiling lives in mcp-server/pyproject.toml and nowhere else).
       # Installing ./mcp-server also exercises its packaging and its snaplii-cli floor.
+      # uv prefers the interpreters it manages, and the only one is the 3.8 above,
+      # so the tests and the build name a supported Python explicitly.
       - name: Test
-        run: uv run --with "./snaplii-cli[dev]" --with ./mcp-server pytest tests -q
+        run: uv run --python 3.12 --with "./snaplii-cli[dev]" --with ./mcp-server pytest tests -q
 
       - name: Build
         run: |
-          uv build snaplii-cli --out-dir dist/cli
-          uv build mcp-server  --out-dir dist/mcp
+          uv build --python 3.12 snaplii-cli --out-dir dist/cli
+          uv build --python 3.12 mcp-server  --out-dir dist/mcp
 
       - uses: actions/upload-artifact@v7
         with:
