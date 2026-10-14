@@ -845,8 +845,7 @@ class GatewayClient:
         # business rejection like a spending-limit hit), surface its real message
         # instead of a generic status-based fallback.
         rsp_code = body.get("rspMsgCd", "") if isinstance(body, dict) else ""
-        if path == "/v2/purchase" and not (isinstance(body, dict) and body
-                                           and isinstance(rsp_code, str)):
+        if path == "/v2/purchase" and not cls._readable_rejection(body):
             # Only a readable rejection says the payment did not happen.
             raise GatewayApiError(resp.status_code, {"unreadable": True}, path)
         if not isinstance(body, dict):
@@ -856,6 +855,18 @@ class GatewayClient:
         if rsp_code:
             cls._attach_friendly_message(body, rsp_code)
         raise GatewayApiError(resp.status_code, body, path)
+
+    @staticmethod
+    def _readable_rejection(body) -> bool:
+        """True when a reply says why it was refused: a code or a text message."""
+        if not isinstance(body, dict):
+            return False
+        code = body.get("rspMsgCd", "")
+        if not isinstance(code, str):
+            return False
+        return bool(code.strip()) or any(
+            isinstance(body.get(key), str) and body[key].strip()
+            for key in ("rspMsgInf", "rspMsgInfo", "message"))
 
     @classmethod
     def _attach_friendly_message(cls, body: dict, rsp_code: str) -> None:

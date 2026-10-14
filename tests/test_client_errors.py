@@ -159,8 +159,11 @@ def test_unreadable_payment_reply_is_indeterminate_at_any_status(client, pay, st
     assert "html" not in json.dumps(out)
 
 
-@pytest.mark.parametrize("body", ["null", "[]", '"SECRET-TEXT"', "{}", '{"rspMsgCd": 123}'],
-                         ids=["null", "list", "string", "empty-object", "numeric-code"])
+@pytest.mark.parametrize("body", ["null", "[]", '"SECRET-TEXT"', "{}", '{"rspMsgCd": 123}',
+                                  '{"unexpected": "SECRET-TEXT"}', '{"rspMsgCd": ""}',
+                                  '{"message": []}', '{"raw": "SECRET-TEXT"}'],
+                         ids=["null", "list", "string", "empty-object", "numeric-code",
+                              "no-code-or-message", "blank-code", "non-text-message", "raw-key"])
 @pytest.mark.parametrize("status", [400, 422])
 @pytest.mark.parametrize("pay", _PAYMENTS, ids=["gift-card", "bill-pay"])
 def test_malformed_payment_error_reply_is_indeterminate(client, pay, status, body):
