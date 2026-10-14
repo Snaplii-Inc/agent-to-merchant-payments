@@ -1,8 +1,8 @@
-# Snaplii Wallet for AI Agents
+# Agent-to-Merchant Payments by Snaplii
 
-> A prepaid wallet your AI agent can spend from, without your credit card.
+> A payment layer for AI agents: pay in the real world without handing the agent a credit card.
 
-Snaplii is a prepaid wallet. The user tops up **Snaplii Cash** in the app and gives the agent a scoped, revocable key with a daily limit. Within that limit the agent can check the balance, spend it at a merchant through a gift card, cover Canadian utility and telecom bills, and send Snaplii Cash to another user; it never sees the user's card or bank credentials. It ships as an **Agent Skill**, an **MCP server**, and a **Python CLI**, so it works with any agent that can read a `SKILL.md`, call MCP tools, or run a command.
+Snaplii gives an AI agent a prepaid, scoped, revocable payment account. The agent spends only the **Snaplii Cash** the user set aside, within a per-key spending limit the user chose, and never sees the user's card or bank credentials. It ships as an **Agent Skill**, an **MCP server**, and a **Python CLI**, so it works with any agent that can read a `SKILL.md`, call MCP tools, or run a command.
 
 ---
 
@@ -96,20 +96,21 @@ The third command builds the CLI and the MCP server into `~/.snaplii-env` and pr
 
 | Capability | What happens | Canada (CAD) | United States (USD) | Key scope |
 |---|---|---|---|---|
-| Spend at a merchant | Buy a gift card from the balance (500+ brands, vouchers and up to 10% cashback) and read its redemption code; with a browser-automation tool and the `snaplii-autopilot` skill or MCP prompt, the agent also redeems it at checkout and places the order | Yes | Yes | `PAY_WRITE` |
+| Buy gift cards | Browse 500+ brands, quote the exact price with vouchers and up to 10% cashback, buy, then read the redemption code | Yes | Yes | `PAY_WRITE` |
+| Pay a merchant with the card | Redeem the code on the merchant or delivery site and place the order; needs a browser-automation tool and the `snaplii-autopilot` skill or MCP prompt | Yes | Yes | `PAY_WRITE` |
 | Check balance and cards | Spendable Snaplii Cash, owned cards, cashback estimates | Yes | Yes | `PAY_READ` |
-| Cover a bill | Supported utility, telecom and other billers, from Snaplii Cash; once sent, a bill cannot be undone | Yes | No | `PAY_WRITE` |
-| Send Snaplii Cash | To another Snaplii user's phone number; cancellable for about 5 minutes, then it sends itself | Yes | Yes | `P2P` or `ALL` |
+| Pay bills | Supported utility, telecom and other billers, paid from Snaplii Cash; once sent, a bill payment cannot be undone | Yes | No | `PAY_WRITE` |
+| Send money (P2P) | Send Snaplii Cash to another Snaplii user's phone number; cancellable for about 5 minutes, then it sends itself | Yes | Yes | `P2P` or `ALL` |
 
-The account country is fixed at login, so the catalog, currency and billers follow it; do not ask the user for a region.
+The account country is fixed at login, so the catalog, currency and bill pay follow it; do not ask the user for a region.
 
 ---
 
 ## How authorization works
 
 1. **Set aside funds.** Add the amount you want to make available as Snaplii Cash in the app.
-2. **Define access.** Create an API key with the scope and spending limit the agent's task needs. Scopes: `PAY_READ` (read-only), `PAY_WRITE` (read, buy, bills), `P2P` (transfers), `ALL`.
-3. **Let the agent execute within that boundary.** The agent spends from Snaplii Cash, without exposing your bank or card credentials. You can change the limit or revoke the key in the app at any time.
+2. **Define access.** Create an API key with the scope and spending limit the agent's task needs. Scopes: `PAY_READ` (read-only), `PAY_WRITE` (read, purchase, bill pay), `P2P` (transfers), `ALL`.
+3. **Let the agent execute within that boundary.** Agent payments draw from Snaplii Cash, without exposing your bank or card credentials. You can change the limit or revoke the key in the app at any time.
 
 Gift-card purchases can help users save through eligible offers and cashback. Available brands and savings vary by country, brand, and current quote; merchant offers can be combined only where their terms allow.
 
@@ -123,7 +124,7 @@ The API key stays out of the chat where the host allows it: a secure card, the h
 
 | `next_action` | What to do |
 |---|---|
-| `run_cli` | The user runs its `argv` in their own terminal: from a shell tool `init` reads nothing and answers `api_key_missing`; in Muse the agent runs `init --vault-auth` itself. `argv[0]` is `snaplii`, or the CLI's absolute path when the `snaplii` on PATH is a different CLI; relay `argv` unchanged |
+| `run_cli` | The user runs its `argv` in their own terminal: from a shell tool `init` has no key to read and answers `api_key_missing`; never pipe a key into it; in Muse the agent runs `init --vault-auth` itself. `argv[0]` is `snaplii`, or the CLI's absolute path when the `snaplii` on PATH is a different CLI; relay `argv` unchanged |
 | `call_mcp_tool` | The agent calls `snaplii_connect`, only while `has_valid_token` is false. Only `authenticated` or `already_connected` means connected; after `card_requested`, `pending` or `use_terminal_or_chat_key`, check the status again once the user has acted |
 | `muse_secure_entry` | The agent opens Muse's secure input; a stored key is reused without asking |
 | `offer_legacy` | The key was rejected (`invalid_key`); the user enters a key again |
@@ -154,7 +155,7 @@ The API key stays out of the chat where the host allows it: a secure card, the h
 Installing needs no key. To connect the CLI or your AI agent, generate a secure API key in the Snaplii mobile app:
 
 1. Download the Snaplii app for [iOS](https://apps.apple.com/app/snaplii/id1596924498) or [Android](https://play.google.com/store/apps/details?id=com.snaplii.app).
-2. Register an account and top up your Snaplii Cash balance in the app.
+2. Register an account and bind a payment method to load your Snaplii Cash balance.
 3. In the app, go to **More → Payment Methods → AI Payment Management**.
 4. Tap **+ New API Key**.
 5. Set a name, choose the scope (`PAY_READ`, `PAY_WRITE`, `P2P`, or `ALL`), and set a hard spending limit.
@@ -200,6 +201,8 @@ When Muse is recognized, `snaplii init` selects secure credential authentication
 
 Use `snaplii config doctor` to check runtime detection and storage without logging in. If secure credential authentication is unavailable, you can explicitly choose `snaplii init --legacy-auth` and enter your API key at the terminal's hidden prompt.
 
+Muse must use only the key it holds: never type, rebuild or copy a key into a command, including one pasted into the chat, since the value Muse sees there may not be the real key. In Muse, a raw key that is not a Snaplii key, or that Snaplii rejects, answers `auth_required` with `next_action` pointing to `snaplii init --vault-auth`, which uses the stored key.
+
 #### Instinct
 
 In Instinct the CLI does not authenticate at all. Connect through the MCP server and the Instinct vault, as described under [MCP Server](#mcp-server-claude-openclaw-cursor-instinct).
@@ -224,20 +227,20 @@ snaplii giftcard detail --card-no ...                # Read the redemption code
 >
 > Always `quote` before `purchase`. The quote's `you_pay` is what Snaplii Cash does not cover; if it is above zero, the user needs to top up in the app first.
 
-### 5. Cover a Bill (Canada only)
+### 5. Pay a Bill — Canada only
 
-Canadian accounts can cover supported utility, telecom, and other bills from Snaplii Cash; US accounts cannot. Check the account country before starting; use the live biller list and quote for availability and any applicable savings.
+Canadian accounts can pay supported utility, telecom, and other bills from Snaplii Cash. Bill pay is not available for US accounts. Check the account country before starting; use the live biller list and quote for availability and any applicable savings.
 
 ```bash
 snaplii billpay payees                                                       # Find your biller
 snaplii billpay detail --payee-code PE01015                                  # Check account rules
 snaplii billpay save --payee-code PE01015 --first-name Alex --last-name Chen --amount 75.25 --account 1234567890
 snaplii billpay quote --pay-code PC... --price 75.25                         # Preview savings
-snaplii billpay pay --pay-code PC... --price 75.25                          # Settle from Snaplii Cash
+snaplii billpay pay --pay-code PC... --price 75.25                          # Pay from Snaplii Cash
 snaplii billpay result --payment-no PSP...                                   # Check status
 ```
 
-> Bill pay flow: **payees → detail → save (returns payCode) → quote → pay → result**. The money comes from your prepaid Snaplii Cash balance; the agent never touches your bank accounts or credit cards.
+> Bill pay flow: **payees → detail → save (returns payCode) → quote → pay → result**. Payment draws from your prepaid Snaplii Cash balance without giving the agent access to your bank accounts or credit cards.
 
 ### 6. Send Money (P2P Transfer)
 
@@ -272,17 +275,17 @@ Every operation prints one JSON document on stdout, or one JSON error on stderr 
 | `snaplii giftcard detail --card-no NO` | View card redemption code and PIN |
 | `snaplii balance [--country CA\|US]` | Show spendable Snaplii Cash balance; currency follows the stored account country |
 | `snaplii quote --item-id ID --price P` | Preview price with voucher/cashback before buying |
-| `snaplii purchase --item-id ID --price P` | Purchase a gift card |
+| `snaplii purchase --item-id ID --price P [--voucher V] [--cashback C] [--voucher-id ID]` | Purchase a gift card; pass the same options you quoted with |
 | `snaplii smart cashback --brand-id ID --amount A` | Calculate cashback savings |
 | `snaplii smart dashboard` | View card inventory summary |
 | `snaplii billpay payees` | Canada only: list available billers (electricity, gas, telecom) |
 | `snaplii billpay detail --payee-code CODE` | View biller account validation rules |
 | `snaplii billpay save --payee-code CODE --first-name F --last-name L --amount A --account NO` | Save a bill pay instruction |
 | `snaplii billpay vouchers --pay-code PC --price P` | List eligible bill-payment vouchers |
-| `snaplii billpay history --payee-code CODE` | Get the previous bill instruction for a biller, for autofill; not a ledger of settled bills |
+| `snaplii billpay history --payee-code CODE` | Get the previous bill instruction for a biller, for autofill; not a ledger of what was paid |
 | `snaplii billpay quote --pay-code PC --price P` | Preview bill price with voucher/cashback |
-| `snaplii billpay pay --pay-code PC --price P` | Canada only: settle the bill from Snaplii Cash |
-| `snaplii billpay result --payment-no NO` | Check a bill's status |
+| `snaplii billpay pay --pay-code PC --price P` | Canada only: pay the bill from Snaplii Cash |
+| `snaplii billpay result --payment-no NO` | Check bill payment status |
 | `snaplii transfer create --to-phone P --amount A` | Send Snaplii Cash to a phone number (cancellable ~5 min, then auto-sends) |
 | `snaplii transfer cancel --order-no NO` | Cancel a PENDING transfer within the undo window |
 | `snaplii transfer finish --order-no NO` | Send a PENDING transfer immediately |
@@ -552,12 +555,12 @@ The registration points at `~/.snaplii-env/bin/snaplii-mcp`. Clone the release a
 ## Security
 
 - **Isolated spending access:** agents can spend only the prepaid Snaplii Cash available within their permissions and limits. They do not receive direct access to your bank accounts or credit cards.
-- **Scoped API keys:** `PAY_READ` (read-only), `PAY_WRITE` (read, buy, bills), `P2P` (transfers), `ALL`.
+- **Scoped API keys:** `PAY_READ` (read-only), `PAY_WRITE` (read, purchase, bill pay), `P2P` (transfers), `ALL`.
 - **Spending limits:** strict per-key consumption caps are set via the mobile app. Transfers also have a rolling 24-hour per-key limit.
 - **The daily limit is the boundary.** You set a per-day cap when you create the key in the app; the agent spends only within it, from prepaid funds, and you can lower the cap or revoke the key at any time. The agent tells you this once when it connects.
 - **Off-model key entry.** The API key is entered through a secure MCP Apps card rendered by the host, on the hosted connect page, in a hidden terminal prompt, or supplied by the host's credential store (Muse) or vault (Instinct). A client with none of those offers the user's own terminal prompt and, where the MCP tools exist, `snaplii_init`; with `snaplii_init` the key passes through the model once. The session token is kept in the OS keychain, or in process memory for a long-lived MCP server. Recognized Muse runtimes use a private session file automatically; other keychain-less CLI environments require explicit `SNAPLII_ALLOW_INSECURE=1` opt-in for file caching.
 - **Snaplii gateways only.** An API key is sent, and the connect page opened, only at production `https://aipayment.snaplii.com` or staging `https://aipay.stage.snaplii.com`. The terminal prompt and the secure card name the gateway the key goes to. A connect page set with `SNAPLII_ELICIT_URL` or `elicit_url` must be on the gateway's own address.
-- **Charges are sent once.** Charges are not auto-retried. On an ambiguous bill-pay failure, query `billpay result` by `paymentNo` before retrying rather than sending the bill again; without a `paymentNo`, treat the outcome as unknown and reconcile before resubmitting. Transfers carry an idempotency key; retry a `CREATING` transfer with the same key, never a fresh one.
+- **Charges are sent once.** Charges are not auto-retried. On an ambiguous bill-pay failure, query `billpay result` by `paymentNo` before retrying rather than re-paying; without a `paymentNo`, treat the outcome as unknown and reconcile before resubmitting. Transfers carry an idempotency key; retry a `CREATING` transfer with the same key, never a fresh one.
 - **The API key is not stored:** Snaplii uses it once to obtain a token and never writes it to disk; only a host's own vault (Muse, Instinct) keeps it.
 - **Data protection:** card redemption codes and PINs are shown only when the user asks for them or needs them to finish a purchase, and never appear in logs or summaries.
 
@@ -565,23 +568,29 @@ The registration points at `~/.snaplii-env/bin/snaplii-mcp`. Clone the release a
 
 ## Why Snaplii
 
-### Why an agent needs a wallet of its own
+### Why AI agents need a new payment layer
 
-AI agents can already find products, compare options, navigate merchant sites, fill in forms and reach checkout on a user's behalf. The step that remains is settling the order. Handing an agent a credit card, debit card or bank login exposes credentials that were never meant to be shared. Snaplii gives the agent a wallet instead: prepaid funds, a scoped key, and a limit the user controls.
+AI agents are increasingly capable of discovering products and services, comparing options, navigating merchant websites, selecting the product or service, filling out forms, completing checkout flows, and taking actions on behalf of users.
 
-### Three reasons to give your agent a Snaplii wallet
+But payment remains a critical gap. Giving an agent direct access to a user's credit card, debit card, or bank account creates unnecessary exposure of sensitive financial credentials. The question is no longer "Can AI agents shop?" but "How can AI agents pay safely?" Snaplii is built to solve that problem.
 
-1. **Every order costs less.** At supported merchants Snaplii adds 5–10% in vouchers and cashback, so the agent can find the right product and settle it for less than the sticker price.
-2. **One wallet, several currencies.** Snaplii, the product, holds balances in CAD, USD, RMB, USDT/USDC and more. This integration currently exposes Canadian (CAD) and US (USD) accounts; see the capability table above for what an agent can do today.
-3. **Your card never reaches the agent.** The agent sees only the wallet: a balance, a key with a scope, and a daily limit. Your card and bank credentials stay in the app, where you can change the limit or revoke the key at any time.
+### Three reasons to pay through Snaplii
 
-### Completing an order at a merchant
+1. **Get more value from every payment.** At supported merchants, Snaplii can provide 5–10% additional discounts when users pay through Snaplii. An agent can find the right product, choose the right payment method, and complete the purchase at a better price. The payment layer becomes part of the shopping decision.
+2. **Pay across multiple currencies.** Snaplii, the product, supports payment experiences across CAD, USD, RMB, USDT/USDC, and more. This integration currently exposes Canadian (CAD) and US (USD) accounts; see the capability table above for what an agent can execute today.
+3. **Keep your credit card away from the agent.** Don't give your AI agent your credit card. Give it a payment account with controlled authorization. The agent never sees or stores the user's card credentials; it only uses the payment capabilities Snaplii makes available. Combined with tokenized payment infrastructure and scoped authorization, this puts a security boundary between the user's financial credentials and the agent's actions.
 
-Snaplii gives the agent what the merchant's checkout accepts, a gift card bought from the balance, while the credentials behind the balance stay away from the model. With a browser tool and the user's go-ahead, the agent can take an order from intent to confirmation page; without one, it hands the user the redemption code to finish the last step themselves.
+### Completing a merchant purchase
 
-### Built for agents
+For merchant purchases, Snaplii provides the payment information required for the transaction while keeping the underlying payment credentials separated from the AI model. An agent can understand the user's intent, navigate the merchant website, select the product or service, reach checkout, use Snaplii's authorized payment capability, and complete the transaction.
 
-A wallet for agents has to answer questions a person's wallet never did: which agent is acting, what it may do, how much it may spend, and when its access should end. Snaplii's scoped, capped, revocable keys answer them per agent. The same wallet works with Claude, ChatGPT, Gemini, Llama, Mistral, OpenClaw, Muse, Instinct, or any agent that can read a skill, call a tool, or run a command.
+When the agent has the required browser capabilities, account access, and user authorization, Snaplii can become part of the full shopping-to-payment workflow. When those conditions are not available, Snaplii provides the agent with the payment or exchange information needed for the user to complete the next step.
+
+### Built for agentic commerce
+
+Traditional payments were designed for humans holding cards and entering credentials. Agentic commerce introduces a different model: intent → agent → authorization → payment → merchant. The payment layer needs to understand not only who is paying, but also which agent is acting, what it is authorized to do, how much it can spend, which payment method it can access, whether the transaction can be reused, and when authorization should expire. Snaplii is building this infrastructure for the emerging AI agent economy.
+
+Snaplii is model-agnostic. Whether you build with Claude, ChatGPT, Gemini, Llama, Mistral, OpenClaw, Muse, Instinct, or any other model or agent, if it can read a skill, call a tool, or run a command, it can use Snaplii.
 
 ---
 

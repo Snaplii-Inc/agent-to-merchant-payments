@@ -100,6 +100,15 @@ class GatewayClient:
 
     def login(self, agent_id: str, api_key: str) -> dict:
         auth.require_login_origin(self._origin)
+        if not auth.valid_api_key(api_key):
+            # Never send a vault reference, surrogate or hash as a key, and never
+            # echo what was given: the message names the format, not the value.
+            if self.auth_status()["host"] == "muse":
+                raise self._auth_error("auth_required", "api_key_format_invalid",
+                                       "That is not a Snaplii API key. " + self._MUSE_USE_STORED_KEY, "vault")
+            raise self._auth_error("invalid_key", "api_key_format_invalid",
+                                   "That is not a Snaplii API key. A key is snp_sk_live_ followed by "
+                                   "32 letters and digits; copy it again from the Snaplii app.", "api_key")
         resp = self._post("/v2/auth/token", json={
             "agent_id": agent_id,
             "api_key": api_key,
@@ -178,19 +187,47 @@ class GatewayClient:
         body = self._parse_login_response(httpx.Response(status, text=raw), "vault")
         return self._finish_login(body, agent_id=agent_id, auth_method="vault")
 
+    # The agent gateway's own 401 when the core refused the key; its message may
+    # carry the core's code, e.g. "... (MCA20101: ...)".
+    _GATEWAY_KEY_REJECTION = "Snaplii core rejected the credentials"
+    # In Muse the user's key is in the secure credential store, so a raw key that
+    # fails was typed or rebuilt by the agent: send it back to the stored one.
+    _MUSE_USE_STORED_KEY = ("In Muse the real key is already in the secure credential store; "
+                            "do not type, rebuild or copy a key yourself. "
+                            "Run `snaplii init --vault-auth` to use the stored key.")
+
     def _parse_login_response(self, response, method):
         try:
             return self._parse_response(response, "/v2/auth/token")
         except GatewayApiError as exc:
+            message = exc.body.get("message")
+            gateway_rejected = (exc.status_code in (401, 403) and isinstance(message, str)
+                                and message.startswith(self._GATEWAY_KEY_REJECTION))
             code = exc.body.get("rspMsgCd")
+            if not code and gateway_rejected:
+                found = re.search(r"\((MCA\d+)", message)
+                code = found.group(1) if found else ""
             code = code if isinstance(code, str) and code in self._ERROR_MESSAGES else ""
             safe = {"rspMsgCd": code}
             if code:
                 safe["friendly_message"] = self._ERROR_MESSAGES[code]
+            if gateway_rejected or code.startswith("MCA201"):
+                state, reason = "invalid_key", "auth_gateway_rejected"
+            elif exc.status_code in (401, 403):
+                # Something other than the gateway refused the request (a proxy, a
+                # host's credential layer, a wrong address): the key was never judged.
+                state, reason = "auth_response_invalid", "auth_rejected_unverified"
+                safe["friendly_message"] = (
+                    "Authentication was rejected before Snaplii checked the key, so the key may still be "
+                    "valid. Check the gateway address and how the key reaches it before replacing the key.")
+            else:
+                state = "temporary_gateway_error" if exc.status_code >= 500 else "auth_response_invalid"
+                reason = "auth_gateway_rejected"
+            if state == "invalid_key" and method == "api_key" and self.auth_status()["host"] == "muse":
+                state, method = "auth_required", "vault"
+                safe["friendly_message"] = "That key was not accepted. " + self._MUSE_USE_STORED_KEY
             error = GatewayApiError(exc.status_code, safe, "/v2/auth/token")
-            state = ("invalid_key" if exc.status_code in (401, 403) or code.startswith("MCA201")
-                     else "temporary_gateway_error" if exc.status_code >= 500 else "auth_response_invalid")
-            error.auth_fields = self._auth_fields(state, "auth_gateway_rejected", method)
+            error.auth_fields = self._auth_fields(state, reason, method)
             raise error from None
 
     def _finish_login(self, resp: dict, *, agent_id, auth_method: str) -> dict:
@@ -590,13 +627,16 @@ class GatewayClient:
                                       headers=headers)
         except httpx.ConnectError as e:
             raise GatewayConnectionError(url, e)
-        except httpx.TimeoutException:
-            # A timed-out create is indeterminate: the transfer may exist. Never
+        except httpx.RequestError as e:
+            # A timeout, a reset connection or a broken response may follow a request
+            # the gateway already processed, so the transfer may exist. Never
             # auto-create again under a fresh key — surface it as retryable with
             # the same-key instruction (transfer_create attaches the key).
+            timed_out = isinstance(e, httpx.TimeoutException)
             raise TransferApiError(0, {
-                "code": "CLIENT_TIMEOUT",
-                "message": ("The request timed out before the gateway answered; "
+                "code": "CLIENT_TIMEOUT" if timed_out else "CLIENT_TRANSPORT_ERROR",
+                "message": (("The request timed out" if timed_out else "The connection failed")
+                            + " before the gateway answered; "
                             "the operation may or may not have gone through. "
                             "Check 'snaplii transfer list' (or retry the identical "
                             "request with the SAME Idempotency-Key) — never create "

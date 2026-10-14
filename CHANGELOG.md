@@ -13,7 +13,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 - CI runs Test and Build on pull requests and provides CPython 3.8 for the installer's compatibility test; publishing stays tag-gated.
 
 ### Changed
-- **Snaplii is described as a wallet.** The README, both skills, the MCP server instructions and tool descriptions, the CLI help, the Claude Desktop instructions, the plugin texts and the package descriptions now present Snaplii as a prepaid wallet the agent spends from. They state facts the agent judges by (prepaid balance, daily limit, revocable key, a sent bill cannot be undone, a transfer can be cancelled for about 5 minutes) instead of telling it when to ask the user for confirmation. The autopilot flow still confirms the final merchant order. `openapi.yaml`'s `bill_pay_confirmation` rule became `bill_pay_irreversible`.
+- **Agents judge confirmation from stated facts.** The README, both skills, the MCP server instructions and tool descriptions, the CLI help, the Claude Desktop instructions and the plugin README state facts the agent judges by (prepaid balance, daily limit, revocable key, a sent bill cannot be undone, a transfer can be cancelled for about 5 minutes) instead of telling it when to ask the user for confirmation. The autopilot flow still confirms the final merchant order. `openapi.yaml`'s `bill_pay_confirmation` rule became `bill_pay_irreversible`.
 - **README rewritten for agents first.** Capabilities by country and key scope, how the skill, MCP and CLI fit together, a generic Agent Skills install (`npx skills add`) with per-agent directories, both skills, and the Muse and Instinct paths come first; the product background moved to the end.
 - The `snaplii_autopilot` MCP prompt no longer asks the user for a region; the account country is fixed at login.
 - **`quote` and `purchase` check the `item_id` before any request.** The CLI and the MCP server now refuse an `item_id` that is not exactly `{cardBrandId}-{cardTemplateId}`, and one whose template is not a card of that brand, with `invalid_item_id` and a message saying to copy it from `browse brand`. The amount check still fails open when the catalog cannot be read.
@@ -37,6 +37,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 - The secure card ignores messages from windows other than its host and clears the key field after a failed submit.
 
 ---
+
+### Fixed
+- **A login sends only a Snaplii key.** `snaplii init` and the MCP login refuse anything that is not `snp_sk_live_` plus 32 letters and digits (the gateway's own format) before any request, so a vault reference, surrogate or hash is never sent; the refusal never echoes the value.
+- **Muse is sent back to the key it holds.** In Muse, a raw-key login whose value is not a Snaplii key, or that Snaplii rejects, answers `auth_required` with `next_action` `snaplii init --vault-auth` and tells the agent not to type, rebuild or copy a key; the Muse instruction in both skills, the README and a new `openapi.yaml` rule (`muse_stored_key_only`) say the same.
+- **Only the gateway's own refusal means the key is invalid.** A 401/403 that did not come from the Snaplii gateway (a proxy, a host's credential layer, a wrong address) now reports `auth_response_invalid` / `auth_rejected_unverified` and stops, instead of telling the agent to replace a key that was never checked.
+- **`snaplii purchase` takes the quote's options.** `--voucher`, `--cashback` and `--voucher-id` are forwarded, so the charge matches the quote.
+- **A transfer keeps its idempotency key on any lost connection.** A reset connection or broken response after sending is reported like a timeout (`CLIENT_TRANSPORT_ERROR`, same-key retry only) instead of an uncaught error.
+- **An unclear purchase is checked before buying again.** The skill, the `snaplii_purchase` description and the plugin README point a timeout, lost connection or 5xx at the owned-card list first, since a purchase is not idempotent.
+- **Plugin README matches the plugin.** It no longer pins `snaplii-cli==0.13.2` or tells agents to pass the user's key to `snaplii_init`; it states that the plugin runs `uvx snaplii-mcp` and connects with `snaplii_connect`.
 
 ## [0.19.0] — 2026-10-08
 

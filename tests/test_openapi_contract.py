@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SPEC = yaml.safe_load((ROOT / "openapi.yaml").read_text())
 README = (ROOT / "README.md").read_text()
 REQUIRED_RULES = {
-    "api_key_off_chat", "instinct_mcp_only", "item_id_format", "denomination_check", "quote_before_purchase",
+    "api_key_off_chat", "instinct_mcp_only", "muse_stored_key_only", "item_id_format", "denomination_check", "quote_before_purchase",
     "no_blind_purchase_retry", "bill_pay_irreversible", "sensitive_card_data", "transfer_idempotency",
     "transfer_disclosure", "spending_limits",
 }

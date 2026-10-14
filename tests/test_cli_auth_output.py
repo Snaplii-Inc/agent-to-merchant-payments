@@ -38,7 +38,7 @@ def test_noninteractive_raw_login_emits_only_safe_json(tmp_path, monkeypatch, ca
     store = ConfigStore(tmp_path / "config.json")
     monkeypatch.setattr(cli, "ConfigStore", lambda: store)
     monkeypatch.setattr(sys, "argv", ["snaplii", "init"])
-    monkeypatch.setattr(sys, "stdin", io.StringIO("synthetic-api-key\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO("snp_sk_live_syntheticapikey00000000000000000\n"))
     httpx_mock.add_response(method="POST", json={"access_token": "synthetic-token", "debug": "synthetic-secret"})
     cli._cli()
     output = capsys.readouterr()
@@ -66,7 +66,7 @@ def test_cli_login_without_persistent_storage_fails_visibly(tmp_path, monkeypatc
     monkeypatch.delenv("SNAPLII_ALLOW_INSECURE", raising=False)
     monkeypatch.setattr(cli, "ConfigStore", lambda: ConfigStore(tmp_path / "config.json"))
     monkeypatch.setattr(sys, "argv", ["snaplii", "init"])
-    monkeypatch.setattr(sys, "stdin", io.StringIO("synthetic-api-key\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO("snp_sk_live_syntheticapikey00000000000000000\n"))
     httpx_mock.add_response(method="POST", json={"access_token": "synthetic-token", "expires_in": 600})
     with pytest.raises(SystemExit) as exc:
         cli._cli()
@@ -84,7 +84,7 @@ def test_invalid_agent_id_is_rejected_before_any_network_exchange(tmp_path, monk
     monkeypatch.setenv("SNAPLII_ALLOW_INSECURE", "1")
     monkeypatch.setattr(cli, "ConfigStore", lambda: ConfigStore(tmp_path / "config.json"))
     monkeypatch.setattr(sys, "argv", ["snaplii", "init", "--agent-id", "my agent"])
-    monkeypatch.setattr(sys, "stdin", io.StringIO("synthetic-api-key\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO("snp_sk_live_syntheticapikey00000000000000000\n"))
     with pytest.raises(SystemExit) as exc:
         cli._cli()
     assert exc.value.code == 1
@@ -136,7 +136,7 @@ def test_path_prefixed_gateway_survives_config_login_and_recovery(tmp_path, monk
     assert state["base_url"] == base_url
     assert state["next_action"]["argv"] == ["snaplii", "--base-url", base_url, "init"]
 
-    monkeypatch.setattr(sys, "stdin", io.StringIO("synthetic-api-key\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO("snp_sk_live_syntheticapikey00000000000000000\n"))
     httpx_mock.add_response(method="POST", url=base_url + "/v2/auth/token",
                             json={"access_token": "synthetic-token", "expires_in": 600})
     assert run("init")["has_valid_token"] is True
@@ -150,3 +150,37 @@ def test_path_prefixed_gateway_survives_config_login_and_recovery(tmp_path, monk
         cli._cli()
     rejected = json.loads(capsys.readouterr().err)
     assert rejected["next_action"]["argv"] == ["snaplii", "--base-url", base_url, "init"]
+
+
+WELL_FORMED_KEY = "snp_sk_live_" + "A1b2" * 8
+NOT_KEYS = [
+    "0123456789abcdef0123456789abcdef01234567",  # 40 characters, no prefix
+    "snp_sk_live_" + "A1b2" * 7,                  # 28-character secret
+    "snp_sk_live_" + "A1b2" * 8 + "x",            # 33-character secret
+    "snp_sk_live_" + "A1b2" * 7 + "A1b-",         # a character outside the key alphabet
+    "hsurr:" + "a" * 40,                          # a host credential surrogate
+]
+
+
+def test_valid_api_key_matches_the_gateway_format():
+    from snaplii import auth
+    assert auth.valid_api_key(WELL_FORMED_KEY)
+    for value in NOT_KEYS:
+        assert not auth.valid_api_key(value), value
+
+
+@pytest.mark.parametrize("value", NOT_KEYS)
+def test_init_refuses_a_non_key_before_any_request(tmp_path, monkeypatch, capsys, httpx_mock, value):
+    monkeypatch.setattr(keyring, "get_keyring", lambda: Keyring())
+    monkeypatch.setenv("SNAPLII_ALLOW_INSECURE", "1")
+    monkeypatch.setattr(cli, "ConfigStore", lambda: ConfigStore(tmp_path / "config.json"))
+    monkeypatch.setattr(sys, "argv", ["snaplii", "init"])
+    monkeypatch.setattr(sys, "stdin", io.StringIO(value + "\n"))
+    with pytest.raises(SystemExit) as exc:
+        cli._cli()
+    assert exc.value.code == 1
+    output = capsys.readouterr()
+    error = json.loads(output.err)
+    assert (error["auth_state"], error["reason_code"]) == ("invalid_key", "api_key_format_invalid")
+    assert value not in output.err + output.out
+    assert httpx_mock.get_requests() == []

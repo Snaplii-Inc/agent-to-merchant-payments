@@ -166,3 +166,14 @@ def test_autopilot_keeps_its_final_order_gate():
         assert "Confirm & buy" not in (ROOT / relative).read_text()
     assert (ROOT / "skills/snaplii-autopilot.md").read_bytes() == (ROOT / "clawhub-autopilot/SKILL.md").read_bytes()
     assert (ROOT / "skills/snaplii-cli.md").read_bytes() == (ROOT / "clawhub-publish/SKILL.md").read_bytes()
+
+
+def test_an_ambiguous_purchase_is_checked_before_buying_again():
+    # /v2/purchase is not idempotent, so every surface that tells an agent how to
+    # recover from a lost or 5xx purchase points it at the owned cards first.
+    surfaces = _surfaces()
+    for name, needle in (("purchase tool", "check snaplii_giftcard_list for the new card before calling this again"),
+                         ("cli skill", "run `snaplii giftcard list` and look for the new card before buying again"),
+                         ("plugin README", "check `snaplii_giftcard_list` for the new card before buying again")):
+        assert needle in surfaces[name], name
+    assert "Ask the user to wait a moment and try again" not in surfaces["cli skill"]

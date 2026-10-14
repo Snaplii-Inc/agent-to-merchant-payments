@@ -149,12 +149,13 @@ def quote_cmd(ctx, pay_code, price, voucher_id):
 @click.option("--voucher-id", default=None, help="Specific voucher ID to apply")
 @click.pass_context
 def pay_cmd(ctx, pay_code, price, voucher_id):
-    """Settle the saved bill from the Snaplii Cash balance.
+    """Pay the bill from Snaplii Cash balance.
 
     The charge happens as soon as the command runs, within the per-key daily
-    limit set in the app. Once sent, a bill cannot be undone. If this fails or
-    times out ambiguously, check status with
-    `snaplii billpay result --payment-no <paymentNo>` before running it again.
+    limit set in the app. Once sent, a bill payment cannot be undone. If this
+    fails or times out ambiguously, check status with
+    `snaplii billpay result --payment-no <paymentNo>` before retrying — don't
+    re-pay blindly.
     """
     client: GatewayClient = ctx.obj["client"]
     resp = client.billpay_create_and_pay(

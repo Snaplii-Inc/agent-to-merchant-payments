@@ -69,7 +69,7 @@ def test_other_gateways_are_refused(base_url):
 def test_client_login_refuses_before_sending_the_key(store, base_url):
     client = _no_network(GatewayClient(base_url, store))
     with pytest.raises(ConfigError):
-        client.login("agent-1", "snp_sk_live_SECRET")
+        client.login("agent-1", "snp_sk_live_SECRET00000000000000000000000000")
 
 
 def test_client_connect_poll_refuses_before_sending_the_eid(store):
@@ -80,7 +80,7 @@ def test_client_connect_poll_refuses_before_sending_the_eid(store):
 
 def test_cli_init_refuses_before_reading_the_key(store, monkeypatch, capsys):
     monkeypatch.setattr(cli, "ConfigStore", lambda: store)
-    stdin = io.StringIO("snp_sk_live_SECRET\n")
+    stdin = io.StringIO("snp_sk_live_SECRET00000000000000000000000000\n")
     monkeypatch.setattr(sys, "stdin", stdin)
     monkeypatch.setattr(sys, "argv", ["snaplii", "--base-url", "https://gateway.example", "init"])
     with pytest.raises(SystemExit) as exc:
@@ -88,7 +88,7 @@ def test_cli_init_refuses_before_reading_the_key(store, monkeypatch, capsys):
     assert exc.value.code == 1
     output = capsys.readouterr()
     assert PROD in output.err and "SECRET" not in output.err + output.out
-    assert stdin.read() == "snp_sk_live_SECRET\n"
+    assert stdin.read() == "snp_sk_live_SECRET00000000000000000000000000\n"
 
 
 def test_terminal_prompt_names_the_gateway(store, monkeypatch, capsys, httpx_mock):
@@ -100,7 +100,7 @@ def test_terminal_prompt_names_the_gateway(store, monkeypatch, capsys, httpx_moc
     def prompt(text, **kwargs):
         shown.append(text)
         assert kwargs.get("hide_input") is True
-        return "synthetic-api-key"
+        return "snp_sk_live_syntheticapikey00000000000000000"
 
     monkeypatch.setattr("snaplii.commands.init.click.prompt", prompt)
     httpx_mock.add_response(method="POST", url=STAGING + "/gw/v2/auth/token",

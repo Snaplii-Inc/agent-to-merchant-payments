@@ -32,9 +32,9 @@ from snaplii.exceptions import AmountValidationError, AuthError, ItemIdError, Co
 from snaplii.commands.transfer import decorate_transfer
 from snaplii.cards import APIKEY_CARD_HTML, APIKEY_RES_URI, MCP_APP_MIME
 
-_SERVER_INSTRUCTIONS = """Snaplii is the user's prepaid wallet: a Snaplii Cash balance the agent can spend at merchants through gift cards (with vouchers and up to 10% cashback), use to cover bills (Canada), or send to another Snaplii user.
+_SERVER_INSTRUCTIONS = """Snaplii lets you browse and buy gift cards across 500+ brands and pay bills — saving the user money with vouchers + up to 10% cashback, all from their prepaid Snaplii Cash balance.
 
-HOW THE WALLET WORKS: spending comes only from the user's prepaid Snaplii Cash balance (no credit card is charged); the API key is scoped, revocable, and capped by a daily limit the user set in the app. A gift-card purchase charges the balance as soon as it runs. A bill sent through snaplii_billpay_pay cannot be undone. A transfer stays cancellable for about 5 minutes, then sends itself.
+HOW PAYMENT WORKS: spending is only from the user's prepaid Snaplii Cash balance (no credit card charged); the API key is scoped, revocable, and capped by a hard daily limit the user set in the app. A gift-card purchase charges the balance as soon as it runs. A bill payment sent through snaplii_billpay_pay cannot be undone. A transfer stays cancellable for about 5 minutes, then sends itself.
 
 WHEN THE USER MENTIONS SPENDING (dining, coffee, travel, shopping, transport, groceries, bills): the account's region (CA/US) is already known from the connection (cached at login, surfaced as `account_country` by browse/balance) — do NOT ask for it; browse relevant cards, show cashback %, and quote (snaplii_quote) the voucher/cashback breakdown.
 
@@ -125,11 +125,11 @@ def _authenticate(api_key: str, agent_id: str | None = None) -> dict:
     return {
         "status": "authenticated",
         **client.auth_status(),
-        # One-time notice: the only moment we surface how the wallet is limited.
+        # One-time notice: the only moment we surface the spending limits.
         # Generic by design: the daily-limit number is not available here.
         "notice": (
-            "✅ Connected. Spending comes only from your prepaid Snaplii Cash, within "
-            "the daily limit you set in the app. You can change the limit or revoke "
+            "✅ Connected. Purchases come only from your prepaid Snaplii Cash, capped "
+            "by the daily limit you set in the app. You can change the limit or revoke "
             "this key in the app anytime."
         ),
     }
@@ -412,7 +412,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_giftcard_detail",
-            description="Get a gift card's redemption code/PIN — how the card is actually used. If you have a browser-control capability, you may enter this code on the merchant/delivery site (Payment → Add Gift Card) and complete the order, pausing for confirmation before the final order button. If you have no browser tool, give the user the code and tell them how to add it in the merchant app themselves. Redemption code field varies by brand: use cardCode if present, else pin; fields are nested under 'data'. Call after a purchase or when the user asks to see/redeem a card.",
+            description="Get a gift card's redemption code/PIN — how the card is actually used. If you have a browser-control capability, you may enter this code on the merchant/delivery site (Payment → Add Gift Card) and complete the order, pausing for confirmation before the final order/pay button. If you have no browser tool, give the user the code and tell them how to add it in the merchant app themselves. Redemption code field varies by brand: use cardCode if present, else pin; fields are nested under 'data'. Call after a purchase or when the user asks to see/redeem a card.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -423,7 +423,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_quote",
-            description="Get a price quote before purchasing. Returns order total, voucher discount, cashback applied, and the amount the balance must cover (you_pay). ALWAYS call this before snaplii_purchase to show the user the breakdown.",
+            description="Get a price quote before purchasing. Returns order total, voucher discount, cashback applied, and actual pay amount. ALWAYS call this before snaplii_purchase to show the user what they will pay.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -438,7 +438,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_purchase",
-            description="Buy a gift card. Spends ONLY from prepaid Snaplii Cash, within the user's per-key daily limit set in the app; the charge happens as soon as this runs. Call snaplii_quote first to know the exact cost; pass the same voucher/cashback options here so the charge matches the quote. After purchase, get the redemption code via snaplii_giftcard_detail.",
+            description="Buy a gift card. Spends ONLY from prepaid Snaplii Cash, capped by the user's per-key daily limit set in the app; the charge happens as soon as this runs. Call snaplii_quote first to know the exact cost; pass the same voucher/cashback options here so the charge matches the quote. After purchase, get the redemption code via snaplii_giftcard_detail. If the call times out, loses its connection or returns a 5xx, the purchase may have gone through and is not idempotent: check snaplii_giftcard_list for the new card before calling this again.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -471,7 +471,7 @@ async def list_tools() -> list[types.Tool]:
         # ── Bill Pay ──────────────────────────────────────────────
         types.Tool(
             name="snaplii_billpay_payees",
-            description="List available billers (utility companies, telecoms, etc.).",
+            description="List available bill pay payees/billers (utility companies, telecoms, etc.).",
             inputSchema={"type": "object", "properties": {}, "required": []},
         ),
         types.Tool(
@@ -487,7 +487,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_billpay_history",
-            description="Get the user's previous bill instruction for a payee (autofill account, name, etc.).",
+            description="Get user's previous bill pay info for a payee (autofill account, name, etc.).",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -498,7 +498,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_billpay_save",
-            description="Save a bill instruction. Returns the payCode that snaplii_billpay_quote and snaplii_billpay_pay need.",
+            description="Save bill pay instruction. Returns payCode needed for quote and payment.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -516,7 +516,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_billpay_vouchers",
-            description="List available vouchers for a bill.",
+            description="List available vouchers for a bill payment order.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -528,7 +528,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_billpay_quote",
-            description="Get a price quote for a bill. Shows order total, voucher discount, and the amount the balance must cover.",
+            description="Get a price quote for bill payment. Shows order total, voucher discount, and actual pay amount.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -541,7 +541,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_billpay_pay",
-            description="Settle the saved bill from Snaplii Cash. Completes directly when the balance covers it, within the user's per-key daily limit. Once sent, a bill cannot be undone, and one sent to the wrong biller or account cannot be recovered. If the call fails or times out ambiguously, poll snaplii_billpay_result with the returned paymentNo before calling this again.",
+            description="Pay the bill from Snaplii Cash balance (same as gift cards — no PayPal redirect needed). Completes directly when balance covers the bill, within the user's per-key daily limit set in the app. Once sent, a bill payment cannot be undone, and one sent to the wrong biller or account cannot be recovered. If a pay call fails or times out ambiguously, poll snaplii_billpay_result with the returned paymentNo before retrying — do NOT re-pay blindly.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -554,7 +554,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_billpay_result",
-            description="Poll a bill's result. Returns status: SUCCESS (0), FAILED (1), or PROCESSING (3). If processing, wait and poll again.",
+            description="Poll bill pay payment result. Returns status: SUCCESS (0), FAILED (1), or PROCESSING (3). If processing, wait and poll again.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -768,8 +768,8 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                         "status": "authenticated",
                         **client.auth_status(),
                         "message": (
-                            "✅ Connected via the secure Snaplii page. Spending comes only "
-                            "from your prepaid Snaplii Cash, within your daily limit."
+                            "✅ Connected via the secure Snaplii page. Purchases come only "
+                            "from your prepaid Snaplii Cash, capped by your daily limit."
                         ),
                     })
                 return _text({
@@ -1144,7 +1144,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
 _AUTOPILOT_WORKFLOW = f"""You are running the Snaplii end-to-end autopilot: buy a gift card with cashback, then (if you can control a browser) redeem it and place the order on the merchant/delivery site.
 
-HOW THE WALLET WORKS: Snaplii spends only from the user's prepaid Snaplii Cash balance — no credit card is charged; the API key is scoped, revocable, and capped by a daily limit set in the app. The gift-card purchase charges the balance as soon as it runs. Step 7 confirms the final delivery/merchant order with the user.
+SAFETY: Snaplii spends only from the user's prepaid Snaplii Cash balance — no credit card is charged; the API key is scoped, revocable, and capped by a daily limit set in the app. The gift-card purchase charges the balance as soon as it runs. Step 7 confirms the final delivery/merchant order with the user.
 
 FLOW:
 1. Auth: before every Snaplii business operation, including read-only browsing and lookups, call snaplii_config_show for the task's gateway. Continue only when has_valid_token=true; reuse that session without connecting again. If the field is missing, stop and report an incompatible runtime. When a session is missing or expired, start authentication without waiting for the user to ask to log in.

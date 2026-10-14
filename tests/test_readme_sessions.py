@@ -21,3 +21,14 @@ def test_readme_troubleshooting_and_requirements_cover_expiry_and_npx():
     assert "### Every Snaplii call answers `auth_required`, `reauth_required`, or `mcp_required`" in README
     requirements = README.split("## Requirements", 1)[1].split("\n## ", 1)[0]
     assert "npx" in requirements
+
+
+def test_plugin_readme_connects_off_model_and_installs_what_the_plugin_runs():
+    plugin = (Path(__file__).resolve().parents[1] / "clawhub-plugin" / "README.md").read_text()
+    assert "uvx snaplii-mcp" in plugin
+    assert "snaplii-cli==" not in plugin
+    assert "follow its `next_action`, normally `snaplii_connect`" in plugin
+    assert "Never ask for the API key in the chat" in plugin
+    for stale in ("call `snaplii_init` with the user's API key", "token expired, re-run `snaplii_init`",
+                  "Ask the user for their API key"):
+        assert stale not in plugin, stale

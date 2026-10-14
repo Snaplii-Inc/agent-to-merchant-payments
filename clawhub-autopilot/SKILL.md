@@ -1,11 +1,11 @@
 ---
 name: snaplii-autopilot
-description: "Snaplii wallet autopilot: complete a merchant or delivery order from the user's Snaplii Cash by buying a gift card and redeeming it at checkout in the browser. Use when the user wants the agent to finish the order, not just get the card. Requires a browser-automation tool."
+description: "End-to-end Agent-to-Merchant autopilot: buy a Snaplii gift card with cashback, then drive the browser to redeem it on the merchant/delivery site and place the order — all in one flow. Use when the user wants the agent to actually complete a purchase or food/delivery order (e.g. 'order me a coffee on Uber Eats and pay with Snaplii'), not just get a gift card. Requires a browser-automation tool in the session."
 ---
 
 # Snaplii Autopilot — buy + redeem + order, end to end
 
-This skill completes an order from the user's Snaplii wallet: buy a gift card from the prepaid, capped balance → get its redemption code → open the merchant/delivery site in the browser → add the gift card → place the order. It builds on the base Snaplii skill and adds browser automation.
+This skill completes the **full** Agent-to-Merchant flow: buy a Snaplii gift card (prepaid, capped, cashback) → get its redemption code → open the merchant/delivery site in the browser → add the gift card → place the order. It builds on the base Snaplii gift-card capability and adds browser automation.
 
 <!-- muse-auth:begin -->
 ## Auth
@@ -30,7 +30,7 @@ use its installer and retain the prerelease instead of replacing it from PyPI.
    `snaplii_config_show` for MCP operations, using the same gateway as the task.
 2. Every Snaplii business operation requires `has_valid_token=true` (the JSON
    boolean): browsing, balance, gift-card lists/details, quotes, purchases,
-   cashback calculations, dashboards, all bill and transfer actions, including
+   cashback calculations, dashboards, all bill-pay and transfer actions, including
    history, status, and cancellation. Read-only operations are not exempt.
    An `agent_id`, an empty object, or
    other configuration fields do not establish authentication. If the field is
@@ -64,7 +64,7 @@ record or a cross-agent lock; do not claim guaranteed once-only execution.
 
 For installation-only connection, verify has_valid_token=true with config show,
 report "Installed and connected", then stop. Do not add a balance query, purchase,
-bill, or transfer as an installation check. A connected session does not
+bill payment, or transfer as an installation check. A connected session does not
 prove all business permissions. If connection fails, is denied, or is cancelled,
 keep the installed skill and report "Installed, not connected" with the reason.
 Only claim installation succeeded if installation and skill loading did succeed.
@@ -77,6 +77,13 @@ the user does not need to explicitly ask to log in or mention an API key.
 If a usable session already exists, continue the user's task without reconnecting.
 Otherwise run the secure-store init action once to try the API key already stored
 in Muse's secure credential store. The store holds the API key, not the session.
+
+Use only the key Muse holds. Never type, guess, rebuild, transform or copy an API
+key into a command, including one the user pasted into the chat: the value you can
+see there may not be the real key, and a key you make up is always rejected. The
+secure-store init action uses the stored key without showing it to you. If a
+raw-key login reports api_key_format_invalid or points you to --vault-auth, run
+the secure-store init action; do not try another key.
 
 For credential_required, use your own available native credential-management
 capability to reuse the Snaplii API key if present. If it is missing, you MUST open
@@ -138,7 +145,7 @@ cache errors mean authentication is incomplete; report them without asking for a
 After successful initialization, re-read authentication state in the runtime that
 will execute the task. Continue only when has_valid_token=true. If the session
 cannot be reused, report the storage problem instead of repeating key collection.
-Authentication recovery never authorizes automatically replaying a charge.
+Authentication recovery never authorizes automatically replaying a payment.
 
 For the Snaplii production gateway, the secure-store init action is:
 
@@ -212,7 +219,7 @@ state after login; report unusable storage instead of repeatedly requesting a ke
 On `auth_required`, `reauth_required`, HTTP 401, or an explicit session-rejection
 code, return to this gate. A plain HTTP 403 can be a scope/permission error; it
 does not by itself authorize another login. Honor stop and retry-later actions.
-Report cache/configuration errors as such. Before retrying a submitted charge,
+Report cache/configuration errors as such. Before retrying a submitted payment,
 establish its outcome and preserve any transfer idempotency key; do not replay it
 automatically. Use `snaplii config clear` for an explicitly requested local logout;
 this does not delete the API key in the host's secure credential store.
@@ -235,10 +242,10 @@ If you lack a browser-control capability when the user wants a full order placed
 
 Always leave the user with a working option. Never return a raw error or say "I can't do that." Never claim to have placed an order you didn't.
 
-## Before acting
+## Safety — read before acting
 
-- Snaplii spending comes from the user's **prepaid Snaplii Cash balance**, capped by a per-key daily limit set in the app. No credit card is charged. The gift-card `purchase` charges the balance as soon as it runs.
-- **Before the final "Place Order" button** on the merchant/delivery site, show the full order summary (items, address, tip, total) and wait for the user's explicit "yes". Never click the final order button without it.
+- Snaplii spending is from the user's **prepaid Snaplii Cash balance**, capped by a hard per-key daily limit set in the app. No credit card is charged. The gift-card `purchase` charges the balance as soon as it runs.
+- **Before the final "Place Order" / pay button** on the merchant/delivery site, show the full order summary (items, address, tip, total) and wait for the user's explicit "yes". Never click the final order/pay button without it.
 - Treat redemption codes/PINs as secret: enter them into the merchant site, but don't post them back into chat unless the user asks.
 
 ## Full Flow
@@ -266,7 +273,7 @@ Show the quote breakdown, then `purchase`. Then retrieve the card you just bough
 3. Build the order the user asked for: search the restaurant/item, add to cart.
 4. **Confirm the delivery address.** For anything delivered/shipped, read the exact address back to the user and ask "deliver to <address>?" before continuing. Never assume a saved/default address. Then set the tip.
 5. Take a screenshot / read the page to verify each step.
-6. **Show the full order summary (items, delivery address, tip, total) and STOP** — wait for the user's explicit "place it" before clicking the final order button.
+6. **Show the full order summary (items, delivery address, tip, total) and STOP** — wait for the user's explicit "place it" before clicking the final order/pay button.
 
 ### 4. After ordering
 Confirm the order went through (read the confirmation page). Report the order number and the cashback the user earned via Snaplii.
@@ -280,4 +287,4 @@ Confirm the order went through (read the confirmation page). Report the order nu
 - Pass `item_id` exactly as `{cardBrandId}-{cardTemplateId}`, copied verbatim from `browse brand`; never one ID alone, a name, or an assembled or guessed ID.
 - Never expose internal IDs (brandId, templateId, cardNo) to the user.
 - Never place the final order without explicit current-turn confirmation.
-- Never claim to have completed an order you did not actually complete.
+- Never claim to have completed an order or payment you did not actually complete.

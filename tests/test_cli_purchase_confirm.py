@@ -21,6 +21,7 @@ class FakeClient:
 
     def create_order_and_pay(self, **kwargs):
         self.purchased = True
+        self.kwargs = kwargs
         return {"orderNo": "ORD-1", "status": "SUCCESS"}
 
 
@@ -66,3 +67,16 @@ def test_billpay_pays_without_prompt():
     result, client = _run_pay(["--pay-code", "PC-1", "--price", "30"])
     assert client.paid is True
     assert "BP-1" in result.output
+
+
+def test_purchase_charges_with_the_options_it_was_quoted_with():
+    _, client = _run(["--item-id", "I-1", "--price", "50",
+                      "--voucher", "NOT_USE", "--cashback", "NOT_USE", "--voucher-id", "V-9"])
+    assert {k: client.kwargs.get(k) for k in ("voucher_option", "cashback_option", "specified_voucher")} == {
+        "voucher_option": "NOT_USE", "cashback_option": "NOT_USE", "specified_voucher": "V-9"}
+
+
+def test_purchase_defaults_match_the_quote_defaults():
+    _, client = _run(["--item-id", "I-1", "--price", "50"])
+    assert {k: client.kwargs.get(k) for k in ("voucher_option", "cashback_option", "specified_voucher")} == {
+        "voucher_option": "BEST_FIT", "cashback_option": "USE", "specified_voucher": None}

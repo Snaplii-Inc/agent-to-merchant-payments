@@ -126,6 +126,21 @@ def test_timeout_is_indeterminate_and_keeps_key(httpx_mock):
     assert "never a fresh key" in out["retry_hint"]
 
 
+
+@pytest.mark.parametrize("error", [httpx.ReadError("connection reset by peer"),
+                                   httpx.RemoteProtocolError("server disconnected")])
+def test_transport_failure_after_sending_is_indeterminate_and_keeps_key(httpx_mock, error):
+    httpx_mock.add_exception(error)
+    with pytest.raises(TransferApiError) as exc:
+        _client().transfer_create("4165550006", "12.50")
+    out = exc.value.to_dict()
+    assert out["code"] == "CLIENT_TRANSPORT_ERROR"
+    assert out["retryable"] is True
+    assert out["idempotency_key"] == httpx_mock.get_requests()[0].headers["Idempotency-Key"]
+    assert "never a fresh key" in out["retry_hint"]
+    assert str(error) not in json.dumps(out)
+
+
 # ── Decoration ───────────────────────────────────────────────────
 
 
