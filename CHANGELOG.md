@@ -51,6 +51,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 - **`snaplii_giftcard_list` pages.** It takes `page` and `page_size` like `snaplii giftcard list`, and says that a card missing from one page does not show that a purchase failed.
 - `snaplii_balance` reads a balance returned at the top level as well as under `data`, as the CLI does.
 - Reads and hosted-page polling report a structured connection error on any transport failure, such as a read timeout, instead of a traceback or `unexpected_error`.
+- **A connect that cannot reach Snaplii says so.** When no poll of the hosted page reaches Snaplii, `snaplii_connect` answers `unreachable` instead of `pending`, keeps the open page or the Instinct `eid` to collect from on the next call, and does not ask for the key again.
 - `snaplii smart dashboard` and `snaplii_dashboard` count every owned card, page by page, instead of the first 100.
 - `snaplii update` on a prerelease says to repeat the README's install commands with the new release tag.
 - A plain 403 tells the CLI user to check the API key's permissions, as MCP already did, instead of to run `snaplii init`.
@@ -117,7 +118,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ### Fixed
 - **`snaplii init` no longer reports success on a failed login.** A 2xx `/v2/auth/token` response with no `access_token` is a failed login, not a success. It now raises `GatewayApiError` carrying the body's real reason (`rspMsgInf` / `message` / plain-text raw) instead of printing "authenticated" with nothing cached.
-- **Readable transfer validation errors.** `TransferApiError` parses the common validation shape (null `message`, per-field messages in `errors[]`), so a `@Valid` 400 reads as "amount: amount must be …" rather than "Transfer request failed (HTTP 400)".
+- **Readable transfer validation errors.** `TransferApiError` reads per-field validation messages, so a rejected field reads as "amount: amount must be …" rather than "Transfer request failed (HTTP 400)".
 - **Retry hints only where a retry is safe.** Only indeterminate outcomes (client timeout, `TRANSFER_INDETERMINATE`, `CONCURRENT_DUPLICATE`, `UPSTREAM_ERROR`, 5xx) get the same-key retry hint. `QUOTE_EXPIRED` now says to create again with a fresh key per the API spec, and terminal 4xx such as `INSUFFICIENT_BALANCE` get no hint at all.
 - **Source and editable installs of `snaplii-cli` work again.** hatchling >= 1.32 rejects a readme path outside the project directory, so `readme = {file = "../README.md"}` broke `pip install -e ./snaplii-cli` and `uvx --from ./snaplii-cli`; older hatchling built an sdist with a `snaplii_cli-X/../README.md` member that pip refuses to extract. A CLI-focused `snaplii-cli/README.md` is now in-tree and the sdist carries it with no path traversal. PyPI wheel installs were unaffected either way.
 - **Pin `mcp>=1.0,<2`.** mcp 2.x dropped the `list_tools`/`call_tool` decorators from `mcp.server.Server`, so `server.py` died at import with an `AttributeError` and the MCP server could not start on a clean install.
@@ -168,17 +169,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 ## [0.13.2] — 2026-06-09
 
 ### Fixed
-- **Balance currency is no longer hardcoded to CAD.** `snaplii balance` / `snaplii_balance` previously labeled every balance `CAD`, which is wrong for US users. Snaplii Cash is held in the account's local currency and the backend doesn't return it, so it now follows the user's country: pass `--country CA|US` (CLI) or `country` (MCP) → `CA=CAD`, `US=USD`. When no country is given, the currency is omitted (with a note) instead of asserting CAD. Tool/skill/instruction docs updated to pass the country and never assume CAD.
+- **Balance currency is no longer hardcoded to CAD.** `snaplii balance` / `snaplii_balance` previously labeled every balance `CAD`, which is wrong for US users. Snaplii Cash is held in the account's local currency, so the label now follows the user's country: pass `--country CA|US` (CLI) or `country` (MCP) → `CA=CAD`, `US=USD`. When no country is given, the currency is omitted (with a note) instead of asserting CAD. Tool/skill/instruction docs updated to pass the country and never assume CAD.
 
 ---
 
 ## [0.13.1] — 2026-06-05
 
 ### Fixed
-- **Purchase no longer fails when a non-default payment method is sent.** Explicit `SNAPLII_CASH` / `SNAPLII_DEBIT` is rejected by the backend as `MCA20004 服务未开通`, while the default `SNAPLII_CREDIT` (which draws from the same prepaid Snaplii Cash pool) works. Reported from the field: an agent that passed an explicit method hit MCA20004, then succeeded on retry without one.
+- **Purchases always pay with prepaid Snaplii Cash.** The payment method is no longer a choice: every purchase uses `SNAPLII_CREDIT`, which draws from the prepaid Snaplii Cash balance.
   - **MCP:** removed the `payment_method` parameter from `snaplii_purchase`; the handler now always uses `SNAPLII_CREDIT` (ignores any stray arg).
   - **CLI:** removed `--payment-method` / `--payment-token` from `purchase` and `--payment-method` from `quote`; both always use `SNAPLII_CREDIT`.
-  - **Errors:** `MCA20004` now maps to a friendly "that method isn't enabled — retry without specifying one" message.
   - Skill + plugin docs updated to stop presenting a payment-method knob.
 
 ---
@@ -271,8 +271,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 - **API key management removed from CLI and MCP** — `snaplii apikey list/create/delete` and the `snaplii_apikey_*` MCP tools are gone. API keys are created, viewed, and revoked **only in the Snaplii app**. This is intentional: agents should never manage their own keys. (Breaking change for any scripts using `snaplii apikey`.)
 
 ### Fixed
-- **Spending-limit and business errors now show the real cause.** Previously a daily-spend-limit hit surfaced as a generic "Gateway temporarily unavailable" (HTTP 502). The gateway now returns business rejections as HTTP 422 with the full upstream body (error code + message), and the CLI surfaces the actual message (e.g. "you may have reached a spending limit").
-- Gateway logs the upstream error body on failure (was logging only the status code), making issues like spend-limit rejections debuggable.
+- **Spending-limit and business errors now show the real cause.** The CLI surfaces the business error's own message (e.g. "you may have reached a spending limit") instead of a generic "temporarily unavailable".
 
 ### Changed
 - CHANGELOG renamed from "AI Passport" to "Agent-to-Merchant Payments by Snaplii"
@@ -409,7 +408,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 | 0.14.0 | 2026-06-19 | Off-model API-key entry via MCP Apps card; zero-confirmation flow |
 | 0.13.3 | 2026-06-16 | Region automatic — `--prov` / `locationProv` dropped |
 | 0.13.2 | 2026-06-09 | Balance currency follows the account country, never hardcoded CAD |
-| 0.13.1 | 2026-06-05 | Always `SNAPLII_CREDIT` — payment-method knob removed (MCA20004) |
+| 0.13.1 | 2026-06-05 | Always `SNAPLII_CREDIT` — payment-method knob removed |
 | 0.13.0 | 2026-06-04 | Balance query (`snaplii balance`); 19 MCP tools |
 | 0.12.1 | 2026-06-02 | Fix `No module named 'httpcore'` — explicit dep + clear error |
 | 0.12.0 | 2026-06-02 | Exact denominations, Claude Desktop setup script, editable-aware updates, address confirmation |

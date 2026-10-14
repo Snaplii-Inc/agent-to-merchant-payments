@@ -141,16 +141,33 @@ def _authenticate(api_key: str, agent_id: str | None = None) -> dict:
 
 
 async def _poll_connect_token(client, eid: str) -> dict | None:
-    """Take the token the hosted /connect page parked under eid, or None."""
+    """Take the token the hosted /connect page parked under eid, or None when Snaplii
+    answered but nothing is parked yet. Raises GatewayConnectionError when no poll
+    reached Snaplii, since then nothing is known about the submission."""
+    reached, error = False, None
     for _ in range(_ELICIT_POLL_MAX_ATTEMPTS):
         try:
             token_data = client.poll_connect_token(eid)
-        except GatewayConnectionError:
-            token_data = None
+        except GatewayConnectionError as e:
+            error, token_data = e, None
+        else:
+            reached = True
         if isinstance(token_data, dict) and token_data.get("access_token"):
             return token_data
         await asyncio.sleep(_ELICIT_POLL_INTERVAL_S)
+    if error and not reached:
+        raise error
     return None
+
+
+def _connect_unreachable(retry: str) -> dict:
+    """Polling failed, not the submission: keep the connection and never ask for the key."""
+    return {
+        "status": "unreachable",
+        "message": ("Couldn't reach Snaplii to collect the connection, so it is not known "
+                    "yet whether the key was submitted. " + retry + " Do not ask for the "
+                    "key again; keep the API key out of chat."),
+    }
 
 
 _EID_PATTERN = re.compile(r"[0-9a-fA-F]{16,64}")
@@ -193,7 +210,12 @@ async def _instinct_connect(arguments: dict) -> dict:
                 "message": ("That eid is not valid. Pass the eid returned by snaplii_connect, "
                             "or call snaplii_connect without arguments to start over.")}
     client = _get_client()
-    token_data = await _poll_connect_token(client, eid)
+    try:
+        token_data = await _poll_connect_token(client, eid)
+    except GatewayConnectionError:
+        return _connect_unreachable(
+            "Check the network, then call snaplii_connect with the same eid again; a "
+            "submission waits there for 2 minutes.")
     if token_data:
         client.accept_connect_token(token_data)
         return {"status": "authenticated", **client.auth_status(),
@@ -744,12 +766,15 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 # submission to the token we then poll for.
                 global _pending_connect_eid
                 eid = _pending_connect_eid
+                retry = ("Check the network, then run snaplii_connect again; it collects "
+                         "the connection from the page that is already open, where a "
+                         "submission waits for 2 minutes.")
                 if eid:
                     client = _get_client()
                     try:
                         token_data = client.poll_connect_token(eid)
                     except GatewayConnectionError:
-                        token_data = None
+                        return _text(_connect_unreachable(retry))
                     if isinstance(token_data, dict) and token_data.get("access_token"):
                         return _text(_finish_elicit_connect(client, token_data))
                 else:
@@ -793,7 +818,10 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 # the gateway parked the minted token under our eid. Poll to take it —
                 # it never came through the chat.
                 client = _get_client()
-                token_data = await _poll_connect_token(client, eid)
+                try:
+                    token_data = await _poll_connect_token(client, eid)
+                except GatewayConnectionError:
+                    return _text(_connect_unreachable(retry))
                 if token_data:
                     return _text(_finish_elicit_connect(client, token_data))
                 # The secure page is open, so never fall back to asking for the key.

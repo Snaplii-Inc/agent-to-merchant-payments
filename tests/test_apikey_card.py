@@ -11,6 +11,7 @@ import json
 import server
 
 from snaplii.cards import APIKEY_RES_URI, MCP_APP_MIME, SUBMIT_TOOL, APIKEY_CARD_HTML
+from snaplii.exceptions import GatewayConnectionError
 
 
 class FakeClient:
@@ -400,6 +401,71 @@ def test_connect_elicit_second_call_reopens_the_same_page(monkeypatch):
     # A key submitted on either open page reaches the eid being polled.
     assert len(captured["opened"]) == 2
     assert captured["opened"][0] == captured["opened"][1]
+
+
+class _UnreachableClient:
+    """Every poll fails before Snaplii answers (network down, read timeout)."""
+    def __init__(self):
+        self.polled = []
+
+    def poll_connect_token(self, eid):
+        self.polled.append(eid)
+        raise GatewayConnectionError("https://aipayment.snaplii.com", OSError("down"))
+
+
+def _assert_unreachable(out):
+    assert out["status"] == "unreachable"
+    text = out["message"].lower()
+    # Polling failed, so nothing says the submission is missing: never ask for the key again.
+    assert "paste" not in text and "snaplii init" not in text and "submit again" not in text
+    assert "out of chat" in text
+
+
+def test_connect_elicit_unreachable_when_every_poll_fails(monkeypatch):
+    captured = {}
+    _wire_elicit(monkeypatch, "accept", captured)
+    client = _UnreachableClient()
+    monkeypatch.setattr(server, "_get_client", lambda: client)
+    out = _call("snaplii_connect", {})
+    _assert_unreachable(out)
+    assert len(client.polled) == 2
+    # The open page stays the one to collect from on the next call.
+    assert server._pending_connect_eid == captured["eid"]
+
+
+def test_connect_elicit_second_call_unreachable_keeps_the_page(monkeypatch):
+    captured = {}
+    _wire_elicit(monkeypatch, "accept", captured)
+    monkeypatch.setattr(server, "app", _FakeApp(_CountingSession("accept", captured)))
+    monkeypatch.setattr(server, "_get_client", lambda: _ParkedClient({}))
+    assert _call("snaplii_connect", {})["status"] == "pending"
+    eid = server._pending_connect_eid
+    monkeypatch.setattr(server, "_get_client", lambda: _UnreachableClient())
+    out = _call("snaplii_connect", {})
+    _assert_unreachable(out)
+    assert len(captured["opened"]) == 1  # no page reopened for a key nobody lost
+    assert server._pending_connect_eid == eid
+
+
+def test_connect_elicit_pending_when_one_poll_reaches_snaplii(monkeypatch):
+    captured = {}
+    _wire_elicit(monkeypatch, "accept", captured)
+
+    class FlakyClient:
+        def __init__(self, failing_call):
+            self.calls = 0
+            self.failing_call = failing_call
+
+        def poll_connect_token(self, eid):
+            self.calls += 1
+            if self.calls == self.failing_call:
+                raise GatewayConnectionError("https://aipayment.snaplii.com", OSError("blip"))
+            return None  # Snaplii answered: nothing parked yet
+
+    for failing_call in (1, 2):
+        monkeypatch.setattr(server, "_pending_connect_eid", None)
+        monkeypatch.setattr(server, "_get_client", lambda: FlakyClient(failing_call))
+        assert _call("snaplii_connect", {})["status"] == "pending"
 
 
 # ── Codex terminal vs desktop routing ──────────────────────────────────────────

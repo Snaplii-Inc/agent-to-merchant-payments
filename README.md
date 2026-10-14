@@ -125,7 +125,7 @@ The API key stays out of the chat where the host allows it: a secure card, the h
 | `next_action` | What to do |
 |---|---|
 | `run_cli` | The user runs its `argv` in their own terminal: from a shell tool `init` has no key to read and answers `api_key_missing`; never pipe a key into it; in Muse the agent runs `init --vault-auth` itself. `argv[0]` is `snaplii`, or the CLI's absolute path when the `snaplii` on PATH is a different CLI; relay `argv` unchanged |
-| `call_mcp_tool` | The agent calls `snaplii_connect`, only while `has_valid_token` is false. Only `authenticated` or `already_connected` means connected; after `card_requested`, `pending` or `use_terminal_or_chat_key`, check the status again once the user has acted |
+| `call_mcp_tool` | The agent calls `snaplii_connect`, only while `has_valid_token` is false. Only `authenticated` or `already_connected` means connected; after `card_requested`, `pending` or `use_terminal_or_chat_key`, check the status again once the user has acted; after `unreachable`, call `snaplii_connect` again once Snaplii can be reached, without asking for the key again |
 | `muse_secure_entry` | The agent opens Muse's secure input; a stored key is reused without asking |
 | `offer_legacy` | The key was rejected (`invalid_key`); the user enters a key again |
 | `retry_auth_later` | Snaplii was unreachable; retry later |

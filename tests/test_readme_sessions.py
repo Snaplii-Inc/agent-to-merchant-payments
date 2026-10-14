@@ -7,7 +7,7 @@ README = (Path(__file__).resolve().parents[1] / "README.md").read_text()
 def test_readme_documents_session_states_and_reconnecting_by_host():
     section = README.split("### Sessions and reconnecting", 1)[1].split("\n## ", 1)[0]
     for phrase in ("reauth_required", "mcp_required", "no_persistent_storage", "SNAPLII_ALLOW_INSECURE=1",
-                   "call_mcp_tool", "run_cli", "use_terminal_or_chat_key", "already_connected",
+                   "call_mcp_tool", "run_cli", "use_terminal_or_chat_key", "already_connected", "unreachable",
                    "invalid_key", "retry_auth_later", "--vault-auth", "has_valid_token"):
         assert phrase in section, phrase
 

@@ -1,8 +1,8 @@
 """Single source of truth for the account's currency.
 
-Snaplii Cash is held in the account's local currency. The backend doesn't
-return it, so it follows the account country (CA/US) cached at login. Never
-assume CAD — when the country is unknown, callers fall back to a bare '$'.
+Snaplii Cash is held in the account's local currency, which follows the
+account country (CA/US) cached at login. Never assume CAD — when the country
+is unknown, callers fall back to a bare '$'.
 """
 
 from __future__ import annotations

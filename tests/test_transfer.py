@@ -77,7 +77,7 @@ def test_error_envelope_surfaced_meaningfully(httpx_mock):
 
 
 def test_validation_400_field_errors_joined(httpx_mock):
-    # @Valid 400s use the common shape: message null, per-field messages in `errors`.
+    # A field validation error: per-field messages in `errors`, no top-level message.
     httpx_mock.add_response(
         method="POST", url="https://gw.test/v2/transfers", status_code=400,
         json={"status": "error", "message": None,
