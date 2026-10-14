@@ -847,13 +847,16 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 })
 
             # Default (route == "card"): UI hosts render the secure card off-model via
-            # _meta.ui.resourceUri; for hosts that can't, this same message guides the
-            # user to `snaplii init`. Self-describing, so it never dead-ends.
+            # _meta.ui.resourceUri. The card is the route, so the agent waits for it; the
+            # fallback applies only once the user says no card appeared, so it never
+            # dead-ends.
             return _text({
                 "status": "card_requested",
                 "message": _key_fallback(
-                    "A secure card to enter the Snaplii API key should appear. If the "
-                    "user doesn't see it, this client can't render it. ", storage),
+                    "A secure card to enter the Snaplii API key should appear. Wait for "
+                    "the user to enter the key in that card; do not ask for the key in "
+                    "chat. Only if the user says no card appeared, this client can't "
+                    "render it: ", storage),
             })
 
         elif name == "snaplii_submit_api_key":

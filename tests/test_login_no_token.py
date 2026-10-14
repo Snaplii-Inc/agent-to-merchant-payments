@@ -1,6 +1,5 @@
-"""login() must fail loudly when the gateway answers 2xx without an access token
-(e.g. the core rejected the key but the gateway echoed HTTP 200), instead of
-letting `snaplii init` print "authenticated" with nothing cached."""
+"""login() must fail loudly when a 2xx login reply carries no access token,
+instead of letting `snaplii init` print "authenticated" with nothing cached."""
 
 import pytest
 import keyring

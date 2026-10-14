@@ -230,6 +230,20 @@ def test_connect_card_route_warns_against_pasting_key(monkeypatch):
     assert "snaplii init" in out["message"]
 
 
+def test_connect_card_route_waits_for_the_card_before_any_fallback(monkeypatch):
+    monkeypatch.setattr(server, "_connect_route", lambda: "card")
+    for storage in ("system keychain", "process memory"):
+        class Store(_DisconnectedStore):
+            def auth_status(self, *, origin, _s=storage):
+                return {"has_valid_token": False, "host": "unknown", "credential_storage": _s}
+        monkeypatch.setattr(server, "ConfigStore", Store)
+        text = _call("snaplii_connect", {})["message"].lower()
+        # The card is the route: no key in chat unless the user says it never appeared.
+        assert "do not ask for the key in chat" in text
+        gate = text.index("only if the user says no card appeared")
+        assert gate < text.index("paste")
+
+
 class _FakeSession:
     """elicit_url stub: records the page URL + eid, returns the given action."""
     def __init__(self, action, captured):
