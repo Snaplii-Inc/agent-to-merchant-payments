@@ -173,7 +173,59 @@ def test_an_ambiguous_purchase_is_checked_before_buying_again():
     # recover from a lost or 5xx purchase points it at the owned cards first.
     surfaces = _surfaces()
     for name, needle in (("purchase tool", "check snaplii_giftcard_list for the new card before calling this again"),
-                         ("cli skill", "run `snaplii giftcard list` and look for the new card before buying again"),
+                         ("cli skill", "run `snaplii giftcard list` (every page) and look for the new card before buying again"),
                          ("plugin README", "check `snaplii_giftcard_list` for the new card before buying again")):
         assert needle in surfaces[name], name
     assert "Ask the user to wait a moment and try again" not in surfaces["cli skill"]
+
+
+# ── read tools: paging and response shapes ───────────────────────────────────
+
+
+class _ReadClient:
+    def __init__(self, balance_response=None):
+        self.card_calls = []
+        self._balance = balance_response
+
+    def list_user_cards(self, **kwargs):
+        self.card_calls.append(kwargs)
+        return {"data": []}
+
+    def get_balance(self):
+        return self._balance
+
+
+class _CountryStore:
+    def get(self, key, default=None):
+        return "CA" if key == "country" else default
+
+
+def test_giftcard_list_pages_through_owned_cards(monkeypatch):
+    client = _ReadClient()
+    monkeypatch.setattr(server, "_get_client", lambda: client)
+    _call("snaplii_giftcard_list", {"page": 3, "page_size": 50})
+    assert client.card_calls == [{"status": "ACTIVE", "page": 3, "page_size": 50}]
+    _call("snaplii_giftcard_list", {})
+    assert client.card_calls[-1] == {"status": "ACTIVE", "page": 1, "page_size": 20}
+    tool = next(t for t in asyncio.run(server.list_tools()) if t.name == "snaplii_giftcard_list")
+    assert {"page", "page_size"} <= set(tool.inputSchema["properties"])
+    assert "not proof" in tool.description
+
+
+def test_balance_accepts_a_top_level_balance(monkeypatch):
+    client = _ReadClient(balance_response={"balance": "50.00"})
+    monkeypatch.setattr(server, "_get_client", lambda: client)
+    monkeypatch.setattr(server, "ConfigStore", _CountryStore)
+    out = _call("snaplii_balance", {})
+    assert out["balance"] == "50.00"
+    assert out["currency"] == "CAD"
+
+
+def test_skills_keep_the_key_out_of_the_agents_shell():
+    # Raw-key CLI login is the user's to run; an agent that pipes a key into
+    # `snaplii init` puts it through the model.
+    for relative in ("clawhub-publish/SKILL.md", "clawhub-autopilot/SKILL.md"):
+        text = " ".join((ROOT / relative).read_text().split())
+        assert "explicitly chosen input method" not in text, relative
+        assert ("Never pass the key yourself: not through your shell tool, stdin, a heredoc, "
+                "an environment variable or a command argument") in text, relative

@@ -44,7 +44,8 @@ def test_instinct_and_mcp_steps_use_the_clone():
 def test_the_skill_installs_its_cli_from_the_same_release():
     # A skill installed on its own (e.g. from ClawHub) has no installer beside it,
     # so it names the clone and installer command itself, at the current tag.
-    for relative in ("skills/snaplii-cli.md", "clawhub-publish/SKILL.md"):
+    for relative in ("skills/snaplii-cli.md", "clawhub-publish/SKILL.md",
+                     "skills/snaplii-autopilot.md", "clawhub-autopilot/SKILL.md"):
         skill = (ROOT / relative).read_text()
         assert set(re.findall(r"\bv\d+\.\d+\.\d+\b", skill)) == {TAG}, relative
         assert CLONE in skill, relative

@@ -70,6 +70,11 @@ _DEFAULT_BASE_URL = "https://aipayment.snaplii.com"
 # hosted /connect page parked under our eid (up to ~30s of patience).
 _ELICIT_POLL_MAX_ATTEMPTS = 20
 _ELICIT_POLL_INTERVAL_S = 1.5
+# The eid of the last connect page that has not produced a token yet. The next
+# snaplii_connect collects it first and reopens that same page instead of a new
+# one, so a key the user submits after a poll gave up is not lost. The gateway
+# keeps a submitted token for 2 minutes and accepts a resubmission for the eid.
+_pending_connect_eid: str | None = None
 
 
 def _base_url() -> str:
@@ -198,6 +203,20 @@ async def _instinct_connect(arguments: dict) -> dict:
             "message": ("No connection for this eid yet. Check the connect page. If it shows "
                         "Connected and more than 2 minutes have passed, call snaplii_connect "
                         "without arguments to start over once.")}
+
+
+def _finish_elicit_connect(client, token_data: dict) -> dict:
+    global _pending_connect_eid
+    client.accept_connect_token(token_data)
+    _pending_connect_eid = None
+    return {
+        "status": "authenticated",
+        **client.auth_status(),
+        "message": (
+            "✅ Connected via the secure Snaplii page. Purchases come only "
+            "from your prepaid Snaplii Cash, capped by your daily limit."
+        ),
+    }
 
 
 def _key_fallback(lead: str, storage) -> str:
@@ -401,11 +420,13 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_giftcard_list",
-            description="List user's owned gift cards. IMPORTANT: Only show brand name, face value, status, and masked card number (first 4 + last 4 digits). NEVER show full card code, PIN, or barcode unless user explicitly asks.",
+            description="List user's owned gift cards, one page at a time. IMPORTANT: Only show brand name, face value, status, and masked card number (first 4 + last 4 digits). NEVER show full card code, PIN, or barcode unless user explicitly asks. When checking whether an earlier purchase went through, read every page: a card missing from one page is not proof that the purchase failed.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "status": {"type": "string", "description": "ACTIVE or INACTIVE", "default": "ACTIVE"},
+                    "page": {"type": "integer", "description": "Page number, starting at 1", "default": 1},
+                    "page_size": {"type": "integer", "description": "Cards per page", "default": 20},
                 },
                 "required": [],
             },
@@ -721,7 +742,18 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 # page — off the model AND off this client. The spec mandates URL mode
                 # (not form) for secrets like API keys. A one-time eid ties the page
                 # submission to the token we then poll for.
-                eid = uuid.uuid4().hex
+                global _pending_connect_eid
+                eid = _pending_connect_eid
+                if eid:
+                    client = _get_client()
+                    try:
+                        token_data = client.poll_connect_token(eid)
+                    except GatewayConnectionError:
+                        token_data = None
+                    if isinstance(token_data, dict) and token_data.get("access_token"):
+                        return _text(_finish_elicit_connect(client, token_data))
+                else:
+                    eid = _pending_connect_eid = uuid.uuid4().hex
                 base_page = _elicit_url()
                 sep = "&" if "?" in base_page else "?"
                 page_url = f"{base_page}{sep}eid={eid}"
@@ -763,20 +795,13 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 client = _get_client()
                 token_data = await _poll_connect_token(client, eid)
                 if token_data:
-                    client.accept_connect_token(token_data)
-                    return _text({
-                        "status": "authenticated",
-                        **client.auth_status(),
-                        "message": (
-                            "✅ Connected via the secure Snaplii page. Purchases come only "
-                            "from your prepaid Snaplii Cash, capped by your daily limit."
-                        ),
-                    })
+                    return _text(_finish_elicit_connect(client, token_data))
                 return _text({
                     "status": "pending",
                     "message": _key_fallback(
                         "Didn't receive the connection yet. If the user finished entering the "
-                        "key on the Snaplii page, run snaplii_connect again. ", storage),
+                        "key on the Snaplii page, run snaplii_connect again within 2 minutes; "
+                        "it collects that connection first. ", storage),
                 })
 
             if route == "text":
@@ -808,7 +833,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         elif name == "snaplii_balance":
             client = _get_client()
             result = client.get_balance()
-            data = result.get("data", {}) if isinstance(result, dict) else {}
+            data = result.get("data", result) if isinstance(result, dict) else {}
             balance = data.get("balance") if isinstance(data, dict) else None
             out = {"balance": balance, "spendable": True}
             # Snaplii Cash is in the account's local currency. The account's real
@@ -865,7 +890,9 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
         elif name == "snaplii_giftcard_list":
             client = _get_client()
-            result = client.list_user_cards(status=arguments.get("status", "ACTIVE"))
+            result = client.list_user_cards(status=arguments.get("status", "ACTIVE"),
+                                            page=arguments.get("page", 1),
+                                            page_size=arguments.get("page_size", 20))
             return _text(result)
 
         elif name == "snaplii_giftcard_detail":
@@ -1132,12 +1159,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         # The envelope's message is already the meaningful, user-facing one.
         return _text(e.to_dict())
     except GatewayApiError as e:
-        details = e.to_dict()
-        if e.status_code == 403 and not e.auth_fields and not e.body.get("friendly_message"):
-            # A permission rejection is not an authentication gate. Keep the
-            # legacy CLI formatter unchanged while adapting its output for MCP.
-            details["error"] = "Access denied (HTTP 403). Check the API key's permissions before retrying."
-        return _text(details)
+        return _text(e.to_dict())
     except Exception:
         return _text({"error": "unexpected_error", "message": "The request could not be completed."})
 

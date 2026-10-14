@@ -238,3 +238,15 @@ def test_cli_finish_points_to_status_polling():
     result = _run(finish_cmd, client, ["--order-no", "ZZ1"])
     out = json.loads(result.output)
     assert "transfer status" in out["next_step"]
+
+
+def test_unreadable_success_is_indeterminate_and_keeps_key(httpx_mock):
+    httpx_mock.add_response(status_code=200, content=b"not json")
+    with pytest.raises(TransferApiError) as exc:
+        _client().transfer_create("4165550006", "12.50", idempotency_key="k" * 20)
+    out = exc.value.to_dict()
+    assert out["code"] == "CLIENT_UNREADABLE_RESPONSE"
+    assert out["retryable"] is True
+    assert out["idempotency_key"] == "k" * 20
+    assert "never a fresh key" in out["retry_hint"]
+    assert "not json" not in str(out)

@@ -200,6 +200,8 @@ class GatewayClient:
         try:
             return self._parse_response(response, "/v2/auth/token")
         except GatewayApiError as exc:
+            if exc.body.get("unreadable"):
+                return {}  # _finish_login reports the missing access token
             message = exc.body.get("message")
             gateway_rejected = (exc.status_code in (401, 403) and isinstance(message, str)
                                 and message.startswith(self._GATEWAY_KEY_REJECTION))
@@ -449,6 +451,7 @@ class GatewayClient:
             payment_ctx["specifiedPrimaryPaymentToken"] = payment_token
         if specified_voucher:
             payment_ctx["specifiedVoucher"] = specified_voucher
+            payment_ctx["voucherOption"] = "USE"   # match create_order_and_pay
         return self._post("/v2/quote", json={
             "orderInfo": {
                 "orderType": "GIFT_CARD",
@@ -646,6 +649,17 @@ class GatewayClient:
         try:
             body = resp.json()
         except Exception:
+            if resp.is_success:
+                # The gateway answered but the reply cannot be read: as with a
+                # timeout, the transfer may exist, so keep the same-key rule.
+                raise TransferApiError(resp.status_code, {
+                    "code": "CLIENT_UNREADABLE_RESPONSE",
+                    "message": ("The gateway sent an unreadable response; the operation may "
+                                "or may not have gone through. Check 'snaplii transfer list' "
+                                "(or retry the identical request with the SAME Idempotency-Key) "
+                                "— never create again with a fresh key."),
+                    "retryable": True,
+                }, path)
             body = {"raw": resp.text}
         if self._session_rejected(resp.status_code, body):
             error = TransferApiError(resp.status_code, body if isinstance(body, dict) else {}, path)
@@ -774,6 +788,10 @@ class GatewayClient:
         try:
             body = resp.json()
         except Exception:
+            if resp.is_success:
+                # A 2xx we cannot read is not a result; after a purchase it means
+                # the outcome is unknown, never that the purchase succeeded.
+                raise GatewayApiError(resp.status_code, {"unreadable": True}, path)
             body = {"raw": resp.text}
         if resp.is_success:
             if isinstance(body, dict):

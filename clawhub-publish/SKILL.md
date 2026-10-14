@@ -215,10 +215,11 @@ Keep authentication in the runtime that will use it. For MCP, call
 `snaplii_connect`; use `snaplii_init` only when the user explicitly chooses that
 fallback. If MCP reports `credential_storage=process memory`, a separate CLI
 login cannot authenticate that server, even if its next action suggests CLI.
-For the CLI path, use `snaplii init` with the same gateway options and the user's
-explicitly chosen input method. Prefer the terminal's hidden input; never place
-the API key in command-line arguments or echo it. Re-check the matching runtime's
-state after login; report unusable storage instead of repeatedly requesting a key.
+For the CLI path, the user runs `snaplii init` with the same gateway options in
+their own terminal and types the key at its hidden prompt. Never pass the key
+yourself: not through your shell tool, stdin, a heredoc, an environment variable
+or a command argument, and never echo it. Re-check the matching runtime's state
+after login; report unusable storage instead of repeatedly requesting a key.
 
 ### Reauthentication
 
@@ -381,7 +382,7 @@ If purchase fails, **do not retry automatically**. Show the user the error and a
 
 - `MACP6005` → payment service error. May be temporary — ask the user to wait a moment and retry. If it persists, check Snaplii Cash balance in the app. Do NOT assume it's always "insufficient balance".
 - Authentication rejection → follow [Auth](#auth), without replaying the purchase. A plain `403` may mean the key lacks `PAY_WRITE`; check the error before requesting another login.
-- A timeout, a lost connection (`"outcome": "indeterminate"`), `502` or another `5xx` → the purchase may have gone through, and `purchase` is not idempotent: run `snaplii giftcard list` and look for the new card before buying again. If you cannot tell whether it went through, stop and report that instead of buying again.
+- `"outcome": "indeterminate"` (a timeout, a lost connection, a `5xx` or an unreadable reply) → the purchase may have gone through, and `purchase` is not idempotent: run `snaplii giftcard list` (every page) and look for the new card before buying again. If you cannot tell whether it went through, stop and report that instead of buying again.
 
 ### Step 5: API keys
 

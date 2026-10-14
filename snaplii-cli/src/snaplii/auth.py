@@ -297,10 +297,11 @@ Keep authentication in the runtime that will use it. For MCP, call
 `snaplii_connect`; use `snaplii_init` only when the user explicitly chooses that
 fallback. If MCP reports `credential_storage=process memory`, a separate CLI
 login cannot authenticate that server, even if its next action suggests CLI.
-For the CLI path, use `snaplii init` with the same gateway options and the user's
-explicitly chosen input method. Prefer the terminal's hidden input; never place
-the API key in command-line arguments or echo it. Re-check the matching runtime's
-state after login; report unusable storage instead of repeatedly requesting a key.
+For the CLI path, the user runs `snaplii init` with the same gateway options in
+their own terminal and types the key at its hidden prompt. Never pass the key
+yourself: not through your shell tool, stdin, a heredoc, an environment variable
+or a command argument, and never echo it. Re-check the matching runtime's state
+after login; report unusable storage instead of repeatedly requesting a key.
 
 ### Reauthentication
 

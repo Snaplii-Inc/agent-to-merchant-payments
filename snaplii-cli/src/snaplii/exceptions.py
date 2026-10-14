@@ -15,9 +15,21 @@ class GatewayApiError(SnapliiCliError):
         if self.auth_fields.get("reason_code") == "stale_session_rejected":
             friendly = "The session used by this request was rejected. Check current authentication state before continuing."
         error_code = self.body.get("rspMsgCd", "")
+        unreadable = self.body.get("unreadable") is True
+        # /v2/purchase is not idempotent: without a business answer, a 5xx or an
+        # unreadable reply leaves the payment's outcome unknown.
+        payment_unknown = self.endpoint == "/v2/purchase" and (
+            unreadable or (self.status_code >= 500 and not error_code))
         if not friendly:
-            if self.status_code == 502:
+            if payment_unknown:
+                friendly = "The gateway did not confirm this payment, so it may have completed."
+            elif unreadable:
+                friendly = "The gateway sent an unreadable response."
+            elif self.status_code == 502:
                 friendly = "Gateway temporarily unavailable. Please wait a moment and try again."
+            elif self.status_code == 403 and not self.auth_fields:
+                # A permission rejection is not an authentication gate.
+                friendly = "Access denied (HTTP 403). Check the API key's permissions before retrying."
             elif self.status_code == 401 or self.status_code == 403:
                 friendly = "Authentication failed. Run 'snaplii init' to re-authenticate."
             elif self.status_code == 404:
@@ -32,12 +44,20 @@ class GatewayApiError(SnapliiCliError):
                 # endpoints carry the business reason the agent needs.
                 if self.endpoint != "/v2/auth/token" and isinstance(reason, str) and reason.strip():
                     friendly += " " + reason.strip()[:500]
-        return {
+        out = {
             "error": friendly,
             "error_code": error_code,
             "endpoint": self.endpoint,
+            "status_code": self.status_code,
             **self.auth_fields,
         }
+        if payment_unknown:
+            out["outcome"] = "indeterminate"
+            out["retry_hint"] = (
+                "Do not pay again until you know whether this payment went through: look "
+                "for the new card in the gift card list (every page), or check a bill "
+                "payment in the Snaplii app. If it stays unclear, stop and report it.")
+        return out
 
 
 class GatewayConnectionError(SnapliiCliError):
@@ -201,6 +221,7 @@ class TransferApiError(SnapliiCliError):
             elif out["retryable"] and (self.status_code in (0, 502, 503, 504)
                                        or code in ("TRANSFER_INDETERMINATE",
                                                    "CLIENT_TIMEOUT",
+                                                   "CLIENT_UNREADABLE_RESPONSE",
                                                    "CONCURRENT_DUPLICATE",
                                                    "UPSTREAM_ERROR")):
                 # Indeterminate: the transfer may exist — only the SAME key is safe.

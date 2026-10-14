@@ -209,10 +209,11 @@ Keep authentication in the runtime that will use it. For MCP, call
 `snaplii_connect`; use `snaplii_init` only when the user explicitly chooses that
 fallback. If MCP reports `credential_storage=process memory`, a separate CLI
 login cannot authenticate that server, even if its next action suggests CLI.
-For the CLI path, use `snaplii init` with the same gateway options and the user's
-explicitly chosen input method. Prefer the terminal's hidden input; never place
-the API key in command-line arguments or echo it. Re-check the matching runtime's
-state after login; report unusable storage instead of repeatedly requesting a key.
+For the CLI path, the user runs `snaplii init` with the same gateway options in
+their own terminal and types the key at its hidden prompt. Never pass the key
+yourself: not through your shell tool, stdin, a heredoc, an environment variable
+or a command argument, and never echo it. Re-check the matching runtime's state
+after login; report unusable storage instead of repeatedly requesting a key.
 
 ### Reauthentication
 
@@ -228,7 +229,14 @@ this does not delete the API key in the host's secure credential store.
 ## Requirements (check first)
 
 This skill needs BOTH:
-1. **Snaplii tools** — either the `snaplii` CLI (Bash; the README's installer puts it at `~/.snaplii-env/bin/snaplii`, off PATH, so call it by that path) or `snaplii_*` MCP tools.
+1. **Snaplii tools** — either the `snaplii` CLI (Bash; at `~/.snaplii-env/bin/snaplii`, Windows `%USERPROFILE%\.snaplii-env\Scripts\snaplii.exe`, off PATH, so call it by that path) or `snaplii_*` MCP tools. This skill folder does not contain the installer. If you have neither, install the CLI and the MCP server from the release this skill belongs to:
+
+   ```bash
+   git clone --depth 1 --branch v0.19.0 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
+   python3 snaplii-src/scripts/install.py --source ./snaplii-src
+   ```
+
+   Add `--host <agent>` from the project README's table (for example `--host openclaw`), and `--cli-only` if you will not use MCP.
 2. **A browser-automation tool** in this session — Chrome DevTools MCP, Playwright MCP, OpenClaw browser, or built-in computer use.
 
 **Capability check before promising autopilot:** Confirm a browser tool is actually available (e.g. you can list/open pages). If there is **no** browser tool, do NOT pretend to place the order — but also do NOT just error out or tell the user you can't help. Offer a frictionless path instead (see "Frictionless setup" below).

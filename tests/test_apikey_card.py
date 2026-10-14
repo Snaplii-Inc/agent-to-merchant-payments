@@ -269,6 +269,7 @@ def _wire_elicit(monkeypatch, action, captured):
     # No real waiting between polls in tests.
     monkeypatch.setattr(server, "_ELICIT_POLL_MAX_ATTEMPTS", 2)
     monkeypatch.setattr(server, "_ELICIT_POLL_INTERVAL_S", 0)
+    monkeypatch.setattr(server, "_pending_connect_eid", None)
 
 
 def test_connect_elicit_opens_page_polls_and_caches_token(monkeypatch):
@@ -329,6 +330,73 @@ def test_connect_elicit_pending_when_token_never_arrives(monkeypatch):
     out = _call("snaplii_connect", {})
     assert out["status"] == "pending"
     assert "snaplii init" in out["message"]
+
+
+class _CountingSession(_FakeSession):
+    def __init__(self, action, captured):
+        super().__init__(action, captured)
+        captured["opened"] = []
+
+    async def elicit_url(self, message, url, elicitation_id):
+        self._captured["opened"].append(url)
+        return await super().elicit_url(message, url, elicitation_id)
+
+
+class _ParkedClient:
+    """The gateway parks a token under one eid; polls of any other eid see nothing."""
+    def __init__(self, parked):
+        self.parked = parked
+        self.polled = []
+
+    def poll_connect_token(self, eid):
+        self.polled.append(eid)
+        if eid == self.parked.get("eid"):
+            return {"access_token": "jwt-x", "expires_in": 1800, "country": "ca"}
+        return None
+
+    def accept_connect_token(self, response):
+        self.parked["accepted"] = True
+
+    def auth_status(self):
+        return {"has_valid_token": True, "auth_method": "url"}
+
+
+def test_connect_elicit_pending_tells_the_agent_to_call_again_soon(monkeypatch):
+    captured = {}
+    _wire_elicit(monkeypatch, "accept", captured)
+    monkeypatch.setattr(server, "_get_client", lambda: _ParkedClient({}))
+    out = _call("snaplii_connect", {})
+    assert out["status"] == "pending"
+    assert "within 2 minutes" in out["message"]
+
+
+def test_connect_elicit_second_call_collects_the_first_page(monkeypatch):
+    captured = {}
+    _wire_elicit(monkeypatch, "accept", captured)
+    monkeypatch.setattr(server, "app", _FakeApp(_CountingSession("accept", captured)))
+    parked = {}
+    client = _ParkedClient(parked)
+    monkeypatch.setattr(server, "_get_client", lambda: client)
+    assert _call("snaplii_connect", {})["status"] == "pending"
+    first_page = captured["opened"][0]
+    # The user finishes on that page after the first call gave up waiting.
+    parked["eid"] = client.polled[0]
+    out = _call("snaplii_connect", {})
+    assert out["status"] == "authenticated"
+    assert parked["accepted"] is True
+    assert captured["opened"] == [first_page]  # no second page was opened
+
+
+def test_connect_elicit_second_call_reopens_the_same_page(monkeypatch):
+    captured = {}
+    _wire_elicit(monkeypatch, "accept", captured)
+    monkeypatch.setattr(server, "app", _FakeApp(_CountingSession("accept", captured)))
+    monkeypatch.setattr(server, "_get_client", lambda: _ParkedClient({}))
+    _call("snaplii_connect", {})
+    _call("snaplii_connect", {})
+    # A key submitted on either open page reaches the eid being polled.
+    assert len(captured["opened"]) == 2
+    assert captured["opened"][0] == captured["opened"][1]
 
 
 # ── Codex terminal vs desktop routing ──────────────────────────────────────────

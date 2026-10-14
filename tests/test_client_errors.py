@@ -70,3 +70,79 @@ def test_non_auth_business_error_keeps_its_reason():
 def test_auth_endpoint_error_never_copies_upstream_text():
     out = GatewayApiError(400, {"message": "synthetic-secret"}, "/v2/auth/token").to_dict()
     assert "synthetic-secret" not in json.dumps(out)
+
+
+def _answering_transport(status, text):
+    def handler(request):
+        return httpx.Response(status, text=text)
+    return httpx.MockTransport(handler)
+
+
+_PAYMENTS = [
+    lambda c: c.create_order_and_pay("CB1-CT1", "10"),
+    lambda c: c.billpay_create_and_pay("PAY1", "10"),
+]
+
+
+@pytest.mark.parametrize("pay", _PAYMENTS, ids=["gift-card", "bill-pay"])
+def test_unreadable_payment_success_is_indeterminate(client, pay):
+    client._http = httpx.Client(transport=_answering_transport(200, "not json"))
+    with pytest.raises(GatewayApiError) as info:
+        pay(client)
+    out = info.value.to_dict()
+    assert out["outcome"] == "indeterminate"
+    assert out["status_code"] == 200
+    assert "may have completed" in out["error"]
+    assert "not json" not in json.dumps(out)
+
+
+def test_unreadable_success_on_a_read_is_an_error(client):
+    client._http = httpx.Client(transport=_answering_transport(200, "not json"))
+    with pytest.raises(GatewayApiError) as info:
+        client.get_balance()
+    out = info.value.to_dict()
+    assert "outcome" not in out
+    assert "unreadable" in out["error"]
+
+
+@pytest.mark.parametrize("status", [500, 502, 503, 504])
+@pytest.mark.parametrize("pay", _PAYMENTS, ids=["gift-card", "bill-pay"])
+def test_payment_5xx_is_indeterminate_and_never_says_retry(client, pay, status):
+    client._http = httpx.Client(transport=_answering_transport(status, "upstream down"))
+    with pytest.raises(GatewayApiError) as info:
+        pay(client)
+    out = info.value.to_dict()
+    assert out["outcome"] == "indeterminate"
+    assert out["status_code"] == status
+    assert "try again" not in out["error"].lower()
+    assert "do not" in out["retry_hint"].lower()
+
+
+def test_quote_502_still_suggests_a_retry():
+    out = GatewayApiError(502, {}, "/v2/quote").to_dict()
+    assert "try again" in out["error"]
+    assert out["status_code"] == 502
+    assert "outcome" not in out
+
+
+@pytest.mark.parametrize("voucher_option", ["BEST_FIT", "NOT_USE", "USE"])
+def test_quote_and_purchase_send_the_same_payment_context(client, voucher_option):
+    sent = []
+
+    def handler(request):
+        sent.append(json.loads(request.content)["paymentContext"])
+        return httpx.Response(200, json={"rspMsgCd": "MCA00000"})
+
+    client._http = httpx.Client(transport=httpx.MockTransport(handler))
+    options = dict(voucher_option=voucher_option, cashback_option="NOT_USE", specified_voucher="V-9")
+    client.quote_order("CB1-CT1", "10", **options)
+    client.create_order_and_pay("CB1-CT1", "10", **options)
+    assert sent[0] == sent[1]
+    assert sent[0]["voucherOption"] == "USE"
+
+
+def test_plain_403_is_a_permission_problem_not_a_login():
+    out = GatewayApiError(403, {}, "/v2/purchase").to_dict()
+    assert "snaplii init" not in out["error"]
+    assert "permission" in out["error"].lower()
+    assert out["status_code"] == 403
