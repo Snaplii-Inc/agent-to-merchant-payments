@@ -64,6 +64,17 @@ def summarize_denominations(brand_resp: dict) -> list:
     return out
 
 
+def _unreadable_transfer(status_code: int, path: str) -> TransferApiError:
+    return TransferApiError(status_code, {
+        "code": "CLIENT_UNREADABLE_RESPONSE",
+        "message": ("The gateway sent an unreadable response; the operation may "
+                    "or may not have gone through. Check 'snaplii transfer list' "
+                    "(or retry the identical request with the SAME Idempotency-Key) "
+                    "— never create again with a fresh key."),
+        "retryable": True,
+    }, path)
+
+
 class GatewayClient:
     def __init__(self, base_url: str, config_store: ConfigStore):
         self._base_url = auth.normalize_base_url(base_url)
@@ -281,7 +292,7 @@ class GatewayClient:
         url = f"{self._base_url}/v2/auth/elicit/{eid}/token"
         try:
             resp = self._http.get(url)
-        except httpx.ConnectError as e:
+        except httpx.RequestError as e:
             raise GatewayConnectionError(url, e)
         if resp.status_code == 200:
             try:
@@ -298,6 +309,22 @@ class GatewayClient:
             "page": str(page),
             "pageSize": str(page_size),
         })
+
+    def list_all_user_cards(self, status: str = "ACTIVE", page_size: int = 100) -> list:
+        """Every owned card. The list carries no total, so a short page ends it;
+        a page identical to the one before means the server ignored paging."""
+        cards, previous, page = [], None, 1
+        while True:
+            resp = self.list_user_cards(status=status, page=page, page_size=page_size)
+            rows = resp.get("data") if isinstance(resp, dict) else None
+            rows = rows if isinstance(rows, list) else []
+            if rows == previous:
+                break
+            cards.extend(rows)
+            if len(rows) < page_size:
+                break
+            previous, page = rows, page + 1
+        return cards
 
     def get_card_detail(self, card_no: str) -> dict:
         return self._get(f"/v2/cards/{card_no}")
@@ -580,11 +607,12 @@ class GatewayClient:
         try:
             resp = self._transfer_request("POST", "/v2/transfers", json_body=body,
                                           extra_headers={"Idempotency-Key": key})
+            if not (isinstance(resp, dict) and (resp.get("order_no") or resp.get("status"))):
+                raise _unreadable_transfer(200, "/v2/transfers")
         except TransferApiError as e:
             e.idempotency_key = key
             raise
-        if isinstance(resp, dict):
-            resp.setdefault("idempotency_key", key)
+        resp.setdefault("idempotency_key", key)
         return resp
 
     def transfer_cancel(self, order_no: str) -> dict:
@@ -652,14 +680,7 @@ class GatewayClient:
             if resp.is_success:
                 # The gateway answered but the reply cannot be read: as with a
                 # timeout, the transfer may exist, so keep the same-key rule.
-                raise TransferApiError(resp.status_code, {
-                    "code": "CLIENT_UNREADABLE_RESPONSE",
-                    "message": ("The gateway sent an unreadable response; the operation may "
-                                "or may not have gone through. Check 'snaplii transfer list' "
-                                "(or retry the identical request with the SAME Idempotency-Key) "
-                                "— never create again with a fresh key."),
-                    "retryable": True,
-                }, path)
+                raise _unreadable_transfer(resp.status_code, path)
             body = {"raw": resp.text}
         if self._session_rejected(resp.status_code, body):
             error = TransferApiError(resp.status_code, body if isinstance(body, dict) else {}, path)
@@ -729,8 +750,8 @@ class GatewayClient:
         headers = {"Authorization": f"Bearer {token}"}
         try:
             resp = self._http.get(url, params=params, headers=headers)
-        except httpx.ConnectError as e:
-            raise GatewayConnectionError(url, e)
+        except httpx.RequestError as e:
+            raise GatewayConnectionError(url, e)  # a read is safe to retry
         return self._protected_response(resp, path, token)
 
     def _post(self, path: str, json: dict | None = None, params: dict | None = None) -> dict:
@@ -794,13 +815,17 @@ class GatewayClient:
                 raise GatewayApiError(resp.status_code, {"unreadable": True}, path)
             body = {"raw": resp.text}
         if resp.is_success:
+            payment = path == "/v2/purchase"
             if isinstance(body, dict):
                 rsp_code = body.get("rspMsgCd", "")
                 if not isinstance(rsp_code, str):
-                    raise GatewayApiError(resp.status_code, {}, path)
+                    raise GatewayApiError(resp.status_code, {"unreadable": True} if payment else {}, path)
                 if rsp_code and not rsp_code.endswith("00000"):
                     cls._attach_friendly_message(body, rsp_code)
                     raise GatewayApiError(resp.status_code, body, path)
+            if payment and not (isinstance(body, dict) and body):
+                # null, a list or an empty object says nothing about the payment.
+                raise GatewayApiError(resp.status_code, {"unreadable": True}, path)
             return body
         # Non-success HTTP. If the body carries a business error code (e.g. a 422
         # business rejection like a spending-limit hit), surface its real message

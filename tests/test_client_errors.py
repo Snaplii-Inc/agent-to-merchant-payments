@@ -146,3 +146,53 @@ def test_plain_403_is_a_permission_problem_not_a_login():
     assert "snaplii init" not in out["error"]
     assert "permission" in out["error"].lower()
     assert out["status_code"] == 403
+
+
+@pytest.mark.parametrize("content", [b"null", b"{}", b"[]", b'{"rspMsgCd": null}'],
+                         ids=["null", "empty", "list", "odd-code"])
+@pytest.mark.parametrize("pay", _PAYMENTS, ids=["gift-card", "bill-pay"])
+def test_payment_reply_without_a_result_is_indeterminate(client, pay, content):
+    client._http = httpx.Client(transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, content=content)))
+    with pytest.raises(GatewayApiError) as info:
+        pay(client)
+    out = info.value.to_dict()
+    assert out["outcome"] == "indeterminate"
+    assert "may have completed" in out["error"]
+
+
+def test_a_catalog_list_is_still_a_result(client):
+    client._http = httpx.Client(transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, json=[{"cardBrandId": "CB1"}])))
+    assert client.get_all_card_tags()["data"] == [{"cardBrandId": "CB1"}]
+
+
+@pytest.mark.parametrize("call", [
+    lambda c: c.get_balance(),
+    lambda c: c.poll_connect_token("0" * 32),
+], ids=["read", "connect-poll"])
+def test_a_read_timeout_is_a_structured_error(client, call):
+    client._http = httpx.Client(transport=_raising_transport(httpx.ReadTimeout("read timed out")))
+    with pytest.raises(GatewayConnectionError) as info:
+        call(client)
+    assert info.value.to_dict()["error"] == "Connection failed"
+
+
+def _card_pages(total, *, ignores_page=False):
+    def handler(request):
+        page = 1 if ignores_page else int(request.url.params["page"])
+        size = int(request.url.params["pageSize"])
+        rows = [{"cardNo": str(i)} for i in range((page - 1) * size, min(page * size, total))]
+        return httpx.Response(200, json={"data": rows})
+    return httpx.MockTransport(handler)
+
+
+@pytest.mark.parametrize("total", [0, 99, 100, 101, 250])
+def test_all_owned_cards_are_read_page_by_page(client, total):
+    client._http = httpx.Client(transport=_card_pages(total))
+    assert len(client.list_all_user_cards()) == total
+
+
+def test_a_server_that_ignores_paging_is_not_counted_twice(client):
+    client._http = httpx.Client(transport=_card_pages(300, ignores_page=True))
+    assert len(client.list_all_user_cards()) == 100

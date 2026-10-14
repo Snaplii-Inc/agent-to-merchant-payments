@@ -55,8 +55,7 @@ def cashback_cmd(ctx, brand_id, amount):
 def dashboard_cmd(ctx):
     """Show a summary dashboard of all your gift cards."""
     client: GatewayClient = ctx.obj["client"]
-    resp = client.list_user_cards(status="ACTIVE", page=1, page_size=100)
-    cards = resp.get("data", [])
+    cards = client.list_all_user_cards()
 
     total_value = 0
     brands = {}

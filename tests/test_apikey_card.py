@@ -329,7 +329,10 @@ def test_connect_elicit_pending_when_token_never_arrives(monkeypatch):
     monkeypatch.setattr(server, "_get_client", lambda: FakeClient())
     out = _call("snaplii_connect", {})
     assert out["status"] == "pending"
-    assert "snaplii init" in out["message"]
+    # The secure page is open, so the key is never asked for in chat or a terminal.
+    assert "paste" not in out["message"].lower()
+    assert "snaplii init" not in out["message"]
+    assert "out of chat" in out["message"]
 
 
 class _CountingSession(_FakeSession):

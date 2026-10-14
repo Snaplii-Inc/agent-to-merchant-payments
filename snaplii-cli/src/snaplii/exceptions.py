@@ -92,9 +92,8 @@ class GatewayConnectionError(SnapliiCliError):
 class AmountValidationError(SnapliiCliError):
     """Requested amount is outside the brand's allowed denomination range.
 
-    Raised client-side before quote/purchase so an out-of-range order never
-    reaches the backend (which currently accepts it, returns you_pay=0, then
-    fails the card and refunds — burning a round-trip and a Snaplii Cash debit).
+    Raised client-side before quote/purchase, as the app does, so an
+    out-of-range order is never sent.
     """
 
     def __init__(self, message: str, *, item_id: str = "", amount=None,

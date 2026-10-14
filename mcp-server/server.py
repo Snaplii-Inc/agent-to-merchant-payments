@@ -796,12 +796,15 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 token_data = await _poll_connect_token(client, eid)
                 if token_data:
                     return _text(_finish_elicit_connect(client, token_data))
+                # The secure page is open, so never fall back to asking for the key.
                 return _text({
                     "status": "pending",
-                    "message": _key_fallback(
-                        "Didn't receive the connection yet. If the user finished entering the "
-                        "key on the Snaplii page, run snaplii_connect again within 2 minutes; "
-                        "it collects that connection first. ", storage),
+                    "message": (
+                        "Didn't receive the connection yet. The user finishes on the Snaplii "
+                        "page that is already open; then run snaplii_connect again within 2 "
+                        "minutes, which collects that connection first. If the submission "
+                        "expired, the user submits again on the same page. Keep the API key "
+                        "out of chat."),
                 })
 
             if route == "text":
@@ -908,8 +911,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         elif name == "snaplii_quote":
             client = _get_client()
             # Reject amounts outside the brand's denomination range before
-            # quoting — the backend accepts them and returns you_pay=0, then the
-            # card fails on purchase. The app UI blocks this; the agent must too.
+            # quoting. The app UI blocks this; the agent must too.
             client.validate_amount(arguments["item_id"], arguments["price"])
             result = client.quote_order(
                 item_id=arguments["item_id"],
@@ -987,8 +989,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
         elif name == "snaplii_dashboard":
             client = _get_client()
-            resp = client.list_user_cards(status="ACTIVE", page=1, page_size=100)
-            cards = resp.get("data", [])
+            cards = client.list_all_user_cards()
             total_value = 0
             by_brand = {}
             for card in cards:

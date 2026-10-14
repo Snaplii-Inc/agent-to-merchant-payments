@@ -44,8 +44,7 @@ def _client(store):
 
 
 def test_200_without_token_raises_and_caches_nothing(httpx_mock):
-    # The exact shape the gateway produces today: HTTP 200, plain-text body
-    # labeled application/json.
+    # HTTP 200 with a plain-text body labeled application/json.
     httpx_mock.add_response(
         method="POST", url="https://aipayment.snaplii.com/v2/auth/token", status_code=200,
         content=b"Snaplii core did not return an access token in the x-auth-token header",

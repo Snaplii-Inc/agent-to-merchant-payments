@@ -29,7 +29,8 @@ jobs:
         run: uv python install 3.8
 
       # The tag is what users get; a mismatch would publish a version nobody asked for.
-      # Exact match is deliberate: it rules out prereleases (v0.15.0rc1) by design.
+      # A release-candidate tag (v0.20.0rc1) matches an rc version here, then only
+      # builds and tests: the publish jobs skip it, so testers install from the tag.
       - name: Tag must match both package versions
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
@@ -59,7 +60,7 @@ jobs:
   # snaplii-mcp requires snaplii-cli>=<same version>, so the CLI lands first.
   publish-cli:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, 'rc')
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -78,7 +79,7 @@ jobs:
 
   publish-mcp:
     needs: publish-cli
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, 'rc')
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

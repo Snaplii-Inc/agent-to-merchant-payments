@@ -1,11 +1,5 @@
-"""Regression: out-of-range gift-card amounts must be rejected client-side
-before quote/purchase.
-
-The app UI (DrawerBottomInputAmount) blocks amounts outside a card's
-priceStart..priceEnd, but the agent path (CLI/MCP) bypassed it: the backend
-accepted e.g. Uber Eats $10 on a $20-min card, returned you_pay=0, charged
-Snaplii Cash, then failed the card (APPLY_REFUND). validate_amount restores the
-same guard so an out-of-range order never reaches quote or purchase.
+"""Quote and purchase reject amounts outside the selected card's
+denomination rules (priceStart..priceEnd) before any request, as the app does.
 """
 
 import asyncio

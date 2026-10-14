@@ -21,8 +21,8 @@ def quote_cmd(ctx, item_id, price, voucher, cashback, voucher_id):
     and the actual amount you'll pay.
     """
     client: GatewayClient = ctx.obj["client"]
-    # Reject amounts outside the brand's denomination range before quoting —
-    # the backend would accept it, return you_pay=0, then fail the card.
+    # Reject amounts outside the brand's denomination range before quoting,
+    # as the app does.
     client.validate_amount(item_id, price)
     resp = client.quote_order(
         item_id=item_id,

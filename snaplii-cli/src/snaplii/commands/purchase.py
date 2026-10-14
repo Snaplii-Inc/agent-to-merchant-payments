@@ -25,7 +25,7 @@ def purchase_cmd(ctx, item_id, price, voucher, cashback, voucher_id):
     """
     client: GatewayClient = ctx.obj["client"]
     # Hard stop before charging: reject amounts outside the brand's denomination
-    # range so Snaplii Cash isn't debited for a card that will fail and refund.
+    # range, as the app does.
     client.validate_amount(item_id, price)
     resp = client.create_order_and_pay(
         item_id=item_id,

@@ -12,7 +12,7 @@ CLONE = "git clone --depth 1 --branch %s https://github.com/Snaplii-Inc/agent-to
 
 
 def test_every_release_tag_in_the_readme_is_the_current_version():
-    tags = set(re.findall(r"\bv\d+\.\d+\.\d+\b", README))
+    tags = set(re.findall(r"\bv\d+\.\d+\.\d+(?:rc\d+)?\b", README))
     assert tags == {TAG}
 
 
@@ -47,6 +47,6 @@ def test_the_skill_installs_its_cli_from_the_same_release():
     for relative in ("skills/snaplii-cli.md", "clawhub-publish/SKILL.md",
                      "skills/snaplii-autopilot.md", "clawhub-autopilot/SKILL.md"):
         skill = (ROOT / relative).read_text()
-        assert set(re.findall(r"\bv\d+\.\d+\.\d+\b", skill)) == {TAG}, relative
+        assert set(re.findall(r"\bv\d+\.\d+\.\d+(?:rc\d+)?\b", skill)) == {TAG}, relative
         assert CLONE in skill, relative
         assert "python3 snaplii-src/scripts/install.py --source ./snaplii-src" in skill, relative
