@@ -232,9 +232,10 @@ async def _instinct_connect(arguments: dict) -> dict:
 
 
 def _finish_elicit_connect(client, token_data: dict) -> dict:
-    global _pending_connect_eid
+    global _pending_connect_eid, _elicit_failures
     client.accept_connect_token(token_data)
     _pending_connect_eid = None
+    _elicit_failures = 0
     return {
         "status": "authenticated",
         **client.auth_status(),
@@ -243,6 +244,17 @@ def _finish_elicit_connect(client, token_data: dict) -> dict:
             "from your prepaid Snaplii Cash, capped by your daily limit."
         ),
     }
+
+
+def _terminal_init_command() -> str:
+    """The terminal login for this server's gateway. It names the installed CLI, whose
+    environment the installer keeps off PATH, and carries --base-url so the session
+    lands on the gateway this server uses."""
+    import os
+    import shlex
+    import subprocess
+    argv = [auth.cli_executable(), "--base-url", auth.normalize_base_url(_base_url()), "init"]
+    return subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)
 
 
 def _key_fallback(lead: str, storage) -> str:
@@ -254,9 +266,10 @@ def _key_fallback(lead: str, storage) -> str:
     if storage == "process memory":
         return (lead + "This server keeps its session in memory, so a separate terminal login "
                 "can't reach it. Ask the user to " + paste + ".")
-    return (lead + "Offer the user two ways to connect and let them pick: (1) run 'snaplii init' "
-            "in their own terminal and enter the key at the hidden prompt, which keeps the key "
-            "out of this chat; or (2) " + paste + ". Both work.")
+    return (lead + "Offer the user two ways to connect and let them pick: (1) run "
+            + _terminal_init_command() + " in their own terminal and enter the key at the "
+            "hidden prompt, which keeps the key out of this chat; or (2) " + paste
+            + ". Both work.")
 
 
 def _elicit_url() -> str:
@@ -804,7 +817,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                     # or pasting the key in chat for snaplii_init at once. Any other
                     # failure retries the same page once before that fallback.
                     msg = str(e)
-                    unsupported = "-32602" in msg or "does not support" in msg.lower()
+                    unsupported = "does not support" in msg.lower() or "not supported" in msg.lower()
                     if not unsupported and _elicit_failures == 0:
                         _elicit_failures = 1
                         return _text({

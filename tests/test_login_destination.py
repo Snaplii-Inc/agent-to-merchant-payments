@@ -8,6 +8,7 @@ address, and fallback guidance stays honest without blocking the chat path.
 import asyncio
 import io
 import json
+import shlex
 import sys
 import time
 
@@ -184,8 +185,8 @@ def _connect_text(monkeypatch, storage, route="text"):
 def test_fallback_offers_terminal_first_and_keeps_the_chat_path(monkeypatch, route):
     out = _connect_text(monkeypatch, "system keychain", route)
     message = out["message"]
-    assert "snaplii init" in message and "snaplii_init" in message
-    assert message.index("snaplii init") < message.index("snaplii_init")
+    assert "in their own terminal" in message and "snaplii_init" in message
+    assert message.index("in their own terminal") < message.index("snaplii_init")
     assert "equal" not in message.lower()
     assert "do not describe" not in message.lower()
 
@@ -193,7 +194,7 @@ def test_fallback_offers_terminal_first_and_keeps_the_chat_path(monkeypatch, rou
 def test_memory_only_session_does_not_send_the_user_to_a_terminal(monkeypatch):
     out = _connect_text(monkeypatch, "process memory")
     assert "snaplii_init" in out["message"]
-    assert "snaplii init'" not in out["message"] and "run 'snaplii init" not in out["message"]
+    assert "own terminal" not in out["message"] and "--base-url" not in out["message"]
 
 
 def test_raw_key_tool_no_longer_calls_the_key_safe_to_accept():
@@ -244,3 +245,16 @@ def test_token_without_a_recorded_gateway_is_not_reused(store):
     store._path.write_text(json.dumps(data))
     assert store.get_cached_token(origin=PROD) is None
     assert store.get_cached_token() == "session-token"
+
+
+@pytest.mark.parametrize("cli", ["/home/u/.snaplii-env/bin/snaplii", "/Users/Jo Doe/.snaplii-env/bin/snaplii"])
+def test_terminal_fallback_names_the_installed_cli_and_this_gateway(monkeypatch, cli):
+    # The installer keeps its environment off PATH, and a terminal login must reach the
+    # gateway this server uses, so the command carries the CLI's path and --base-url.
+    monkeypatch.setattr(server.auth, "cli_executable", lambda: cli)
+    monkeypatch.setattr(server, "_connect_route", lambda: "text")
+    monkeypatch.setattr(server, "ConfigStore", lambda: _Disconnected("system keychain"))
+    monkeypatch.setattr(server, "_base_url", lambda: "https://aipay.stage.snaplii.com/gw")
+    message = json.loads(asyncio.run(server.call_tool("snaplii_connect", {}))[0].text)["message"]
+    command = shlex.join([cli, "--base-url", "https://aipay.stage.snaplii.com/gw", "init"])
+    assert f"run {command} in their own terminal" in message

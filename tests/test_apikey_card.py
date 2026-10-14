@@ -227,7 +227,7 @@ def test_connect_card_route_warns_against_pasting_key(monkeypatch):
     out = _call("snaplii_connect", {})
     assert out["status"] == "card_requested"
     assert "paste" in out["message"].lower()
-    assert "snaplii init" in out["message"]
+    assert "in their own terminal" in out["message"]
 
 
 def test_connect_card_route_waits_for_the_card_before_any_fallback(monkeypatch):
@@ -347,7 +347,7 @@ def test_connect_elicit_pending_when_token_never_arrives(monkeypatch):
     assert out["status"] == "pending"
     # The secure page is open, so the key is never asked for in chat or a terminal.
     assert "paste" not in out["message"].lower()
-    assert "snaplii init" not in out["message"]
+    assert "own terminal" not in out["message"]
     assert "out of chat" in out["message"]
 
 
@@ -432,7 +432,7 @@ def _assert_unreachable(out):
     assert out["status"] == "unreachable"
     text = out["message"].lower()
     # Polling failed, so nothing says the submission is missing: never ask for the key again.
-    assert "paste" not in text and "snaplii init" not in text and "submit again" not in text
+    assert "paste" not in text and "own terminal" not in text and "submit again" not in text
     assert "out of chat" in text
 
 
@@ -599,11 +599,11 @@ def test_connect_elicit_failure_retries_the_page_before_any_fallback(monkeypatch
     assert first["status"] == "elicit_failed"
     text = first["message"].lower()
     # One failure does not show the secure page is unavailable: no key in chat yet.
-    assert "paste" not in text and "snaplii init" not in text
+    assert "paste" not in text and "own terminal" not in text
     assert "do not ask for the key in chat" in text
     second = _call("snaplii_connect", {})
     assert second["status"] == "elicit_failed"
-    assert "snaplii init" in second["message"]  # a second failure opens the fallback
+    assert "in their own terminal" in second["message"]  # a second failure opens the fallback
     assert captured["eids"][0] == captured["eids"][1]  # the retry reused the same page
 
 
@@ -614,7 +614,7 @@ def test_connect_elicit_unsupported_falls_back_at_once(monkeypatch):
     monkeypatch.setattr(server, "app", _FakeApp(_FailingSession(err, captured)))
     out = _call("snaplii_connect", {})
     assert out["status"] == "elicit_unsupported"
-    assert "snaplii init" in out["message"]
+    assert "in their own terminal" in out["message"]
 
 
 def test_connect_elicit_failure_count_resets_after_the_page_opens(monkeypatch):
@@ -627,4 +627,32 @@ def test_connect_elicit_failure_count_resets_after_the_page_opens(monkeypatch):
     assert _call("snaplii_connect", {})["status"] == "pending"
     monkeypatch.setattr(server, "app", _FakeApp(_FailingSession(TimeoutError("slow"), captured)))
     out = _call("snaplii_connect", {})
-    assert "snaplii init" not in out["message"]  # a fresh first failure, not a second one
+    assert "own terminal" not in out["message"]  # a fresh first failure, not a second one
+
+
+def test_connect_elicit_failure_count_resets_when_a_connection_completes(monkeypatch):
+    captured = {}
+    _wire_elicit(monkeypatch, "accept", captured)
+    parked = {}
+    client = _ParkedClient(parked)
+    monkeypatch.setattr(server, "_get_client", lambda: client)
+    monkeypatch.setattr(server, "app", _FakeApp(_FailingSession(TimeoutError("slow"), captured)))
+    _call("snaplii_connect", {})  # first failure; the page may still have opened
+    parked["eid"] = captured["eids"][0]  # the user submitted on it after all
+    assert _call("snaplii_connect", {})["status"] == "authenticated"
+    # The session later ends; the next failure is a first failure again.
+    out = _call("snaplii_connect", {})
+    assert out["status"] == "elicit_failed"
+    assert "own terminal" not in out["message"] and "paste" not in out["message"].lower()
+
+
+def test_connect_elicit_other_invalid_params_retry_first(monkeypatch):
+    captured = {}
+    _wire_elicit(monkeypatch, "accept", captured)
+    err = RuntimeError("-32602 Invalid params: invalid elicitationId")
+    monkeypatch.setattr(server, "app", _FakeApp(_FailingSession(err, captured)))
+    monkeypatch.setattr(server, "_get_client", lambda: _ParkedClient({}))
+    out = _call("snaplii_connect", {})
+    # An invalid-params error does not show URL mode is unsupported: retry before any fallback.
+    assert out["status"] == "elicit_failed"
+    assert "own terminal" not in out["message"] and "paste" not in out["message"].lower()

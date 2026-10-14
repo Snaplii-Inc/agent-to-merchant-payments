@@ -159,7 +159,7 @@ def test_second_call_reports_pending_without_raw_key_fallback(instinct_mcp, monk
     assert len(client.polled) == 2
     text = json.dumps(out).lower()
     assert "without arguments" in text
-    assert "snaplii init" not in text and "paste" not in text
+    assert "snaplii init" not in text and "own terminal" not in text and "paste" not in text
 
 
 def test_second_call_unreachable_keeps_the_eid(instinct_mcp, monkeypatch):
@@ -172,7 +172,7 @@ def test_second_call_unreachable_keeps_the_eid(instinct_mcp, monkeypatch):
     # Polling failed, not the submission: retry the same eid, never start over or ask for the key.
     assert "same eid" in text
     assert "without arguments" not in text
-    assert "snaplii init" not in text and "paste" not in text
+    assert "snaplii init" not in text and "own terminal" not in text and "paste" not in text
 
 
 @pytest.mark.parametrize("eid", ["short", "z" * 32, "https://evil.example/connect?x=1", 42])
