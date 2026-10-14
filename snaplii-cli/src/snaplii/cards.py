@@ -193,6 +193,9 @@ APIKEY_CARD_HTML = r"""<!DOCTYPE html>
 (function () {
   var PROTOCOL = "2025-11-25";
   var SUBMIT_TOOL = "__SUBMIT_TOOL__";
+  // A login can take up to the gateway client's 30 s timeout; waiting less would
+  // report a failure (and invite a second entry) while the login still succeeds.
+  var SUBMIT_TIMEOUT_MS = 45000;
   // Flipped to true by the server for hosts that DROP downward resize (e.g. Codex):
   // there, collapsing to the slim "✓ Connected" bar just leaves dead space below, so
   // we keep the full success card instead.
@@ -210,14 +213,14 @@ APIKEY_CARD_HTML = r"""<!DOCTYPE html>
   function setStatus(msg, kind) { statusEl.textContent = msg; statusEl.className = kind || ""; }
   function post(obj) { window.parent.postMessage(obj, "*"); }
 
-  function request(method, params) {
+  function request(method, params, timeoutMs) {
     var id = nextId++;
     post({ jsonrpc: "2.0", id: id, method: method, params: params || {} });
     return new Promise(function (resolve, reject) {
       pending[id] = { resolve: resolve, reject: reject };
       setTimeout(function () {
         if (pending[id]) { delete pending[id]; reject(new Error("timeout waiting for " + method)); }
-      }, 8000);
+      }, timeoutMs || 8000);
     });
   }
   function notify(method, params) { post({ jsonrpc: "2.0", method: method, params: params || {} }); }
@@ -340,7 +343,7 @@ APIKEY_CARD_HTML = r"""<!DOCTYPE html>
     if (!key) { setStatus("Enter your API key first.", "err"); inputEl.focus(); return; }
     btnEl.disabled = true; inputEl.disabled = true;
     setStatus("Connecting…", "");
-    request("tools/call", { name: SUBMIT_TOOL, arguments: { api_key: key } })
+    request("tools/call", { name: SUBMIT_TOOL, arguments: { api_key: key } }, SUBMIT_TIMEOUT_MS)
       .then(function (res) {
         var text = "";
         try { text = (res.content || []).map(function (c) { return c.text || ""; }).join(" "); } catch (e) {}

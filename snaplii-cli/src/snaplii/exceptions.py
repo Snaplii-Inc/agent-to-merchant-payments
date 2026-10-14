@@ -16,14 +16,15 @@ class GatewayApiError(SnapliiCliError):
             friendly = "The session used by this request was rejected. Check current authentication state before continuing."
         error_code = self.body.get("rspMsgCd", "")
         unreadable = self.body.get("unreadable") is True
-        # /v2/purchase is not idempotent: without a business answer, a 5xx or an
-        # unreadable reply leaves the payment's outcome unknown.
+        # /v2/purchase is not idempotent: a 5xx, even one carrying an upstream code,
+        # or an unreadable reply leaves the payment's outcome unknown. A business
+        # rejection is a 4xx and stays a plain error.
         payment_unknown = self.endpoint == "/v2/purchase" and (
-            unreadable or (self.status_code >= 500 and not error_code))
+            unreadable or self.status_code >= 500)
+        if payment_unknown:
+            friendly = "The gateway did not confirm this payment, so it may have completed."
         if not friendly:
-            if payment_unknown:
-                friendly = "The gateway did not confirm this payment, so it may have completed."
-            elif unreadable:
+            if unreadable:
                 friendly = "The gateway sent an unreadable response."
             elif self.status_code == 502:
                 friendly = "Gateway temporarily unavailable. Please wait a moment and try again."

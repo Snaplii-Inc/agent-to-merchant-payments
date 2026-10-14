@@ -656,3 +656,14 @@ def test_connect_elicit_other_invalid_params_retry_first(monkeypatch):
     # An invalid-params error does not show URL mode is unsupported: retry before any fallback.
     assert out["status"] == "elicit_failed"
     assert "own terminal" not in out["message"] and "paste" not in out["message"].lower()
+
+
+def test_card_waits_for_the_login_longer_than_the_gateway_timeout():
+    # The gateway client allows 30 s per request; the card must not report a failure
+    # (and invite a second entry) while a slow login can still succeed.
+    import re
+    html = APIKEY_CARD_HTML
+    wait = int(re.search(r"SUBMIT_TIMEOUT_MS = (\d+)", html).group(1))
+    assert wait > 30000
+    assert "arguments: { api_key: key } }, SUBMIT_TIMEOUT_MS)" in html
+    assert "timeoutMs || 8000" in html  # other host calls keep the short timeout

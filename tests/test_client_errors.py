@@ -118,6 +118,34 @@ def test_payment_5xx_is_indeterminate_and_never_says_retry(client, pay, status):
     assert "do not" in out["retry_hint"].lower()
 
 
+@pytest.mark.parametrize("body", [{"rspMsgCd": "UNRECOGNIZED"},
+                                  {"rspMsgCd": "ORDER_CREATION_FAILED", "rspMsgInf": "x"}],
+                         ids=["unknown-code", "mapped-code"])
+@pytest.mark.parametrize("status", [500, 502])
+@pytest.mark.parametrize("pay", _PAYMENTS, ids=["gift-card", "bill-pay"])
+def test_coded_payment_5xx_is_still_indeterminate(client, pay, status, body):
+    # A 5xx can carry an upstream code and still leave the charge unknown.
+    client._http = httpx.Client(transport=_answering_transport(status, json.dumps(body)))
+    with pytest.raises(GatewayApiError) as info:
+        pay(client)
+    out = info.value.to_dict()
+    assert out["outcome"] == "indeterminate"
+    assert out["error_code"] == body["rspMsgCd"]
+    assert "may have completed" in out["error"]
+    assert "try again" not in out["error"].lower() and "failed" not in out["error"].lower()
+
+
+@pytest.mark.parametrize("pay", _PAYMENTS, ids=["gift-card", "bill-pay"])
+def test_payment_business_rejection_is_not_indeterminate(client, pay):
+    body = {"rspMsgCd": "ORDER_CREATION_FAILED", "rspMsgInf": "limit"}
+    client._http = httpx.Client(transport=_answering_transport(422, json.dumps(body)))
+    with pytest.raises(GatewayApiError) as info:
+        pay(client)
+    out = info.value.to_dict()
+    assert "outcome" not in out
+    assert out["error_code"] == "ORDER_CREATION_FAILED"
+
+
 def test_quote_502_still_suggests_a_retry():
     out = GatewayApiError(502, {}, "/v2/quote").to_dict()
     assert "try again" in out["error"]
