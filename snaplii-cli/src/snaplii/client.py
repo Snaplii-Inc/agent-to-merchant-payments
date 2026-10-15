@@ -122,7 +122,7 @@ class GatewayClient:
     def origin(self) -> str:
         return self._origin
 
-    def login(self, agent_id: str, api_key: str) -> dict:
+    def login(self, agent_id: str, api_key: str, *, remember_base_url: bool = False) -> dict:
         auth.require_login_origin(self._origin)
         if not auth.valid_api_key(api_key):
             # Never send a vault reference, surrogate or hash as a key, and never
@@ -137,9 +137,10 @@ class GatewayClient:
             "agent_id": agent_id,
             "api_key": api_key,
         })
-        return self._finish_login(resp, agent_id=agent_id, auth_method="api_key")
+        return self._finish_login(resp, agent_id=agent_id, auth_method="api_key",
+                                  remember_base_url=remember_base_url)
 
-    def login_via_vault(self, agent_id: str) -> dict:
+    def login_via_vault(self, agent_id: str, *, remember_base_url: bool = False) -> dict:
         """Exchange a host-managed API key without exposing it to this process.
 
         The host owns input and cancellation; this method only exchanges an
@@ -209,7 +210,8 @@ class GatewayClient:
             raise self._auth_error("secure_entry_unavailable", "credential_redirect_blocked",
                                    "A redirect was blocked during secure credential authentication.", "vault")
         body = self._parse_login_response(httpx.Response(status, text=raw), "vault")
-        return self._finish_login(body, agent_id=agent_id, auth_method="vault")
+        return self._finish_login(body, agent_id=agent_id, auth_method="vault",
+                                  remember_base_url=remember_base_url)
 
     # The gateway's reply when it refuses a key; its message may carry an error
     # code, e.g. "... (MCA20101: ...)".
@@ -256,8 +258,10 @@ class GatewayClient:
             error.auth_fields = self._auth_fields(state, reason, method)
             raise error from None
 
-    def _finish_login(self, resp: dict, *, agent_id, auth_method: str) -> dict:
-        """Shared tail of every login path: validate the token and cache it."""
+    def _finish_login(self, resp: dict, *, agent_id, auth_method: str,
+                      remember_base_url: bool = False) -> dict:
+        """Shared tail of every login path: validate the token and cache it. With
+        remember_base_url, this gateway becomes the saved default in the same write."""
         body = resp if isinstance(resp, dict) else {}
         token = body.get("access_token")
         if not token:
@@ -267,7 +271,8 @@ class GatewayClient:
         expires_in = body.get("expires_in", 3600)
         self._config.commit_session(token, expires_in, agent_id=agent_id,
                                     auth_method=auth_method, token_origin=self._origin,
-                                    country=body.get("country"))
+                                    country=body.get("country"),
+                                    base_url=self._base_url if remember_base_url else None)
         if self._config.get_cached_token(origin=self._origin) != token:
             raise self._auth_error("session_cache_failed", "session_readback_failed",
                                    "The session could not be verified. Authentication is incomplete.", auth_method)

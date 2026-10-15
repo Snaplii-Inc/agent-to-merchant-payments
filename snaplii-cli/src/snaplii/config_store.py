@@ -72,6 +72,15 @@ def _cache_error(message: str | None = None, reason_code: str = "session_cache_f
                      next_action={"type": "stop", "reason": "session_cache_failed"})
 
 
+def no_persistent_storage_error() -> AuthError:
+    return _cache_error(
+        "No usable keyring was found and file storage is not enabled, so a later "
+        "command could not reuse this session. Set SNAPLII_ALLOW_INSECURE=1 (or "
+        "allow_insecure_mode=true in config.json) to keep the token in the "
+        "owner-only config file, or install a keyring backend.",
+        reason_code="no_persistent_storage")
+
+
 class ConfigStore:
     # Same-process reuse for MCP, isolated by canonical configuration path.
     _MEM_SECRETS: dict = {}
@@ -102,6 +111,12 @@ class ConfigStore:
                 or data.get("allow_insecure_mode") is True):
             return "config file"
         return "process memory"
+
+    def session_needs_file_consent(self) -> bool:
+        """True when a CLI login would keep its session only in this process's
+        memory: no usable keychain and no file-storage opt-in. A keychain that is
+        detected but fails on write is still found only when the session is saved."""
+        return self.runtime == "cli" and self._selected_storage(read_config(self._path)) == "process memory"
 
     def _session_token(self, data: dict):
         storage = data.get("_credential_storage")
@@ -191,13 +206,7 @@ class ConfigStore:
                 self._FAILED_KEYRINGS.add(self._cache_key)
                 storage = self._selected_storage(data)
         if storage == "process memory" and self.runtime == "cli":
-            raise AuthError(
-                "No usable keyring was found and file storage is not enabled, so a later "
-                "command could not reuse this session. Set SNAPLII_ALLOW_INSECURE=1 (or "
-                "allow_insecure_mode=true in config.json) to keep the token in the "
-                "owner-only config file, or install a keyring backend.",
-                auth_state="session_cache_failed", reason_code="no_persistent_storage",
-                next_action={"type": "stop", "reason": "session_cache_failed"})
+            raise no_persistent_storage_error()
         data = {k: v for k, v in data.items() if k not in {"api_key", "access_token"}}
         data.update(_session_generation=uuid.uuid4().hex, _token_digest=_digest(token),
                     _credential_storage=storage)
@@ -228,7 +237,7 @@ class ConfigStore:
             raise _cache_error(exc.message) from None
 
     def commit_session(self, access_token: str, expires_in: int, *, agent_id,
-                       auth_method: str, token_origin: str, country=None):
+                       auth_method: str, token_origin: str, country=None, base_url=None):
         expires_in = self._validate_token(access_token, expires_in)
         origin = auth.normalize_origin(token_origin)
         if auth_method not in ("vault", "api_key", "url"):
@@ -246,6 +255,9 @@ class ConfigStore:
                     data["country"] = country.upper()
                 data.update(token_expires_at=time.time() + expires_in, auth_method=auth_method,
                             token_origin=origin)
+                if base_url is not None:
+                    # Saved with the session, so later commands use the gateway signed in to.
+                    data["base_url"] = auth.normalize_base_url(base_url)
                 self._store_session(data, access_token)
         except ConfigError as exc:
             if isinstance(exc, AuthError):

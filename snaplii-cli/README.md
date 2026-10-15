@@ -33,7 +33,7 @@ snaplii init
 
 Prompts for your API key with hidden input. The key is exchanged for a session token and never stored; the token is kept in your OS keychain when one is available.
 
-Outside a recognized Muse runtime, a CLI without a working keychain stops with `no_persistent_storage` rather than keeping a session that the next command could not reuse; explicit `SNAPLII_ALLOW_INSECURE=1` opts into a private (mode 0600) plaintext token file. Only a long-lived MCP server may hold a memory-only session. `snaplii config show` reports the actual storage and `has_valid_token`, without showing the token or API key. Protected requests require a usable session and are not automatically replayed after authentication errors.
+Outside a recognized Muse runtime, a CLI without a working keychain does not keep a session that the next command could not reuse. In a terminal, `init` asks before the key whether this and future sessions may be kept in a private (mode 0600) plaintext token file; a yes saves `allow_insecure_mode: true`. Without a terminal it stops with `no_persistent_storage`, and explicit `SNAPLII_ALLOW_INSECURE=1` opts into the same file. Signing in with `--base-url` saves that gateway as the default. Only a long-lived MCP server may hold a memory-only session. `snaplii config show` reports the actual storage and `has_valid_token`, without showing the token or API key. Protected requests require a usable session and are not automatically replayed after authentication errors.
 
 ### Meta Muse secure credential store
 

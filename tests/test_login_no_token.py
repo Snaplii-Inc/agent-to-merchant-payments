@@ -104,7 +104,7 @@ def test_init_does_not_print_authenticated_without_token():
         def auth_status(self):
             return {"host": "unknown", "has_valid_token": False}
 
-        def login(self, agent_id, api_key):
+        def login(self, agent_id, api_key, **kwargs):
             raise GatewayApiError(200, {"friendly_message": "Login did not return an access token"},
                                   "/v2/auth/token")
 

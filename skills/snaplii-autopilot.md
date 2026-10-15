@@ -210,10 +210,15 @@ Keep authentication in the runtime that will use it. For MCP, call
 fallback. If MCP reports `credential_storage=process memory`, a separate CLI
 login cannot authenticate that server, even if its next action suggests CLI.
 For the CLI path, the user runs `snaplii init` with the same gateway options in
-their own terminal and types the key at its hidden prompt. Never pass the key
-yourself: not through your shell tool, stdin, a heredoc, an environment variable
-or a command argument, and never echo it. Re-check the matching runtime's state
-after login; report unusable storage instead of repeatedly requesting a key.
+their own terminal and types the key at its hidden prompt. When CLI
+authentication is needed, your first message asking the user to act gives that
+exact command, with the installed CLI's path and the task's gateway options; do
+not ask for the key in the chat or in a file. Never pass the key yourself: not
+through your shell tool, stdin, a heredoc, an environment variable or a command
+argument, and never echo it. Without an OS keychain, `init` first asks whether
+sessions may be kept in an owner-only file; the user answers it there. Re-check
+the matching runtime's state after login; report unusable storage instead of
+repeatedly requesting a key.
 
 ### Reauthentication
 
@@ -232,7 +237,7 @@ This skill needs BOTH:
 1. **Snaplii tools** — either the `snaplii` CLI (Bash; at `~/.snaplii-env/bin/snaplii`, Windows `%USERPROFILE%\.snaplii-env\Scripts\snaplii.exe`, off PATH, so call it by that path) or `snaplii_*` MCP tools. This skill folder does not contain the installer. If you have neither, install the CLI and the MCP server from the release this skill belongs to:
 
    ```bash
-   git clone --depth 1 --branch v0.20.0rc1 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
+   git clone --depth 1 --branch v0.20.0rc2 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
    python3 snaplii-src/scripts/install.py --source ./snaplii-src
    ```
 

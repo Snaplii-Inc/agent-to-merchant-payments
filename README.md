@@ -36,7 +36,7 @@ Install the skills, the CLI and the MCP server from one release tag, so all thre
 - Where the table says leave it out, drop both `--host` and its value. Add `--cli-only` to the third command if your agent will not use MCP. Muse gets the CLI only by itself; Instinct needs MCP and refuses `--cli-only`.
 
 ```bash
-git clone --depth 1 --branch v0.20.0rc1 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
+git clone --depth 1 --branch v0.20.0rc2 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
 npx --yes skills add ./snaplii-src -g -a claude-code -y
 python3 snaplii-src/scripts/install.py --host claude-code --source ./snaplii-src
 ```
@@ -116,7 +116,7 @@ Gift-card purchases can help users save through eligible offers and cashback. Av
 
 ### Sessions and reconnecting
 
-Check the session in the runtime that runs the task: a session in `~/.snaplii/config.json` or the OS keychain serves both the CLI and the MCP server; one the MCP server keeps in memory serves only that server. A connection exchanges the API key once for a session token. The key is not kept, so connecting again needs it again unless the host's vault holds it (Muse, Instinct). The gateway sets when a session expires, so rely on `has_valid_token` rather than a fixed lifetime. The app shows a new key only once: the user should keep it in a password manager.
+Check the session in the runtime that runs the task: a session in `~/.snaplii/config.json` or the OS keychain serves both the CLI and the MCP server; one the MCP server keeps in memory serves only that server. A connection exchanges the API key once for a session token. The key is not kept, so connecting again needs it again unless the host's vault holds it (Muse, Instinct). The gateway sets when a session expires, so rely on `has_valid_token` rather than a fixed lifetime. Signing in with `--base-url` or `SNAPLII_BASE_URL` saves that gateway as the default, so later commands without it use the same session. The app shows a new key only once: the user should keep it in a password manager.
 
 The API key stays out of the chat where the host allows it: a secure card, the hosted connect page, or the host's vault (Muse, Instinct). Otherwise the user runs `snaplii init` in their own terminal or, if the Snaplii MCP tools are available, pastes the key for `snaplii_init`, which passes it through the model once. Only the Snaplii production and staging gateways accept a sign-in.
 
@@ -131,7 +131,7 @@ The API key stays out of the chat where the host allows it: a secure card, the h
 | `retry_auth_later` | Snaplii was unreachable; retry later |
 | `stop` | Cancelled, or no session could be stored; report it and do not retry or switch methods |
 
-- **Shell-only agent.** On a machine without an OS keychain, `init` answers `session_cache_failed` with reason `no_persistent_storage`. The user then sets `allow_insecure_mode: true` in the config file, or `SNAPLII_ALLOW_INSECURE=1`, and runs `init` again. The config-file setting applies to every Snaplii process, including an MCP server the host starts; the environment variable reaches that server only if the host passes it on.
+- **Shell-only agent.** On a machine without an OS keychain, `init` in a terminal first asks whether this and future sessions may be kept in the owner-only config file: yes saves `allow_insecure_mode: true` there, no stops before the key is typed. Without a terminal, or when a detected keychain fails to save, `init` answers `session_cache_failed` with reason `no_persistent_storage`; the user then sets `allow_insecure_mode: true` in the config file, or `SNAPLII_ALLOW_INSECURE=1`, and runs `init` again. The config-file setting applies to every Snaplii process, including an MCP server the host starts, until `snaplii config clear`; the environment variable reaches that server only if the host passes it on.
 - **MCP host.** A session the server keeps only in memory ends with the server; connect again after a restart.
 - **Instinct.** Repeat the two `snaplii_connect` calls with the vault fill; the vault keeps the key.
 
@@ -168,7 +168,7 @@ Installing needs no key. To connect the CLI or your AI agent, generate a secure 
 Clone a release and run its installer (see [Install the execution layer](#install-the-execution-layer) for the Windows and no-Python variants):
 
 ```bash
-git clone --depth 1 --branch v0.20.0rc1 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
+git clone --depth 1 --branch v0.20.0rc2 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
 python3 snaplii-src/scripts/install.py --source ./snaplii-src
 ```
 
@@ -264,7 +264,7 @@ Every operation prints one JSON document on stdout, or one JSON error on stderr 
 
 | Command | Purpose |
 |---|---|
-| `snaplii init [--agent-id ID] [--vault-auth \| --legacy-auth]` | Authenticate. Interactive: the user runs it in a terminal; needs an OS keychain or `SNAPLII_ALLOW_INSECURE=1`. Muse defaults to secure credentials, with an explicit original-input fallback. Refused in Instinct |
+| `snaplii init [--agent-id ID] [--vault-auth \| --legacy-auth]` | Authenticate. Interactive: the user runs it in a terminal; without an OS keychain it first asks whether sessions may be kept in an owner-only file. A gateway given with `--base-url` or `SNAPLII_BASE_URL` becomes the saved default. Muse defaults to secure credentials, with an explicit original-input fallback. Refused in Instinct |
 | `snaplii config show` | Show current config and auth status, including `has_valid_token`, `host`, and `next_action` |
 | `snaplii config doctor` | Diagnose runtime detection (Muse, Instinct) and storage without logging in |
 | `snaplii config set --base-url URL` | Set the gateway URL. Sign-in works only with production `https://aipayment.snaplii.com` and staging `https://aipay.stage.snaplii.com` |
@@ -558,7 +558,7 @@ The registration points at `~/.snaplii-env/bin/snaplii-mcp`. Clone the release a
 - **Scoped API keys:** `PAY_READ` (read-only), `PAY_WRITE` (read, purchase, bill pay), `P2P` (transfers), `ALL`.
 - **Spending limits:** strict per-key consumption caps are set via the mobile app. Transfers also have a rolling 24-hour per-key limit.
 - **The daily limit is the boundary.** You set a per-day cap when you create the key in the app; the agent spends only within it, from prepaid funds, and you can lower the cap or revoke the key at any time. The agent tells you this once when it connects.
-- **Off-model key entry.** The API key is entered through a secure MCP Apps card rendered by the host, on the hosted connect page, in a hidden terminal prompt, or supplied by the host's credential store (Muse) or vault (Instinct). A client with none of those offers the user's own terminal prompt and, where the MCP tools exist, `snaplii_init`; with `snaplii_init` the key passes through the model once. The session token is kept in the OS keychain, or in process memory for a long-lived MCP server. Recognized Muse runtimes use a private session file automatically; other keychain-less CLI environments require explicit `SNAPLII_ALLOW_INSECURE=1` opt-in for file caching.
+- **Off-model key entry.** The API key is entered through a secure MCP Apps card rendered by the host, on the hosted connect page, in a hidden terminal prompt, or supplied by the host's credential store (Muse) or vault (Instinct). A client with none of those offers the user's own terminal prompt and, where the MCP tools exist, `snaplii_init`; with `snaplii_init` the key passes through the model once. The session token is kept in the OS keychain, or in process memory for a long-lived MCP server. Recognized Muse runtimes use a private session file automatically; other keychain-less CLI environments keep it in the owner-only config file only after an explicit opt-in: a yes to `init`'s question in the terminal, `allow_insecure_mode: true`, or `SNAPLII_ALLOW_INSECURE=1`.
 - **Snaplii gateways only.** An API key is sent, and the connect page opened, only at production `https://aipayment.snaplii.com` or staging `https://aipay.stage.snaplii.com`. The terminal prompt and the secure card name the gateway the key goes to. A connect page set with `SNAPLII_ELICIT_URL` or `elicit_url` must be on the gateway's own address.
 - **Charges are sent once.** Charges are not auto-retried. On an ambiguous bill-pay failure, query `billpay result` by `paymentNo` before retrying rather than re-paying; without a `paymentNo`, treat the outcome as unknown and reconcile before resubmitting. Transfers carry an idempotency key; retry a `CREATING` transfer with the same key, never a fresh one.
 - **The API key is not stored:** Snaplii uses it once to obtain a token and never writes it to disk; only a host's own vault (Muse, Instinct) keeps it.
