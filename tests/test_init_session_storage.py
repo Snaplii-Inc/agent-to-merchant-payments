@@ -1,8 +1,9 @@
 """Where a terminal login keeps its session, and which gateway later commands use.
 
-Without a keychain, `init` asks before the key is typed whether sessions may be
-kept in the owner-only config file, so the user never types a key for a login
-that cannot be kept. A gateway chosen for the login becomes the saved default.
+Without a usable keychain, `init` asks before the key is typed whether sessions
+may be kept in the owner-only config file. A keychain that looks usable but fails
+on write is still found only after the key. A gateway chosen for the login becomes
+the saved default.
 """
 
 import io
@@ -115,7 +116,10 @@ def test_yes_keeps_this_and_later_sessions_in_the_file(path, terminal, monkeypat
     assert str(path) in question and "future" in question and "never saved" in question
     assert len(terminal["prompt"]) == 1
     assert json.loads(path.read_text())["allow_insecure_mode"] is True
-    # The next process reuses the session without any opt-in in its environment.
+    # The next process reuses the session from the file, without any opt-in in its
+    # environment and without this process's memory.
+    monkeypatch.setattr(ConfigStore, "_MEM_SECRETS", {})
+    monkeypatch.setattr(ConfigStore, "_FAILED_KEYRINGS", set())
     assert run(monkeypatch, capsys, "config", "show")["has_valid_token"] is True
 
 
@@ -233,6 +237,23 @@ def test_a_failed_login_keeps_the_saved_gateway(file_storage, monkeypatch, capsy
     assert json.loads(file_storage.read_text())["base_url"] == PROD
 
 
+def test_a_failed_session_write_keeps_the_previous_gateway_and_session(
+        file_storage, monkeypatch, capsys, httpx_mock):
+    token_response(httpx_mock)
+    run(monkeypatch, capsys, "--base-url", PROD, "init")
+    before = json.loads(file_storage.read_text())
+
+    def refuse(*args, **kwargs):
+        raise ConfigError("Could not write the configuration file.")
+    monkeypatch.setattr("snaplii.config_store.write_config", refuse)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(KEY + "\n"))
+    token_response(httpx_mock, STAGING)
+    err = run_error(monkeypatch, capsys, "--base-url", STAGING, "init")
+    assert err["auth_state"] == "session_cache_failed"
+    assert json.loads(file_storage.read_text()) == before
+    assert ConfigStore(file_storage).get_cached_token(origin=PROD) == "synthetic-token"
+
+
 def test_a_login_without_a_chosen_gateway_writes_none(file_storage, monkeypatch, capsys, httpx_mock):
     token_response(httpx_mock)
     run(monkeypatch, capsys, "init")
@@ -240,6 +261,10 @@ def test_a_login_without_a_chosen_gateway_writes_none(file_storage, monkeypatch,
 
 
 def test_the_mcp_server_follows_the_saved_gateway(file_storage, monkeypatch, capsys, httpx_mock):
-    token_response(httpx_mock, STAGING)
-    run(monkeypatch, capsys, "--base-url", STAGING, "init")
-    assert server._base_url() == STAGING
+    token_response(httpx_mock, STAGING + "/payments")
+    run(monkeypatch, capsys, "--base-url", STAGING + "/payments", "init")
+    assert server._base_url() == STAGING + "/payments"
+    httpx_mock.add_response(method="GET", url=STAGING + "/payments/v2/balance", json={"balance": 7})
+    assert server._get_client().get_balance()["balance"] == 7
+    sent = httpx_mock.get_requests(url=STAGING + "/payments/v2/balance")[0]
+    assert sent.headers["Authorization"].endswith("synthetic-token")

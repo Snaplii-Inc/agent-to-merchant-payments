@@ -162,7 +162,7 @@ class ConfigStore:
             updates = dict(data)
             if ("_session_generation" in updates
                     and updates["_session_generation"] != current.get("_session_generation")):
-                for key in _SESSION_KEYS | {"agent_id", "auth_method", "country"}:
+                for key in _SESSION_KEYS | {"agent_id", "auth_method", "country", "base_url"}:
                     updates.pop(key, None)
             self._update(current, updates)
 

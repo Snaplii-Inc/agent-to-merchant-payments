@@ -98,7 +98,8 @@ def test_all_distributed_skills_have_the_current_auth_gate():
 def test_cli_login_guidance_gives_the_command_and_never_collects_the_key(relative):
     # Wrapping differs between distributions only by line breaks.
     text = " ".join((ROOT / relative).read_text().split(BEGIN)[1].split(END)[0].split())
-    assert ("your first message asking the user to act gives that exact command, with the "
+    assert ("When CLI authentication is needed, your first message asking the user to act "
+            "gives that exact command, with the "
             "installed CLI's path and the task's gateway options; do not ask for the key in "
             "the chat or in a file.") in text
     assert "`init` first asks whether sessions may be kept in an owner-only file" in text

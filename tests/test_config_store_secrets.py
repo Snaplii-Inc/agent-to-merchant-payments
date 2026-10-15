@@ -266,6 +266,21 @@ def test_stale_save_does_not_replace_new_session(tmp_path, monkeypatch):
     assert store.get("_version_check_test") == 42
 
 
+def test_stale_save_does_not_roll_back_the_gateway_saved_with_a_session(tmp_path, monkeypatch):
+    monkeypatch.setenv("SNAPLII_ALLOW_INSECURE", "1")
+    store = _store_no_keyring(tmp_path)
+    store.commit_session("token-a", 3600, agent_id="agent-a", auth_method="api_key",
+                         token_origin="https://aipayment.snaplii.com",
+                         base_url="https://aipayment.snaplii.com")
+    stale = store.load()
+    store.commit_session("token-b", 3600, agent_id="agent-b", auth_method="api_key",
+                         token_origin="https://aipay.stage.snaplii.com",
+                         base_url="https://aipay.stage.snaplii.com/payments")
+    store.save(stale)
+    assert store.get("base_url") == "https://aipay.stage.snaplii.com/payments"
+    assert store.get_cached_token(origin="https://aipay.stage.snaplii.com") == "token-b"
+
+
 def test_symlink_config_is_rejected_without_touching_target(tmp_path):
     target = tmp_path / "target.json"
     target.write_text('{"untouched":true}')
