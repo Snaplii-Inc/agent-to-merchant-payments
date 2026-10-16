@@ -75,6 +75,8 @@ def test_skills_rule_that_a_refused_card_is_rethought_and_retried(relative, rule
     # An unknown purchase outcome overrides the corrected retry, MCAP2107 included.
     assert "without `outcome: indeterminate`" in rules
     assert "needs no mention" in rules
+    if "snaplii-cli" in relative or "publish" in relative:
+        assert "one unchanged retry after `item_check_unavailable`" in text
     # An unreadable catalog is retried unchanged, not rethought.
     assert "retry the same command once shortly, without changing anything" in text
     # A missing brand name cannot send the agent round in circles.

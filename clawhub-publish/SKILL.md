@@ -385,7 +385,7 @@ snaplii purchase --item-id "CB...-CT..." --price 50
 - The CLI charges as soon as you call `purchase`; the charge counts against the per-key daily limit set in the app. Show the quote, then report what you bought.
 - **MCP runtime:** the `snaplii_*` MCP tools behave the same — `snaplii_purchase` takes only `item_id` + `price` (plus optional `voucher_option` / `cashback_option` / `specified_voucher` to match the quote).
 
-If purchase fails, **do not retry automatically**. Show the user the error and ask. The one exception is the single corrected retry after a definitive refusal (`invalid_item_id`, `amount_out_of_range`, or `MCAP2107` without `outcome: indeterminate`), described in [Error Handling](#error-handling). Common failure modes:
+If purchase fails, **do not retry automatically**. Show the user the error and ask. There are two exceptions, both described in [Error Handling](#error-handling): one corrected retry after a definitive refusal (`invalid_item_id`, `amount_out_of_range`, or `MCAP2107` without `outcome: indeterminate`), and one unchanged retry after `item_check_unavailable`. Common failure modes:
 
 - `MACP6005` → payment service error. Check `outcome` first: if it is `"indeterminate"`, follow the rule for that below and do not buy again until you know whether the first purchase went through. Otherwise the purchase was rejected; report the error, and if it keeps happening check the Snaplii Cash balance in the app. Do NOT assume it's always "insufficient balance".
 - Authentication rejection → follow [Auth](#auth), without replaying the purchase. A plain `403` may mean the key lacks `PAY_WRITE`; check the error before requesting another login.

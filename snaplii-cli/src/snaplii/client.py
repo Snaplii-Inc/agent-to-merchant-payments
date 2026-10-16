@@ -412,7 +412,9 @@ class GatewayClient:
 
         # A reply we cannot read says nothing about the ID; an empty brand says it is wrong.
         raw_cards = brand_detail(detail).get("cards")
-        if not isinstance(detail, dict) or (raw_cards is not None and not isinstance(raw_cards, list)):
+        data = detail.get("data") if isinstance(detail, dict) else None
+        if (not isinstance(detail, dict) or (data is not None and not isinstance(data, dict))
+                or (raw_cards is not None and not isinstance(raw_cards, list))):
             raise ItemCheckUnavailableError(
                 "The catalog sent an unreadable reply, so item_id %s could not be verified."
                 % item_id, item_id=item_id)
