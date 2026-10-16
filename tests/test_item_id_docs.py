@@ -72,6 +72,13 @@ def test_skills_rule_that_a_refused_card_is_rethought_and_retried(relative, rule
         assert code in rules, code
     assert "item_check_unavailable" in text and "brand_name" in text
     assert "refused again, stop and tell the user which brand and amount could not be bought" in rules
+    # An unknown purchase outcome overrides the corrected retry, MCAP2107 included.
+    assert "without `outcome: indeterminate`" in rules
+    assert "needs no mention" in rules
+    # An unreadable catalog is retried unchanged, not rethought.
+    assert "retry the same command once shortly, without changing anything" in text
+    # A missing brand name cannot send the agent round in circles.
+    assert "If `brand_name` is absent" in text or "If it is absent, rely on the brand you browsed" in text
 
 
 def test_mcp_text_tells_the_agent_to_rethink_and_retry_and_check_the_brand():
@@ -79,8 +86,16 @@ def test_mcp_text_tells_the_agent_to_rethink_and_retry_and_check_the_brand():
     assert "rethink the parameters" in instructions and "never resend the same values" in instructions
     assert "item_check_unavailable" in instructions and "brand_name" in instructions
     assert "Retry once" in instructions and "refused again, stop and tell the user" in instructions
+    assert "MCAP2107 (brand and template do not match) without outcome: indeterminate" in instructions
+    assert "outcome: indeterminate always wins" in instructions and "needs no mention" in instructions
+    assert "without changing anything" in instructions and "If brand_name is absent" in instructions
+    workflow = flat(server._AUTOPILOT_WORKFLOW)
+    assert "go back to step 2 once; if it still does, stop" in workflow and "If brand_name is absent" in workflow
+    assert "If purchase returns outcome: indeterminate, it may have gone through: never retry it" in workflow
     tools = {tool.name: tool for tool in asyncio.run(server.list_tools())}
     for name in ("snaplii_quote", "snaplii_purchase"):
         assert "retry_hint" in tools[name].description, name
         assert "retry once" in tools[name].description and "stop and tell the user" in tools[name].description, name
+    assert "without outcome: indeterminate" in tools["snaplii_purchase"].description
+    assert "overrides every retry rule" in tools["snaplii_purchase"].description
     assert "brand_name" in tools["snaplii_quote"].description

@@ -44,6 +44,13 @@ def test_every_gateway_path_the_clients_call_is_documented():
     assert used - documented == set()
 
 
+def test_item_check_rule_separates_refusals_unreadable_catalogs_and_unknown_outcomes():
+    rule = flat({r["id"]: r for r in SPEC["info"]["x-agent-rules"]}["item_check_before_send"]["rule"])
+    assert "retry once with corrected parameters" in rule
+    assert "When the catalog cannot be read, repeat the same request once" in rule
+    assert "never retried (no_blind_purchase_retry)" in rule
+
+
 def test_spec_carries_every_agent_rule():
     rules = {rule["id"]: rule for rule in SPEC["info"]["x-agent-rules"]}
     assert REQUIRED_RULES <= set(rules)

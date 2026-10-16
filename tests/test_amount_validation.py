@@ -231,10 +231,36 @@ def test_template_from_another_brand_is_rejected():
 
 
 @pytest.mark.parametrize("reply", [
+    None,
+    [],
+    "unavailable",
+    {"data": {"cardBrandId": BRAND_ID, "cards": 7}},
+    {"data": {"cardBrandId": BRAND_ID, "cards": "unavailable"}},
+    {"data": {"cardBrandId": BRAND_ID, "cards": {"cardTemplateId": "CT000000003682"}}},
+])
+def test_an_unreadable_catalog_reply_is_unverifiable_not_a_wrong_id(reply):
+    c = GatewayClient.__new__(GatewayClient)
+    c.get_card_brand_by_id = lambda brand_id: reply
+    with pytest.raises(ItemCheckUnavailableError) as ei:
+        c.validate_amount(VARIABLE_ITEM, "20")
+    assert ei.value.to_dict()["error"] == "item_check_unavailable"
+
+
+def test_mcp_purchase_sends_nothing_on_an_unreadable_catalog_reply(monkeypatch):
+    c = _cli_client()
+    c.get_card_brand_by_id = lambda brand_id: {"data": {"cardBrandId": BRAND_ID, "cards": 7}}
+    monkeypatch.setattr(server, "_get_client", lambda: c)
+    out = json.loads(asyncio.run(
+        server.call_tool("snaplii_purchase", {"item_id": VARIABLE_ITEM, "price": "20"})
+    )[0].text)
+    assert out["error"] == "item_check_unavailable" and c.purchased is False
+
+
+@pytest.mark.parametrize("reply", [
     {"data": {"cardBrandId": BRAND_ID, "cards": []}},
+    {"data": {"cardBrandId": BRAND_ID}},
     {"data": None},
     {},
-    None,
 ])
 def test_a_brand_without_the_template_is_refused(reply):
     c = GatewayClient.__new__(GatewayClient)
