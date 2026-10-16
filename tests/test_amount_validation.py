@@ -22,7 +22,8 @@ BRAND_ID = "CB0000000000264"
 VARIABLE_ITEM = f"{BRAND_ID}-CT000000003682"
 FIXED_ITEM = f"{BRAND_ID}-CT000000001977"
 
-_CATALOG = {"data": {"cardBrandId": BRAND_ID, "name": "Uber Eats", "cards": [
+# Brand detail carries the brand's name under desc, as the gateway sends it.
+_CATALOG = {"data": {"cardBrandId": BRAND_ID, "desc": {"language": "en", "name": "Uber Eats"}, "cards": [
     {"cardTemplateId": "CT000000003682",
      "faceValueRules": {"type": "VARIABLE", "priceStart": "20", "priceEnd": "500"}},
     {"cardTemplateId": "CT000000001977",
@@ -73,9 +74,18 @@ def test_a_verified_card_is_returned_with_its_brand_name():
         "item_id": VARIABLE_ITEM, "brand_name": "Uber Eats"}
 
 
+@pytest.mark.parametrize("named", [{"name": "Uber Eats"}, {"alternativeName": "Uber Eats"},
+                                   {"desc": "not an object", "name": "Uber Eats"}])
+def test_the_brand_name_falls_back_to_a_top_level_name(named):
+    c = GatewayClient.__new__(GatewayClient)
+    brand = {k: v for k, v in _CATALOG["data"].items() if k != "desc"}
+    c.get_card_brand_by_id = lambda brand_id: {"data": {**brand, **named}}
+    assert c.validate_amount(VARIABLE_ITEM, "20")["brand_name"] == "Uber Eats"
+
+
 def test_the_brand_name_is_left_out_when_the_catalog_has_none():
     c = GatewayClient.__new__(GatewayClient)
-    unnamed = {"data": {k: v for k, v in _CATALOG["data"].items() if k != "name"}}
+    unnamed = {"data": {k: v for k, v in _CATALOG["data"].items() if k != "desc"}}
     c.get_card_brand_by_id = lambda brand_id: unnamed
     assert c.validate_amount(VARIABLE_ITEM, "20") == {"item_id": VARIABLE_ITEM}
 

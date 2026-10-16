@@ -426,7 +426,9 @@ class GatewayClient:
                 "Brand %s has no card %s, so this item_id would not buy the card the user "
                 "chose." % (brand_id, template_id), item_id=item_id)
         checked = {"item_id": item_id}
-        brand_name = brand.get("name") or brand.get("alternativeName")
+        desc = brand.get("desc")
+        brand_name = ((desc.get("name") if isinstance(desc, dict) else None)
+                      or brand.get("name") or brand.get("alternativeName"))
         if isinstance(brand_name, str) and brand_name.strip():
             checked["brand_name"] = brand_name.strip()
 
