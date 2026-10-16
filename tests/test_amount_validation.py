@@ -97,13 +97,113 @@ def test_a_non_numeric_price_is_left_to_the_server_once_the_card_is_verified():
 # ── fail closed: nothing is sent unless the card is verified ─────────────────
 
 
-def _lookup_raising(error):
+_SAME = object()
+
+
+def _lookup_raising(error, tags=None, send_gift=_SAME):
+    """A client whose brand lookup raises `error`. Its HOME_PAGE brand list returns `tags`
+    and its SEND_GIFT list `send_gift` (the same by default); None cannot be read."""
     c = GatewayClient.__new__(GatewayClient)
+    c.tag_reads = 0
+    lists = {"HOME_PAGE": tags, "SEND_GIFT": tags if send_gift is _SAME else send_gift}
 
     def lookup(brand_id):
         raise error
+
+    def brand_list(channel="HOME_PAGE"):
+        c.tag_reads += 1
+        tags = lists[channel]
+        if tags is None:
+            raise GatewayConnectionError("https://gw/v2/card-brands", OSError("reset"))
+        if isinstance(tags, Exception):
+            raise tags
+        return tags
     c.get_card_brand_by_id = lookup
+    c.get_all_card_tags = brand_list
     return c
+
+
+def _tags(*brand_ids):
+    return {"data": [{"name": "Food", "cardBrands": [{"cardBrandId": b} for b in brand_ids]}]}
+
+
+@pytest.mark.parametrize("status", [500, 502, 503])
+def test_a_5xx_brand_missing_from_both_readable_brand_lists_is_a_wrong_id(status):
+    c = _lookup_raising(GatewayApiError(status, {}, "/v2/card-brands/x"), tags=_tags("CB_OTHER"))
+    with pytest.raises(ItemIdError) as ei:
+        c.validate_amount(VARIABLE_ITEM, "20")
+    assert not isinstance(ei.value, ItemCheckUnavailableError)
+    d = ei.value.to_dict()
+    assert d["error"] == "invalid_item_id" and "not in the brand lists you can browse" in d["message"]
+    assert "Rethink the parameters" in d["retry_hint"]
+    assert c.tag_reads == 2
+
+
+@pytest.mark.parametrize("empty", [{"name": "Coffee"}, {"name": "Coffee", "cardBrands": None},
+                                   {"name": "Coffee", "cardBrands": []}])
+def test_a_category_without_brands_does_not_hide_a_wrong_id(empty):
+    # An empty category leaves cardBrands out, or sends null or an empty list.
+    tags = {"data": [empty, *_tags("CB_OTHER")["data"]]}
+    with pytest.raises(ItemIdError) as ei:
+        _lookup_raising(GatewayApiError(502, {}, "/v2/card-brands/x"), tags=tags).validate_amount(VARIABLE_ITEM, "20")
+    assert not isinstance(ei.value, ItemCheckUnavailableError)
+
+
+def test_a_brand_listed_in_home_page_reads_one_list():
+    c = _lookup_raising(GatewayApiError(502, {}, "/v2/card-brands/x"), tags=_tags(BRAND_ID))
+    with pytest.raises(ItemCheckUnavailableError):
+        c.validate_amount(VARIABLE_ITEM, "20")
+    assert c.tag_reads == 1
+
+
+@pytest.mark.parametrize("send_gift", [_tags(BRAND_ID), None, {"data": [{"cardBrands": "x"}]}])
+def test_a_brand_absent_from_home_page_is_not_wrong_until_send_gift_rules_it_out(send_gift):
+    c = _lookup_raising(GatewayApiError(502, {}, "/v2/card-brands/x"),
+                        tags=_tags("CB_OTHER"), send_gift=send_gift)
+    with pytest.raises(ItemCheckUnavailableError):
+        c.validate_amount(VARIABLE_ITEM, "20")
+    assert c.tag_reads == 2
+
+
+@pytest.mark.parametrize("tags", [
+    _tags(BRAND_ID, "CB_OTHER"),                       # the brand is listed: its detail is down
+    None,                                              # the list cannot be reached
+    GatewayApiError(502, {}, "/v2/card-brands"),       # the list is down too
+    {"data": []},                                      # an empty list proves nothing
+    {"data": [{"name": "Food", "cardBrands": "x"}]},   # an unreadable list proves nothing
+    {"data": "x"},
+    [],
+    # one malformed part makes the whole list untrustworthy
+    {"data": [*_tags("CB_OTHER")["data"], {"name": "Broken", "cardBrands": "x"}]},
+    {"data": [*_tags("CB_OTHER")["data"], "not a category"]},
+    {"data": [{"cardBrands": [{"cardBrandId": "CB_OTHER"}, "not a brand"]}]},
+    {"data": [{"cardBrands": [{"cardBrandId": "CB_OTHER"}, {"cardBrandId": ["CB_X"]}]}]},
+    {"data": [{"cardBrands": [{"cardBrandId": "CB_OTHER"}, {"cardBrandId": ""}]}]},
+])
+def test_a_5xx_brand_lookup_stays_unverifiable_unless_the_lists_rule_the_brand_out(tags):
+    c = _lookup_raising(GatewayApiError(502, {}, "/v2/card-brands/x"), tags=tags)
+    with pytest.raises(ItemCheckUnavailableError):
+        c.validate_amount(VARIABLE_ITEM, "20")
+
+
+@pytest.mark.parametrize("error", [
+    GatewayConnectionError("https://gw/v2/card-brands/x", OSError("reset")),
+    GatewayApiError(429, {}, "/v2/card-brands/x"),
+    GatewayApiError(200, {"unreadable": True}, "/v2/card-brands/x"),
+])
+def test_only_a_5xx_reads_the_brand_list(error):
+    c = _lookup_raising(error, tags=_tags("CB_OTHER"))
+    with pytest.raises(ItemCheckUnavailableError):
+        c.validate_amount(VARIABLE_ITEM, "20")
+    assert c.tag_reads == 0
+
+
+def test_a_session_rejected_while_reading_the_brand_list_is_reported_as_it_is():
+    rejected = _session_rejected()
+    c = _lookup_raising(GatewayApiError(502, {}, "/v2/card-brands/x"), tags=rejected)
+    with pytest.raises(GatewayApiError) as ei:
+        c.validate_amount(VARIABLE_ITEM, "20")
+    assert ei.value is rejected
 
 
 @pytest.mark.parametrize("error", [

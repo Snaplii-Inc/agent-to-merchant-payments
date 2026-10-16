@@ -397,6 +397,13 @@ class GatewayClient:
         except GatewayApiError as e:
             if e.auth_fields or e.status_code in (401, 403):
                 raise  # a session or permission problem, not an item problem
+            if e.status_code >= 500 and self._brand_listed(brand_id) is False:
+                # After a failed detail lookup, readable brand lists that do not name
+                # the brand mean the item_id is wrong.
+                raise ItemIdError(
+                    "Brand %s is not in the brand lists you can browse (browse tags), so item_id "
+                    "%s was not copied from browse brand." % (brand_id, item_id),
+                    item_id=item_id) from e
             if e.status_code >= 500 or e.status_code == 429 or (
                     isinstance(e.body, dict) and e.body.get("unreadable")):
                 raise ItemCheckUnavailableError(
@@ -470,6 +477,42 @@ class GatewayClient:
                     item_id=item_id, amount=amount, min_amount=lo, max_amount=hi,
                 )
         return checked
+
+    def _brand_listed(self, brand_id: str):
+        """Whether the account's brand lists (both channels) name brand_id: True as soon as
+        one does, False when every list is read in full and none does, None when a list
+        cannot be read or is malformed, or all are empty."""
+        listed = set()
+        for channel in ("HOME_PAGE", "SEND_GIFT"):
+            try:
+                tags = self.get_all_card_tags(channel=channel)
+            except ConfigError:
+                raise
+            except GatewayApiError as e:
+                if e.auth_fields or e.status_code in (401, 403):
+                    raise
+                return None
+            except SnapliiCliError:
+                return None
+            rows = tags.get("data") if isinstance(tags, dict) else None
+            if not isinstance(rows, list):
+                return None
+            for tag in rows:
+                if not isinstance(tag, dict):
+                    return None
+                brands = tag.get("cardBrands")
+                if brands is None:
+                    continue  # an empty category leaves cardBrands out (or sends null)
+                if not isinstance(brands, list):
+                    return None
+                for brand in brands:
+                    bid = brand.get("cardBrandId") if isinstance(brand, dict) else None
+                    if not isinstance(bid, str) or not bid:
+                        return None
+                    listed.add(bid)
+            if brand_id in listed:
+                return True
+        return False if listed else None
 
     # ── Purchase ──────────────────────────────────────────────────
 
