@@ -244,7 +244,7 @@ this does not delete the API key in the host's secure credential store.
 3. **Install the CLI** — this skill folder does not contain the installer. If the CLI is not at `~/.snaplii-env/bin/snaplii` (Windows: `%USERPROFILE%\.snaplii-env\Scripts\snaplii.exe`), install it and the MCP server from the release this skill belongs to:
 
    ```bash
-   git clone --depth 1 --branch v0.20.0rc2 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
+   git clone --depth 1 --branch v0.20.0rc3 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
    python3 snaplii-src/scripts/install.py --source ./snaplii-src
    ```
 
