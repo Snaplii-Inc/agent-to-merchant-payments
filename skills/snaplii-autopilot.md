@@ -294,12 +294,12 @@ Confirm the order went through (read the confirmation page). Report the order nu
 ## Failure handling
 - Cloudflare / bot challenge or login wall blocks the browser → don't fight it; tell the user, hand them the redemption code, and let them finish in the app.
 - Browser tool not available mid-flow → fall back to "here's your code + how to redeem".
-- `invalid_item_id`, `amount_out_of_range`, or a gateway `MCAP2107` (brand and template do not match) → nothing was charged. Rethink the parameters as the error's `retry_hint` says: browse the brand again, copy the chosen `item_id` verbatim and an allowed amount, then quote and purchase again. Never resend the same values. `item_check_unavailable` → retry the same command shortly; if it keeps failing, stop and report it.
+- `invalid_item_id`, `amount_out_of_range`, or a gateway `MCAP2107` (brand and template do not match) → nothing was charged. Rethink the parameters as the error's `retry_hint` says: browse the brand again, copy the chosen `item_id` verbatim and an allowed amount, then quote and purchase again. Never resend the same values. Retry once: if the corrected attempt is refused again, stop and tell the user which brand and amount could not be bought. `item_check_unavailable` → retry the same command once shortly; if it fails again, stop and report it.
 - Any other purchase failure → surface the real error (don't retry automatically).
 
 ## Rules
 - Pass `item_id` exactly as `{cardBrandId}-{cardTemplateId}`, copied verbatim from `browse brand`; never one ID alone, a name, or an assembled or guessed ID.
-- When `quote` or `purchase` refuses the card or amount (`invalid_item_id`, `amount_out_of_range`, `MCAP2107`), rethink the parameters from `browse brand` and retry; never resend the same values.
+- When `quote` or `purchase` refuses the card or amount (`invalid_item_id`, `amount_out_of_range`, `MCAP2107`), rethink the parameters from `browse brand` and retry once; never resend the same values. If the corrected attempt is refused again, stop and tell the user which brand and amount could not be bought.
 - Never expose internal IDs (brandId, templateId, cardNo) to the user.
 - Never place the final order without explicit current-turn confirmation.
 - Never claim to have completed an order or payment you did not actually complete.

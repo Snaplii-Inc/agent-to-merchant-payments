@@ -71,13 +71,16 @@ def test_skills_rule_that_a_refused_card_is_rethought_and_retried(relative, rule
     for code in ("invalid_item_id", "amount_out_of_range", "MCAP2107"):
         assert code in rules, code
     assert "item_check_unavailable" in text and "brand_name" in text
+    assert "refused again, stop and tell the user which brand and amount could not be bought" in rules
 
 
 def test_mcp_text_tells_the_agent_to_rethink_and_retry_and_check_the_brand():
     instructions = flat(server._SERVER_INSTRUCTIONS)
     assert "rethink the parameters" in instructions and "never resend the same values" in instructions
     assert "item_check_unavailable" in instructions and "brand_name" in instructions
+    assert "Retry once" in instructions and "refused again, stop and tell the user" in instructions
     tools = {tool.name: tool for tool in asyncio.run(server.list_tools())}
     for name in ("snaplii_quote", "snaplii_purchase"):
         assert "retry_hint" in tools[name].description, name
+        assert "retry once" in tools[name].description and "stop and tell the user" in tools[name].description, name
     assert "brand_name" in tools["snaplii_quote"].description

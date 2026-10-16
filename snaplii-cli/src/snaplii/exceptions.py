@@ -133,13 +133,15 @@ _ITEM_RETRY_STEPS = (
     "brand --id <brand ID>; MCP: snaplii_browse_brand; find the brand ID in browse tags if "
     "unsure), copy the item_id of the chosen denomination verbatim, then quote and purchase "
     "again with that same item_id. Never edit, combine or guess IDs, and do not resend the "
-    "same item_id.")
+    "same item_id. If the corrected attempt is refused again, stop and tell the user which brand "
+    "and amount could not be bought.")
 _ITEM_RETRY_HINT = "Nothing was sent and nothing was charged. " + _ITEM_RETRY_STEPS
 
 _AMOUNT_RETRY_HINT = (
     "Nothing was sent and nothing was charged. Rethink the parameters: pick an amount this card "
     "allows (its denominations in browse brand), or another card of the brand, then quote and "
-    "purchase again.")
+    "purchase again. If the corrected attempt is refused again, stop and tell the user which "
+    "brand and amount could not be bought.")
 
 
 class ItemIdError(SnapliiCliError):
@@ -164,9 +166,9 @@ class ItemCheckUnavailableError(ItemIdError):
     def to_dict(self) -> dict:
         return {"error": "item_check_unavailable", "message": self.message,
                 "item_id": self.item_id, "outcome": "not_sent",
-                "retry_hint": ("Nothing was sent. Run the same command again in a moment. If it "
-                               "keeps failing, stop and report it. Do not change the item_id to "
-                               "get past this check.")}
+                "retry_hint": ("Nothing was sent. Run the same command once more in a moment. "
+                               "If it fails again, stop and report it. Do not change the item_id "
+                               "to get past this check.")}
 
 
 class ConfigError(SnapliiCliError):

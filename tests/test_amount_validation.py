@@ -108,7 +108,8 @@ def test_an_unreadable_catalog_refuses_with_a_retry_of_the_same_command(error):
         _lookup_raising(error).validate_amount(VARIABLE_ITEM, "20")
     d = ei.value.to_dict()
     assert d["error"] == "item_check_unavailable" and d["outcome"] == "not_sent"
-    assert "same command again" in d["retry_hint"] and "Do not change the item_id" in d["retry_hint"]
+    assert "same command once more" in d["retry_hint"] and "fails again, stop" in d["retry_hint"]
+    assert "Do not change the item_id" in d["retry_hint"]
 
 
 @pytest.mark.parametrize("error", [
@@ -255,13 +256,14 @@ def test_a_refused_card_or_amount_tells_the_agent_to_rethink_and_retry(raise_it)
     assert d["outcome"] == "not_sent"
     assert d["retry_hint"].startswith("Nothing was sent and nothing was charged.")
     assert "Rethink the parameters" in d["retry_hint"] and "quote and purchase again" in d["retry_hint"]
+    assert "refused again, stop and tell the user" in d["retry_hint"]
 
 
 def test_a_gateway_brand_template_mismatch_gets_the_same_retry_hint():
     d = GatewayApiError(200, {"rspMsgCd": "MCAP2107"}, "/v2/purchase").to_dict()
     assert d["error_code"] == "MCAP2107" and "outcome" not in d
     assert d["retry_hint"].startswith("The gateway refused this item_id, so nothing was charged.")
-    assert "Rethink the parameters" in d["retry_hint"]
+    assert "Rethink the parameters" in d["retry_hint"] and "refused again, stop and tell the user" in d["retry_hint"]
 
 
 def test_a_purchase_5xx_carrying_mcap2107_stays_indeterminate():
