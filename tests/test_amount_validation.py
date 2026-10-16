@@ -288,7 +288,7 @@ def test_a_refused_card_or_amount_tells_the_agent_to_rethink_and_retry(raise_it)
     assert "refused again, stop and tell the user" in d["retry_hint"]
 
 
-def test_a_gateway_brand_template_mismatch_gets_the_same_retry_hint():
+def test_a_gateway_item_id_rejection_gets_the_same_retry_hint():
     d = GatewayApiError(200, {"rspMsgCd": "MCAP2107"}, "/v2/purchase").to_dict()
     assert d["error_code"] == "MCAP2107" and "outcome" not in d
     assert d["retry_hint"].startswith("The gateway refused this item_id, so nothing was charged.")
@@ -303,7 +303,7 @@ def test_a_purchase_5xx_carrying_mcap2107_stays_indeterminate():
 def test_mcap2107_has_a_readable_message():
     body = {"rspMsgCd": "MCAP2107"}
     GatewayClient._attach_friendly_message(body, "MCAP2107")
-    assert "do not match" in body["friendly_message"]
+    assert "rejected this item_id" in body["friendly_message"]
 
 
 def test_cli_quote_leads_with_the_verified_card():

@@ -88,7 +88,7 @@ def test_mcp_text_tells_the_agent_to_rethink_and_retry_and_check_the_brand():
     assert "rethink the parameters" in instructions and "never resend the same values" in instructions
     assert "item_check_unavailable" in instructions and "brand_name" in instructions
     assert "Retry once" in instructions and "refused again, stop and tell the user" in instructions
-    assert "MCAP2107 (brand and template do not match) without outcome: indeterminate" in instructions
+    assert "MCAP2107 (the gateway rejected the item_id) without outcome: indeterminate" in instructions
     assert "outcome: indeterminate always wins" in instructions and "needs no mention" in instructions
     assert "without changing anything" in instructions and "If brand_name is absent" in instructions
     workflow = flat(server._AUTOPILOT_WORKFLOW)
