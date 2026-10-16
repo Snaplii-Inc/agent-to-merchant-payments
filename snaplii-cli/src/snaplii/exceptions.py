@@ -58,6 +58,8 @@ class GatewayApiError(SnapliiCliError):
                 "Do not pay again until you know whether this payment went through: look "
                 "for the new card in the gift card list (every page), or check a bill "
                 "payment in the Snaplii app. If it stays unclear, stop and report it.")
+        elif error_code == "MCAP2107":
+            out["retry_hint"] = "The gateway refused this item_id, so nothing was charged. " + _ITEM_RETRY_STEPS
         return out
 
 
@@ -108,7 +110,8 @@ class AmountValidationError(SnapliiCliError):
         super().__init__(message)
 
     def to_dict(self) -> dict:
-        out = {"error": "amount_out_of_range", "message": self.message}
+        out = {"error": "amount_out_of_range", "message": self.message,
+               "outcome": "not_sent", "retry_hint": _AMOUNT_RETRY_HINT}
         if self.item_id:
             out["item_id"] = self.item_id
         if self.amount is not None:
@@ -123,10 +126,26 @@ class AmountValidationError(SnapliiCliError):
         return out
 
 
+# Verification failures happen before any request is sent, so the agent fixes its
+# parameters and tries again instead of stopping or repeating the same values.
+_ITEM_RETRY_STEPS = (
+    "Rethink the parameters: browse the brand the user asked for again (CLI: snaplii browse "
+    "brand --id <brand ID>; MCP: snaplii_browse_brand; find the brand ID in browse tags if "
+    "unsure), copy the item_id of the chosen denomination verbatim, then quote and purchase "
+    "again with that same item_id. Never edit, combine or guess IDs, and do not resend the "
+    "same item_id.")
+_ITEM_RETRY_HINT = "Nothing was sent and nothing was charged. " + _ITEM_RETRY_STEPS
+
+_AMOUNT_RETRY_HINT = (
+    "Nothing was sent and nothing was charged. Rethink the parameters: pick an amount this card "
+    "allows (its denominations in browse brand), or another card of the brand, then quote and "
+    "purchase again.")
+
+
 class ItemIdError(SnapliiCliError):
-    """The gift-card item_id is not exactly {cardBrandId}-{cardTemplateId}, or its template
-    is not a card of that brand. Raised before quote/purchase so the order never reaches
-    the gateway with an ID that could name a different card."""
+    """The gift-card item_id is not exactly {cardBrandId}-{cardTemplateId}, its brand is not
+    in the catalog, or its template is not a card of that brand. Raised before quote/purchase
+    so the order never reaches the gateway with an ID that could name a different card."""
 
     def __init__(self, message: str, *, item_id: str = ""):
         self.message = message
@@ -134,7 +153,20 @@ class ItemIdError(SnapliiCliError):
         super().__init__(message)
 
     def to_dict(self) -> dict:
-        return {"error": "invalid_item_id", "message": self.message, "item_id": self.item_id}
+        return {"error": "invalid_item_id", "message": self.message, "item_id": self.item_id,
+                "outcome": "not_sent", "retry_hint": _ITEM_RETRY_HINT}
+
+
+class ItemCheckUnavailableError(ItemIdError):
+    """The catalog could not be read, so the item_id could not be verified and nothing
+    was sent. The ID may be right; the same request can be tried again shortly."""
+
+    def to_dict(self) -> dict:
+        return {"error": "item_check_unavailable", "message": self.message,
+                "item_id": self.item_id, "outcome": "not_sent",
+                "retry_hint": ("Nothing was sent. Run the same command again in a moment. If it "
+                               "keeps failing, stop and report it. Do not change the item_id to "
+                               "get past this check.")}
 
 
 class ConfigError(SnapliiCliError):

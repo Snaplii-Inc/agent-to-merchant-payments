@@ -270,7 +270,7 @@ Complete [Auth](#auth) first. Continue only when the matching runtime reports
 
 Follow the base flow: `browse` (region is automatic from the account — no flag) → for delivery, prefer delivery-platform cards (DoorDash, Uber Eats, Skip) → `balance` (check spendable Snaplii Cash so you know up front whether it's affordable) → `quote` (auto-applies vouchers + Snaplii Cash) → show the breakdown.
 
-**`item_id` format matters.** `quote` and `purchase` take `item_id` exactly as `{cardBrandId}-{cardTemplateId}` (e.g. `CB00000000000086-CT000000003618`). Copy it verbatim from the chosen `denominations` entry of `browse brand`; never assemble, shorten, or guess it, and pass the same value to `quote` and `purchase`.
+**`item_id` format matters.** `quote` and `purchase` take `item_id` exactly as `{cardBrandId}-{cardTemplateId}` (e.g. `CB00000000000086-CT000000003618`). Copy it verbatim from the chosen `denominations` entry of `browse brand`; never assemble, shorten, or guess it, and pass the same value to `quote` and `purchase`. Before purchasing, check that the quote's `brand_name` is the brand the user asked for.
 
 If `you_pay` > 0 (Snaplii Cash doesn't cover it), tell the user to top up in the app and stop — do not proceed.
 
@@ -294,10 +294,12 @@ Confirm the order went through (read the confirmation page). Report the order nu
 ## Failure handling
 - Cloudflare / bot challenge or login wall blocks the browser → don't fight it; tell the user, hand them the redemption code, and let them finish in the app.
 - Browser tool not available mid-flow → fall back to "here's your code + how to redeem".
-- Purchase failure → surface the real error (don't retry automatically).
+- `invalid_item_id`, `amount_out_of_range`, or a gateway `MCAP2107` (brand and template do not match) → nothing was charged. Rethink the parameters as the error's `retry_hint` says: browse the brand again, copy the chosen `item_id` verbatim and an allowed amount, then quote and purchase again. Never resend the same values. `item_check_unavailable` → retry the same command shortly; if it keeps failing, stop and report it.
+- Any other purchase failure → surface the real error (don't retry automatically).
 
 ## Rules
 - Pass `item_id` exactly as `{cardBrandId}-{cardTemplateId}`, copied verbatim from `browse brand`; never one ID alone, a name, or an assembled or guessed ID.
+- When `quote` or `purchase` refuses the card or amount (`invalid_item_id`, `amount_out_of_range`, `MCAP2107`), rethink the parameters from `browse brand` and retry; never resend the same values.
 - Never expose internal IDs (brandId, templateId, cardNo) to the user.
 - Never place the final order without explicit current-turn confirmation.
 - Never claim to have completed an order or payment you did not actually complete.

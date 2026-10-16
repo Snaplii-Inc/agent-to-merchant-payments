@@ -56,3 +56,28 @@ def test_readmes_state_the_item_id_format():
     assert FORMAT in cli_note and "verbatim" in cli_note
     package = flat((ROOT / "snaplii-cli" / "README.md").read_text())
     assert FORMAT in package and "verbatim" in package
+
+
+@pytest.mark.parametrize("relative, rules_heading", [
+    ("skills/snaplii-cli.md", "## Important Rules"),
+    ("clawhub-publish/SKILL.md", "## Important Rules"),
+    ("skills/snaplii-autopilot.md", "## Rules"),
+    ("clawhub-autopilot/SKILL.md", "## Rules"),
+])
+def test_skills_rule_that_a_refused_card_is_rethought_and_retried(relative, rules_heading):
+    text = flat((ROOT / relative).read_text())
+    rules = flat(text.split(rules_heading, 1)[1].split(" ## ", 1)[0])
+    assert "rethink the parameters" in rules and "never resend the same values" in rules.lower()
+    for code in ("invalid_item_id", "amount_out_of_range", "MCAP2107"):
+        assert code in rules, code
+    assert "item_check_unavailable" in text and "brand_name" in text
+
+
+def test_mcp_text_tells_the_agent_to_rethink_and_retry_and_check_the_brand():
+    instructions = flat(server._SERVER_INSTRUCTIONS)
+    assert "rethink the parameters" in instructions and "never resend the same values" in instructions
+    assert "item_check_unavailable" in instructions and "brand_name" in instructions
+    tools = {tool.name: tool for tool in asyncio.run(server.list_tools())}
+    for name in ("snaplii_quote", "snaplii_purchase"):
+        assert "retry_hint" in tools[name].description, name
+    assert "brand_name" in tools["snaplii_quote"].description

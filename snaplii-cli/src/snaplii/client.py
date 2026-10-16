@@ -9,6 +9,7 @@ import httpx
 from snaplii.config_store import ConfigStore
 from snaplii import auth
 from snaplii.exceptions import (
+    ItemCheckUnavailableError,
     ItemIdError,
     AmountValidationError,
     AuthError,
@@ -369,16 +370,18 @@ class GatewayClient:
 
     # ── Amount guard ──────────────────────────────────────────────
 
-    def validate_amount(self, item_id: str, price) -> None:
+    def validate_amount(self, item_id: str, price) -> dict:
         """Guard quote/purchase: `item_id` must be exactly {cardBrandId}-{cardTemplateId}
         with a template that is a card of that brand, and `price` must fall within
         that card's allowed denomination.
 
-        Raises ItemIdError for a malformed item_id or a template the resolved brand
-        does not list, and AmountValidationError when the amount is confirmed out of
-        range. Fails open (returns silently) whenever the catalog can't be resolved —
-        the server stays the final authority. This mirrors the app's UI check
-        (DrawerBottomInputAmount) which the agent path would otherwise bypass.
+        Returns {"item_id", "brand_name"} for the verified card. Raises ItemIdError for a
+        malformed item_id, a brand the catalog does not have, or a template the brand does
+        not list; ItemCheckUnavailableError when the catalog cannot be read; and
+        AmountValidationError when the amount is out of range. Nothing is sent unless the
+        card is verified, so an ID that could name a different card never reaches the
+        gateway. This mirrors the app's UI check (DrawerBottomInputAmount) which the agent
+        path would otherwise bypass.
         """
         if not isinstance(item_id, str) or not _ITEM_ID.match(item_id):
             raise ItemIdError(
@@ -389,25 +392,40 @@ class GatewayClient:
 
         try:
             detail = self.get_card_brand_by_id(brand_id)
-        except SnapliiCliError:
-            return  # catalog fetch failed — don't block; server decides
+        except ConfigError:
+            raise  # authentication or configuration state: report it as it is
+        except GatewayApiError as e:
+            if e.auth_fields or e.status_code in (401, 403):
+                raise  # a session or permission problem, not an item problem
+            if e.status_code >= 500 or e.status_code == 429 or (
+                    isinstance(e.body, dict) and e.body.get("unreadable")):
+                raise ItemCheckUnavailableError(
+                    "The catalog could not be read, so item_id %s could not be verified."
+                    % item_id, item_id=item_id) from e
+            raise ItemIdError(
+                "Brand %s was not found in the catalog, so item_id %s cannot be the card the "
+                "user chose." % (brand_id, item_id), item_id=item_id) from e
+        except SnapliiCliError as e:
+            raise ItemCheckUnavailableError(
+                "The catalog could not be reached, so item_id %s could not be verified."
+                % item_id, item_id=item_id) from e
 
-        brand = detail.get("data", detail) if isinstance(detail, dict) else {}
-        cards = brand.get("cards", []) if isinstance(brand, dict) else []
-        cards = [c for c in cards or [] if isinstance(c, dict)]
+        brand = brand_detail(detail)
+        cards = [c for c in brand.get("cards") or [] if isinstance(c, dict)]
         card = next((c for c in cards if c.get("cardTemplateId") == template_id), None)
         if not card:
-            if cards:
-                raise ItemIdError(
-                    "Template %s is not a card of brand %s, so this item_id would buy a different "
-                    "card. Copy item_id verbatim from browse brand." % (template_id, brand_id),
-                    item_id=item_id)
-            return  # the brand lists no cards to compare against — server decides
+            raise ItemIdError(
+                "Brand %s has no card %s, so this item_id would not buy the card the user "
+                "chose." % (brand_id, template_id), item_id=item_id)
+        checked = {"item_id": item_id}
+        brand_name = brand.get("name") or brand.get("alternativeName")
+        if isinstance(brand_name, str) and brand_name.strip():
+            checked["brand_name"] = brand_name.strip()
 
         try:
             amount = float(price)
         except (TypeError, ValueError):
-            return  # malformed price — let the server reject it
+            return checked  # malformed price — let the server reject it
 
         fv = card.get("faceValueRules", {}) or {}
         ftype = fv.get("type")
@@ -441,6 +459,7 @@ class GatewayClient:
                     f"For larger amounts, contact Snaplii.",
                     item_id=item_id, amount=amount, min_amount=lo, max_amount=hi,
                 )
+        return checked
 
     # ── Purchase ──────────────────────────────────────────────────
 
@@ -808,6 +827,7 @@ class GatewayClient:
         "MACP6005": "Payment service error. This may be a temporary issue — please wait a moment and retry. If it persists, check your Snaplii Cash balance in the app.",
         "MACP6006": "Service call failed. The downstream gift card service is temporarily unavailable. Please try again later.",
         "MCAP9999": "Session expired. Please run 'snaplii init' to re-authenticate.",
+        "MCAP2107": "The brand and the template in item_id do not match, so they do not name one card.",
         "MCA20004": "That payment method isn't enabled on this account. Purchases use the default Snaplii Cash (SNAPLII_CREDIT), which works — retry without specifying a payment method.",
         "MCA20101": "Invalid API key format or request parameters.",
         "MCA20102": "This API key has been deactivated.",

@@ -40,7 +40,7 @@ WHEN THE USER MENTIONS SPENDING (dining, coffee, travel, shopping, transport, gr
 
 PURCHASE: check balance (snaplii_balance) → quote (snaplii_quote) to know the exact cost → if the order isn't covered (you_pay > 0) tell them to top up and stop → snaplii_purchase → snaplii_giftcard_detail for the redemption code (use cardCode, else pin; fields under "data"). Checking balance first lets you tell them up front whether they can afford it, and the quote's you_pay is the hard safety net. Report what you bought (brand, amount, code) after.
 
-ITEM ID: snaplii_quote and snaplii_purchase take item_id exactly as {cardBrandId}-{cardTemplateId} (e.g. CB00000000000086-CT000000003618), copied verbatim from the chosen denominations entry of snaplii_browse_brand. Never pass the brand ID or template ID alone, a name, or an ID you assembled or guessed: a well-formed ID of another card buys that card.
+ITEM ID: snaplii_quote and snaplii_purchase take item_id exactly as {cardBrandId}-{cardTemplateId} (e.g. CB00000000000086-CT000000003618), copied verbatim from the chosen denominations entry of snaplii_browse_brand. Never pass the brand ID or template ID alone, a name, or an ID you assembled or guessed: a well-formed ID of another card buys that card. Both tools verify item_id against the catalog before anything is sent. On invalid_item_id, amount_out_of_range, or a gateway MCAP2107 (brand and template do not match), nothing was charged: do not stop and never resend the same values; rethink the parameters as the retry_hint says (snaplii_browse_brand again for the brand the user asked for, copy the chosen item_id verbatim and an allowed amount), then quote and purchase again. On item_check_unavailable, retry the same call shortly; if it keeps failing, stop and report it. Before snaplii_purchase, check that the quote's brand_name is the brand the user asked for.
 
 FIRST-TIME / TOP-UP (avoid friction): a brand-new user often has a $0 balance — this is normal, not an error. Never dead-end them. Warmly explain they just need to add funds in the Snaplii app (Wallet → Add Cash / Top Up), that there's nothing else to set up, and offer to re-check the balance and continue once they have. If snaplii_balance itself errors, don't block — just say you couldn't read the balance and proceed to quote, which is the real affordability check.
 
@@ -494,7 +494,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_quote",
-            description="Get a price quote before purchasing. Returns order total, voucher discount, cashback applied, and actual pay amount. ALWAYS call this before snaplii_purchase to show the user what they will pay.",
+            description="Get a price quote before purchasing. Verifies item_id against the catalog first, then returns the card's brand_name, order total, voucher discount, cashback applied, and actual pay amount. ALWAYS call this before snaplii_purchase to show the user what they will pay, and check brand_name is the brand the user asked for. If it refuses the card or amount (invalid_item_id, amount_out_of_range, MCAP2107), nothing was charged: follow retry_hint, browse again and retry with corrected parameters.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -509,7 +509,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_purchase",
-            description="Buy a gift card. Spends ONLY from prepaid Snaplii Cash, capped by the user's per-key daily limit set in the app; the charge happens as soon as this runs. Call snaplii_quote first to know the exact cost; pass the same voucher/cashback options here so the charge matches the quote. After purchase, get the redemption code via snaplii_giftcard_detail. If the call times out, loses its connection or returns a 5xx, the purchase may have gone through and is not idempotent: check snaplii_giftcard_list for the new card before calling this again.",
+            description="Buy a gift card. Spends ONLY from prepaid Snaplii Cash, capped by the user's per-key daily limit set in the app; the charge happens as soon as this runs. Call snaplii_quote first to know the exact cost; pass the same voucher/cashback options here so the charge matches the quote. After purchase, get the redemption code via snaplii_giftcard_detail. invalid_item_id, amount_out_of_range or MCAP2107 means nothing was charged: follow retry_hint and retry with corrected parameters, never the same values. If the call times out, loses its connection or returns a 5xx, the purchase may have gone through and is not idempotent: check snaplii_giftcard_list for the new card before calling this again.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -980,9 +980,9 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
         elif name == "snaplii_quote":
             client = _get_client()
-            # Reject amounts outside the brand's denomination range before
-            # quoting. The app UI blocks this; the agent must too.
-            client.validate_amount(arguments["item_id"], arguments["price"])
+            # Verify the card and reject amounts outside its denomination range
+            # before quoting. The app UI blocks this; the agent must too.
+            checked = client.validate_amount(arguments["item_id"], arguments["price"])
             result = client.quote_order(
                 item_id=arguments["item_id"],
                 price=arguments["price"],
@@ -990,11 +990,13 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 cashback_option=arguments.get("cashback_option", "USE"),
                 specified_voucher=arguments.get("specified_voucher"),
             )
-            # Format clean summary
-            summary = {
+            # Format clean summary, led by the verified card so the agent can check
+            # it is the brand the user asked for before purchasing.
+            summary = dict(checked or {})
+            summary.update({
                 "order_amount": result.get("orderAmount"),
                 "you_pay": result.get("primaryPayAmount"),
-            }
+            })
             if result.get("voucherAmount"):
                 summary["voucher"] = {
                     "name": result.get("voucherName"),
@@ -1249,8 +1251,8 @@ Shared Meta Muse instructions (apply only in Muse):
 
 2. Pick the card: call snaplii_browse_tags. The account country is already known from the connection and comes back as account_country — do NOT ask the user for a region. For delivery (food/coffee), prefer delivery-platform cards (DoorDash, Uber Eats, Skip) over the restaurant's own card. Never show brandId/templateId to the user.
 3. Check balance: call snaplii_balance (it labels the currency from the stored account country — CA=CAD, US=USD, never assume CAD) so you know up front whether the order is affordable. (Never guess the balance — read it from this tool; if it fails, say so and rely on the quote's you_pay.)
-4. Quote: call snaplii_quote and show the breakdown (voucher + Snaplii Cash + you_pay). If you_pay > 0, tell the user to top up in the app and stop.
-5. Buy: call snaplii_purchase with the exact item_id you quoted ({{cardBrandId}}-{{cardTemplateId}}, copied verbatim from snaplii_browse_brand) and the price. Then snaplii_giftcard_list -> find the new card -> snaplii_giftcard_detail for the redemption code. Report brand, amount, and code.
+4. Quote: call snaplii_quote and show the breakdown (voucher + Snaplii Cash + you_pay). Check brand_name is the brand the user asked for; if not, go back to step 2. If you_pay > 0, tell the user to top up in the app and stop.
+5. Buy: call snaplii_purchase with the exact item_id you quoted ({{cardBrandId}}-{{cardTemplateId}}, copied verbatim from snaplii_browse_brand) and the price. If quote or purchase refuses the card or amount (invalid_item_id, amount_out_of_range, MCAP2107), nothing was charged: follow retry_hint, go back to step 2 and retry with corrected parameters, never the same values. Then snaplii_giftcard_list -> find the new card -> snaplii_giftcard_detail for the redemption code. Report brand, amount, and code.
 6. Redeem + order (if you have a browser-control tool): open the merchant/delivery site, go to Payment -> Add Gift Card, enter the code, build the order (search item, add to cart). For any delivery/shipping order, EXPLICITLY confirm the delivery address with the user before continuing — read back the exact address and ask "deliver to <address>?"; never assume a saved/default address. Then set the tip.
 7. CONFIRM (final order): show the full order summary (items, delivery address, tip, total) and STOP. Only click the final Place Order / pay button after the user's explicit "yes".
 

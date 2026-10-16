@@ -343,6 +343,7 @@ snaplii quote --item-id "CB...-CT..." --price 50
 `--item-id` is the exact `{cardBrandId}-{cardTemplateId}` string copied verbatim from Step 2; `purchase` must use the same value.
 
 This returns the price breakdown:
+- `brand_name` — the brand the verified `item_id` belongs to (when the catalog names it)
 - `order_amount` — original price
 - `you_pay` — actual amount after discounts
 - `voucher` — voucher name and discount (if any)
@@ -377,6 +378,7 @@ snaplii purchase --item-id "CB...-CT..." --price 50
 ```
 
 - `--item-id` is the exact `{cardBrandId}-{cardTemplateId}` string you quoted, copied verbatim from Step 2. A different well-formed ID buys a different card.
+- Before you run `purchase`, check that the quote's `brand_name` is the brand the user asked for. If it names a different brand, do not purchase: browse the user's brand again and quote the right `item_id`.
 - `--price` is the dollar amount.
 - If you quoted with `--voucher`, `--cashback` or `--voucher-id`, pass the same values to `purchase`; otherwise it uses the defaults (`BEST_FIT`, `USE`) and may charge a different amount than the quote.
 - Payment is always Snaplii Cash (`SNAPLII_CREDIT`) — there's no payment-method/token to pass.
@@ -466,6 +468,8 @@ This skill handles real financial operations. These safety rules always apply:
 - `command not found` → see PATH handling above.
 - `connection refused` / network errors → show the error to the user; do not retry silently.
 - Authentication rejection → follow [Auth](#auth). A plain `403` may be a scope error, not an expired session.
+- `invalid_item_id`, `amount_out_of_range`, or a gateway `MCAP2107` (brand and template do not match) on `quote` or `purchase` → nothing was charged. Do not stop and do not resend the same values: rethink the parameters as the error's `retry_hint` says (browse the brand the user asked for again, copy the chosen denomination's `item_id` verbatim and an amount it allows), then quote and purchase again.
+- `item_check_unavailable` → the catalog could not be read, so nothing was sent. Run the same command again shortly without changing the `item_id`; if it keeps failing, stop and report it.
 - `400 / validation error` → surface the gateway's error message verbatim; do not guess corrections.
 - If a flag listed in the Command Reference below appears unsupported by the installed CLI version, run `snaplii help` or `snaplii <subcommand> --help` to discover the current syntax instead of guessing.
 
@@ -496,7 +500,8 @@ This skill handles real financial operations. These safety rules always apply:
 
 ## Important Rules
 
-- **ALWAYS pass a gift card's `item_id` exactly as `{cardBrandId}-{cardTemplateId}`, copied verbatim from `browse brand`.** It is the brand ID, one hyphen, then the template ID of the card being bought, for example `CB00000000000086-CT000000003618`. Take it from the `item_id` of the chosen entry in `denominations` (or from `smart cashback`) and pass the same value to `quote` and `purchase`. Never pass the brand ID or the template ID alone, a brand or card name, a template ID under another brand, or an ID you assembled or guessed. `quote` and `purchase` refuse a malformed ID or a template from another brand (`invalid_item_id`), but a well-formed ID of another card buys that card.
+- **ALWAYS pass a gift card's `item_id` exactly as `{cardBrandId}-{cardTemplateId}`, copied verbatim from `browse brand`.** It is the brand ID, one hyphen, then the template ID of the card being bought, for example `CB00000000000086-CT000000003618`. Take it from the `item_id` of the chosen entry in `denominations` (or from `smart cashback`) and pass the same value to `quote` and `purchase`. Never pass the brand ID or the template ID alone, a brand or card name, a template ID under another brand, or an ID you assembled or guessed. `quote` and `purchase` verify the ID against the catalog before anything is sent and refuse a malformed ID, a brand the catalog does not have, or a template from another brand (`invalid_item_id`), but a well-formed ID of another card buys that card: check the quote's `brand_name` before purchasing.
+- **When the card or amount is refused, rethink the parameters and retry.** After `invalid_item_id`, `amount_out_of_range`, or a gateway `MCAP2107`, nothing was charged. Never resend the same values and never edit, combine, or guess IDs to get past the check: browse the brand the user asked for again, copy the chosen denomination's `item_id` verbatim and an amount it allows, then quote and purchase again. After `item_check_unavailable`, retry the same command shortly; if it keeps failing, stop and report it.
 - **NEVER show sensitive card information (card code, PIN, barcode URL) without explicit user consent.**
 - **NEVER print a freshly-created API key without explicit user consent and a warning that it's shown only once.**
 - **NEVER run `transfer finish` unless the user explicitly asked to send immediately** — the ~5-minute undo window is the user's protection; don't shorten it on your own.

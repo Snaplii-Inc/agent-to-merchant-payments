@@ -12,14 +12,17 @@ import server
 from snaplii.client import GatewayClient
 from snaplii.commands.purchase import purchase_cmd
 from snaplii.commands.quote import quote_cmd
-from snaplii.exceptions import AmountValidationError, ItemIdError
+from snaplii.exceptions import (
+    AmountValidationError, AuthError, GatewayApiError, GatewayConnectionError,
+    ItemCheckUnavailableError, ItemIdError,
+)
 
 # Uber Eats-shaped catalog: a VARIABLE $20–$500 template + a FIXED $10 template.
 BRAND_ID = "CB0000000000264"
 VARIABLE_ITEM = f"{BRAND_ID}-CT000000003682"
 FIXED_ITEM = f"{BRAND_ID}-CT000000001977"
 
-_CATALOG = {"data": {"cardBrandId": BRAND_ID, "cards": [
+_CATALOG = {"data": {"cardBrandId": BRAND_ID, "name": "Uber Eats", "cards": [
     {"cardTemplateId": "CT000000003682",
      "faceValueRules": {"type": "VARIABLE", "priceStart": "20", "priceEnd": "500"}},
     {"cardTemplateId": "CT000000001977",
@@ -65,22 +68,77 @@ def test_fixed_mismatch_blocked():
     assert ei.value.to_dict()["fixed_amount"] == 10.0
 
 
-# ── fail-open: never block when the catalog can't be resolved ────────────────
+def test_a_verified_card_is_returned_with_its_brand_name():
+    assert _client().validate_amount(VARIABLE_ITEM, "20") == {
+        "item_id": VARIABLE_ITEM, "brand_name": "Uber Eats"}
 
 
-def test_fails_open_on_a_non_numeric_price():
-    _client().validate_amount(VARIABLE_ITEM, "abc")  # no raise — server stays authority
+def test_the_brand_name_is_left_out_when_the_catalog_has_none():
+    c = GatewayClient.__new__(GatewayClient)
+    unnamed = {"data": {k: v for k, v in _CATALOG["data"].items() if k != "name"}}
+    c.get_card_brand_by_id = lambda brand_id: unnamed
+    assert c.validate_amount(VARIABLE_ITEM, "20") == {"item_id": VARIABLE_ITEM}
 
 
-def test_fails_open_when_the_catalog_cannot_be_read():
-    from snaplii.exceptions import GatewayApiError
+def test_a_non_numeric_price_is_left_to_the_server_once_the_card_is_verified():
+    assert _client().validate_amount(VARIABLE_ITEM, "abc")["item_id"] == VARIABLE_ITEM
 
+
+# ── fail closed: nothing is sent unless the card is verified ─────────────────
+
+
+def _lookup_raising(error):
     c = GatewayClient.__new__(GatewayClient)
 
-    def unreachable(brand_id):
-        raise GatewayApiError(502, {}, "/v2/card-brands/" + brand_id)
-    c.get_card_brand_by_id = unreachable
-    c.validate_amount(VARIABLE_ITEM, "10")  # no raise — the gateway decides
+    def lookup(brand_id):
+        raise error
+    c.get_card_brand_by_id = lookup
+    return c
+
+
+@pytest.mark.parametrize("error", [
+    GatewayApiError(502, {}, "/v2/card-brands/x"),
+    GatewayApiError(500, {"rspMsgCd": "MACP6006"}, "/v2/card-brands/x"),
+    GatewayApiError(429, {}, "/v2/card-brands/x"),
+    GatewayApiError(200, {"unreadable": True}, "/v2/card-brands/x"),
+    GatewayConnectionError("https://gw/v2/card-brands/x", OSError("reset")),
+])
+def test_an_unreadable_catalog_refuses_with_a_retry_of_the_same_command(error):
+    with pytest.raises(ItemCheckUnavailableError) as ei:
+        _lookup_raising(error).validate_amount(VARIABLE_ITEM, "20")
+    d = ei.value.to_dict()
+    assert d["error"] == "item_check_unavailable" and d["outcome"] == "not_sent"
+    assert "same command again" in d["retry_hint"] and "Do not change the item_id" in d["retry_hint"]
+
+
+@pytest.mark.parametrize("error", [
+    GatewayApiError(404, {}, "/v2/card-brands/x"),
+    GatewayApiError(400, {"rspMsgCd": "MCAP2001", "rspMsgInf": "brand not found"}, "/v2/card-brands/x"),
+])
+def test_a_brand_the_catalog_does_not_have_is_an_invalid_item_id(error):
+    with pytest.raises(ItemIdError) as ei:
+        _lookup_raising(error).validate_amount(VARIABLE_ITEM, "20")
+    assert not isinstance(ei.value, ItemCheckUnavailableError)
+    d = ei.value.to_dict()
+    assert d["error"] == "invalid_item_id" and BRAND_ID in d["message"]
+
+
+def _session_rejected():
+    e = GatewayApiError(401, {"friendly_message": "Session rejected."}, "/v2/card-brands/x")
+    e.auth_fields = {"auth_state": "reauth_required", "reason_code": "session_rejected"}
+    return e
+
+
+@pytest.mark.parametrize("error", [
+    _session_rejected(),
+    GatewayApiError(403, {}, "/v2/card-brands/x"),
+    AuthError("Authentication is required.", auth_state="auth_required",
+              reason_code="no_session", next_action={}),
+])
+def test_an_authentication_or_permission_problem_is_reported_as_it_is(error):
+    with pytest.raises(type(error)) as ei:
+        _lookup_raising(error).validate_amount(VARIABLE_ITEM, "20")
+    assert ei.value is error
 
 
 # ── the guard is actually wired into the CLI + MCP entry points ──────────────
@@ -171,10 +229,91 @@ def test_template_from_another_brand_is_rejected():
     assert d["error"] == "invalid_item_id" and "CT999999999999" in d["message"] and BRAND_ID in d["message"]
 
 
-def test_a_brand_without_listed_cards_fails_open():
+@pytest.mark.parametrize("reply", [
+    {"data": {"cardBrandId": BRAND_ID, "cards": []}},
+    {"data": None},
+    {},
+    None,
+])
+def test_a_brand_without_the_template_is_refused(reply):
     c = GatewayClient.__new__(GatewayClient)
-    c.get_card_brand_by_id = lambda brand_id: {"data": {"cardBrandId": BRAND_ID, "cards": []}}
-    c.validate_amount(f"{BRAND_ID}-CT999999999999", "10")  # nothing to compare against: the gateway decides
+    c.get_card_brand_by_id = lambda brand_id: reply
+    with pytest.raises(ItemIdError) as ei:
+        c.validate_amount(f"{BRAND_ID}-CT999999999999", "10")
+    assert ei.value.to_dict()["error"] == "invalid_item_id"
+
+
+@pytest.mark.parametrize("raise_it", [
+    lambda: _client().validate_amount("CT000000003682", "20"),
+    lambda: _client().validate_amount(f"{BRAND_ID}-CT999999999999", "20"),
+    lambda: _client().validate_amount(VARIABLE_ITEM, "10"),
+])
+def test_a_refused_card_or_amount_tells_the_agent_to_rethink_and_retry(raise_it):
+    with pytest.raises((ItemIdError, AmountValidationError)) as ei:
+        raise_it()
+    d = ei.value.to_dict()
+    assert d["outcome"] == "not_sent"
+    assert d["retry_hint"].startswith("Nothing was sent and nothing was charged.")
+    assert "Rethink the parameters" in d["retry_hint"] and "quote and purchase again" in d["retry_hint"]
+
+
+def test_a_gateway_brand_template_mismatch_gets_the_same_retry_hint():
+    d = GatewayApiError(200, {"rspMsgCd": "MCAP2107"}, "/v2/purchase").to_dict()
+    assert d["error_code"] == "MCAP2107" and "outcome" not in d
+    assert d["retry_hint"].startswith("The gateway refused this item_id, so nothing was charged.")
+    assert "Rethink the parameters" in d["retry_hint"]
+
+
+def test_a_purchase_5xx_carrying_mcap2107_stays_indeterminate():
+    d = GatewayApiError(502, {"rspMsgCd": "MCAP2107"}, "/v2/purchase").to_dict()
+    assert d["outcome"] == "indeterminate" and "Rethink" not in d["retry_hint"]
+
+
+def test_mcap2107_has_a_readable_message():
+    body = {"rspMsgCd": "MCAP2107"}
+    GatewayClient._attach_friendly_message(body, "MCAP2107")
+    assert "do not match" in body["friendly_message"]
+
+
+def test_cli_quote_leads_with_the_verified_card():
+    c = _cli_client()
+    res = CliRunner().invoke(quote_cmd, ["--item-id", VARIABLE_ITEM, "--price", "20"],
+                             obj={"client": c, "config_store": _FakeStore()})
+    out = json.loads(res.output)
+    assert list(out)[:2] == ["item_id", "brand_name"]
+    assert out["item_id"] == VARIABLE_ITEM and out["brand_name"] == "Uber Eats"
+
+
+def test_mcp_quote_leads_with_the_verified_card(monkeypatch):
+    c = _cli_client()
+    monkeypatch.setattr(server, "_get_client", lambda: c)
+    out = json.loads(asyncio.run(
+        server.call_tool("snaplii_quote", {"item_id": VARIABLE_ITEM, "price": "20"})
+    )[0].text)
+    assert out["brand_name"] == "Uber Eats" and out["item_id"] == VARIABLE_ITEM
+
+
+def test_mcp_purchase_sends_nothing_when_the_catalog_cannot_be_read(monkeypatch):
+    c = _cli_client()
+
+    def unreachable(brand_id):
+        raise GatewayConnectionError("https://gw/v2/card-brands/" + brand_id, OSError("reset"))
+    c.get_card_brand_by_id = unreachable
+    monkeypatch.setattr(server, "_get_client", lambda: c)
+    out = json.loads(asyncio.run(
+        server.call_tool("snaplii_purchase", {"item_id": VARIABLE_ITEM, "price": "20"})
+    )[0].text)
+    assert out["error"] == "item_check_unavailable" and out["outcome"] == "not_sent"
+    assert c.purchased is False
+
+
+def test_cli_purchase_sends_nothing_when_the_brand_is_unknown():
+    c = _cli_client()
+    c.get_card_brand_by_id = lambda brand_id: {"data": None}
+    res = CliRunner().invoke(purchase_cmd, ["--item-id", VARIABLE_ITEM, "--price", "20"],
+                             obj={"client": c, "config_store": _FakeStore()}, catch_exceptions=True)
+    assert isinstance(res.exception, ItemIdError)
+    assert c.purchased is False
 
 
 def test_mcp_purchase_blocks_a_mismatched_item_id(monkeypatch):

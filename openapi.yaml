@@ -25,6 +25,9 @@ info:
   - id: item_id_format
     applies_to: [quoteOrder, purchaseOrder]
     rule: 'A gift-card itemId is exactly {cardBrandId}-{cardTemplateId}: the brand''s cardBrandId, one hyphen, the chosen template''s cardTemplateId, both copied verbatim from GET /v2/card-brands/{card_brand_id}.'
+  - id: item_check_before_send
+    applies_to: [getCardBrand, quoteOrder, purchaseOrder]
+    rule: 'Before quoteOrder or purchaseOrder, read the brand with getCardBrand and confirm the itemId template is one of its cards and the price fits. Send nothing when the brand is missing, the template is not listed, or the catalog cannot be read. After such a refusal or an MCAP2107 rejection (brand and template do not match), nothing was charged: choose the card again from the catalog and retry with corrected parameters, never the same values.'
   - id: denomination_check
     applies_to: [getCardBrand, quoteOrder, purchaseOrder]
     rule: 'The price must match the template: FIXED accepts exactly priceStart, VARIABLE accepts priceStart to priceEnd.'

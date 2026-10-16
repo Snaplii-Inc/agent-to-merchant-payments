@@ -21,9 +21,9 @@ def quote_cmd(ctx, item_id, price, voucher, cashback, voucher_id):
     and the actual amount you'll pay.
     """
     client: GatewayClient = ctx.obj["client"]
-    # Reject amounts outside the brand's denomination range before quoting,
-    # as the app does.
-    client.validate_amount(item_id, price)
+    # Verify the card and reject amounts outside its denomination range before
+    # quoting, as the app does.
+    checked = client.validate_amount(item_id, price)
     resp = client.quote_order(
         item_id=item_id,
         price=price,
@@ -32,11 +32,13 @@ def quote_cmd(ctx, item_id, price, voucher, cashback, voucher_id):
         specified_voucher=voucher_id,
     )
 
-    # Format a clean summary
-    summary = {
+    # Format a clean summary. The verified card leads it, so the agent can check it is
+    # the brand the user asked for before purchasing.
+    summary = dict(checked or {})
+    summary.update({
         "order_amount": resp.get("orderAmount"),
         "you_pay": resp.get("primaryPayAmount"),
-    }
+    })
 
     voucher_amount = resp.get("voucherAmount")
     if voucher_amount:
