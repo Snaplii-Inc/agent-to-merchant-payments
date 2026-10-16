@@ -295,9 +295,23 @@ def test_a_gateway_item_id_rejection_gets_the_same_retry_hint():
     assert "Rethink the parameters" in d["retry_hint"] and "refused again, stop and tell the user" in d["retry_hint"]
 
 
-def test_a_purchase_5xx_carrying_mcap2107_stays_indeterminate():
-    d = GatewayApiError(502, {"rspMsgCd": "MCAP2107"}, "/v2/purchase").to_dict()
+@pytest.mark.parametrize("status", [500, 502, 503])
+def test_a_purchase_5xx_carrying_mcap2107_is_a_definite_rejection(status):
+    # MCAP2107 rejects the item_id itself, so nothing was bought at any status.
+    d = GatewayApiError(status, {"rspMsgCd": "MCAP2107"}, "/v2/purchase").to_dict()
+    assert "outcome" not in d
+    assert d["retry_hint"].startswith("The gateway refused this item_id, so nothing was charged.")
+
+
+@pytest.mark.parametrize("body", [{"rspMsgCd": "MACP6006"}, {}, {"unreadable": True}])
+def test_any_other_purchase_5xx_stays_indeterminate(body):
+    d = GatewayApiError(502, body, "/v2/purchase").to_dict()
     assert d["outcome"] == "indeterminate" and "Rethink" not in d["retry_hint"]
+
+
+def test_an_unreadable_purchase_reply_is_indeterminate_even_when_it_names_mcap2107():
+    d = GatewayApiError(200, {"rspMsgCd": "MCAP2107", "unreadable": True}, "/v2/purchase").to_dict()
+    assert d["outcome"] == "indeterminate"
 
 
 def test_mcap2107_has_a_readable_message():

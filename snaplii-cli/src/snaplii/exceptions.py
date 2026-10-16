@@ -18,9 +18,10 @@ class GatewayApiError(SnapliiCliError):
         unreadable = self.body.get("unreadable") is True
         # /v2/purchase is not idempotent: a 5xx, even one carrying an upstream code,
         # or an unreadable reply leaves the payment's outcome unknown. A business
-        # rejection is a 4xx and stays a plain error.
+        # rejection is a 4xx and stays a plain error, and so does MCAP2107 at any
+        # status: the gateway rejected the item_id, so nothing was bought.
         payment_unknown = self.endpoint == "/v2/purchase" and (
-            unreadable or self.status_code >= 500)
+            unreadable or (self.status_code >= 500 and error_code != "MCAP2107"))
         if payment_unknown:
             friendly = "The gateway did not confirm this payment, so it may have completed."
         if not friendly:

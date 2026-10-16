@@ -122,7 +122,7 @@ Show brand name, face value, and exact dollar amount, then call `snaplii_purchas
 
 If purchase fails, do not retry automatically. Common errors:
 - `MACP6005` → payment service error, may be temporary
-- Timeout, lost connection or `5xx` → the purchase may have gone through and is not idempotent: check `snaplii_giftcard_list` for the new card before buying again.
+- Timeout, lost connection or a `5xx` other than `MCAP2107` (a rejected item ID, nothing bought) → the purchase may have gone through and is not idempotent: check `snaplii_giftcard_list` for the new card before buying again.
 - Authentication rejection → follow Step 6, without repeating the purchase. A plain `403` may mean the key lacks `PAY_WRITE`; check the error before reconnecting.
 
 ### Step 5: P2P Transfer
