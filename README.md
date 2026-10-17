@@ -1,199 +1,150 @@
 # Agent-to-Merchant Payments by Snaplii
 
-> A safer, smarter payment layer for AI agents.
+> A payment layer for AI agents: pay in the real world without handing the agent a credit card.
 
-AI agents can search, decide, and take action.
-Snaplii gives them a way to **pay in the real world — without giving them direct access to your credit card.**
+Snaplii gives an AI agent a prepaid, scoped, revocable payment account. The agent spends only the **Snaplii Cash** the user set aside, within a per-key spending limit the user chose, and never sees the user's card or bank credentials. It ships as an **Agent Skill**, an **MCP server**, and a **Python CLI**, so it works with any agent that can read a `SKILL.md`, call MCP tools, or run a command.
 
-Snaplii is a **dedicated, tokenized payment layer** for AI agents, designed to separate agent spending from users' underlying financial credentials.
+---
 
-With Snaplii, agents can access authorized payment capabilities while users keep control of their funds.
+## For AI agents: start here
 
-> AI Agent → Snaplii → Merchant
+### Choose how to connect
 
-And because Snaplii is built for commerce, agents can also unlock additional payment value — including 5–10% discounts at supported merchants and support for **multiple currencies including CAD, USD, and RMB**.
+| You are | Install |
+|---|---|
+| An agent that reads `SKILL.md` | The skills plus the CLI or MCP server: [Install from a release](#install-from-a-release) |
+| An MCP client that does not load skill folders | The MCP server: [MCP Server](#mcp-server-claude-openclaw-cursor-instinct) |
+| A terminal or a script, without an agent | The CLI: [Quick Start](#quick-start) |
 
-Today, Snaplii supports payment use cases across Canada and the US, including merchant purchases, bill payments, and peer-to-peer transfers.
+### Install from a release
 
-## Why AI Agents Need a New Payment Layer
+Install the skills, the CLI and the MCP server from one release tag, so all three come from the same commit. Find your agent in this table, then run the commands below with its values; if your agent is not in the table or Node.js is missing, replace the second command with **Manual install** below.
 
-AI agents are increasingly capable of:
-* discovering products and services
-* comparing options
-* navigating merchant websites
-* Select the product or service
-* filling out forms
-* completing checkout flows
-* taking actions on behalf of users
-
-But payment remains a critical gap.
-
-Giving an agent direct access to a user's credit card, debit card, or bank account creates unnecessary exposure of sensitive financial credentials.
-The question is no longer:
-> Can AI agents shop?
-
-It's:
-How can AI agents pay safely?
-> Snaplii is built to solve that problem.
-
-## Three Reasons to Pay Through Snaplii
-1. Get More Value From Every Payment
-
-AI agents shouldn't just make transactions possible.
-
-They should make them **better**.
-
-At supported merchants, Snaplii can provide 5–10% additional discounts when users pay through Snaplii.
-
-This means an agent can potentially:
-
-> Find the right product → choose the right payment method → complete the purchase at a better price.
-
-The payment layer becomes part of the shopping decision.
-
-2. Pay Across Multiple Currencies
-
-The real world isn't denominated in a single currency.
-
-Snaplii supports payment experiences across multiple currencies, including:
-* 🇨🇦 CAD
-* 🇺🇸 USD
-* 🇨🇳 RMB
-* 🪙 USDT/USDC
-* and more
-This allows AI agents to operate across different markets and payment contexts without forcing users into a single currency.
-
-**One payment layer. Multiple currencies.**
-
-3. Keep Your Credit Card Away From the Agent
-
-This is one of the core principles behind Snaplii.
-> Don't give your AI agent your credit card. Give it a payment account with controlled authorization.
-
-Snaplii provides a dedicated payment environment between the user and the agent.
-
-The agent doesn't need to see or store the user's underlying card credentials.
-
-Instead, it interacts with the payment capabilities that Snaplii makes available.
-
-This creates an additional security boundary between:
-
-**User's financial credentials**
-and
-**AI agent actions.**
-
-Combined with tokenized payment infrastructure and scoped authorization, this creates a more controlled way for AI agents to spend on behalf of users.
-
-## Availability by country
-
-| Account country | Merchant purchases| Bill payments | P2P transfers |
-|---|---|---|---|
-| Canada (CA / CAD) | Available | Available for supported billers | Available to other Snaplii users |
-| United States (US / USD) | Available | Not available | Available to other Snaplii users |
-
-The underlying payment capabilities can be accessed through APIs, MCP, CLI tools, and agent skills.
-
-## How authorization works
-
-1. **Set aside funds.** Add the amount you want to make available as Snaplii Cash in the app.
-2. **Define access.** Create an API key with the permissions and spending limits needed for the agent's task.
-3. **Let the agent execute within that boundary.** Agent payments draw from Snaplii Cash, without exposing your bank or card credentials. You can revoke the key in the app.
-
-Gift-card purchases can help users save through eligible offers and cashback. Available brands and savings vary by country, brand, and current quote; merchant offers can be combined only where their terms allow.
-
-## Completing a Merchant Purchase
-
-For merchant purchases, Snaplii provides the payment information required for the transaction while keeping the underlying payment credentials separated from the AI model.
-
-An agent can:
-
-* Understand the user's intent
-* Navigate the merchant website
-S* elect the product or service
-* Reach checkout
-* Use Snaplii's authorized payment capability
-* Complete the transaction
-
-When the agent has the required browser capabilities, account access, and user authorization, Snaplii can become part of the full shopping-to-payment workflow.
-
-When those conditions are not available, Snaplii can instead provide the agent with the payment or exchange information needed for the user to complete the next step.
-
-## Built for Agentic Commerce
-
-Traditional payments were designed for humans holding cards and entering credentials.
-
-Agentic commerce introduces a different model:
-> Intent → Agent → Authorization → Payment → Merchant
-
-The payment layer needs to understand not only who is paying, but also:
-* which agent is acting
-* what the agent is authorized to do
-* how much it can spend
-* which payment method it can access
-* whether the transaction can be reused
-* when authorization should expire
-
-Snaplii is building this infrastructure for the emerging AI agent economy.
-
-## Works With Any LLM
-
-Snaplii is **model-agnostic**. It works with any AI agent or LLM platform:
-
-| Integration | How | Best for |
+| Agent | `-a` | `--host` |
 |---|---|---|
-| **REST API** | Direct HTTP calls to `aipayment.snaplii.com/v2/*` | Any language, any framework |
-| **Python CLI** | `pip install snaplii-cli` | Terminal agents, scripts, automation |
-| **MCP Server** | Model Context Protocol (stdio) | Claude Desktop, OpenClaw, Cursor, VS Code |
-| **OpenClaw Skill** | `clawhub install snaplii-a2m-payment` | OpenClaw agents |
+| Claude Code | `claude-code` | `claude-code` |
+| Codex | `codex` | `codex` |
+| Cursor | `cursor` | `cursor` |
+| OpenClaw | `openclaw` | `openclaw` |
+| Gemini CLI | `gemini-cli` | leave it out |
+| GitHub Copilot | `github-copilot` | leave it out |
+| Muse | skip this command, see **Muse** below | `muse` |
+| Instinct | skip both this command and **Manual install**; Instinct runs Snaplii through the MCP server, as the **Instinct** block under [MCP Server](#mcp-server-claude-openclaw-cursor-instinct) describes | `instinct` |
+| Any other agent | skip this command, use **Manual install** | leave it out; add `--cli-only` unless you know how your agent registers an MCP server |
 
-Whether you're building with **Claude, ChatGPT, GPT-4, Gemini, LLaMA, Mistral, OpenClaw**, or any other model — if it can make HTTP calls or run a CLI, it can use Snaplii.
+- `--yes` and `-y` skip prompts a shell tool cannot answer interactively. Always pair `-y` with `-a`, or the skills go to every agent the installer finds.
+- Where the table says leave it out, drop both `--host` and its value. Add `--cli-only` to the third command if your agent will not use MCP. Muse gets the CLI only by itself; Instinct needs MCP and refuses `--cli-only`.
+
+```bash
+git clone --depth 1 --branch v0.20.0 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
+npx --yes skills add ./snaplii-src -g -a claude-code -y
+python3 snaplii-src/scripts/install.py --host claude-code --source ./snaplii-src
+```
+
+- On Windows, use `py -3` in place of `python3`, and run **Manual install** in Git Bash. The skills are copied and the packages built into `~/.snaplii-env`, so you can delete `snaplii-src` afterwards.
+- To install again or update, run the three commands from a directory with no `snaplii-src` folder.
+
+**Manual install.** Use it only when the second command cannot run. Set `SKILLS_DIR` to your agent's user-wide skills directory, or its project skills directory if it has none. The commands copy both skills, each with `SKILL.md` at its top level, and update the files in place when repeated.
+
+```bash
+: "${SKILLS_DIR:?set SKILLS_DIR to your skills directory}"
+mkdir -p "$SKILLS_DIR/snaplii-cli" "$SKILLS_DIR/snaplii-autopilot"
+cp -R snaplii-src/clawhub-publish/.   "$SKILLS_DIR/snaplii-cli/"
+cp -R snaplii-src/clawhub-autopilot/. "$SKILLS_DIR/snaplii-autopilot/"
+```
+
+**Muse** runs the skill with the CLI, not MCP. Install the `snaplii-cli` skill from `snaplii-src/clawhub-publish/` with Muse's own skill installation; Muse names its folder under `~/workspace/skills/`. Then run `python3 snaplii-src/scripts/install.py --host muse --source ./snaplii-src`.
+
+### Install the execution layer
+
+The third command builds the CLI and the MCP server into `~/.snaplii-env` and prints a JSON report with the next steps; it never asks for an API key or edits host configuration. `--host` also takes `claude-desktop`; see `--help` for other flags and [No Python on the machine](#no-python-on-the-machine) if Python is missing.
+
+**Reading the report.** `status: installed` (exit 0) means every component you asked for works; `--check` reports `installed` (exit 0) or `not_installed` (exit 1). Work through `next_steps` in order:
+
+- `required`: blocking. Do what `why` says, then run `command`, which re-runs the installer, **once**; if the same `failure.code` returns, or `failure.retryable` is false, stop and report `failure.remedy` to the user. Carry out a remedy that deletes files only when the user agrees. When `command` is null, report `why` to the user.
+- `pending`: do the ones that apply: skip `install_skill` if this clone's skills are installed already, and `register_mcp` if your agent uses the CLI only. `register_mcp` gives a command to run, a `file` to merge its `json` into without removing other entries, or only a path to register as a stdio server; never run that path. If `snaplii` is already registered, it must start the report's path; replace it if not.
+
+**Verify.** `npx skills list -g` shows `snaplii-cli` and `snaplii-autopilot` after the second command, where `Agents: not linked` is normal for agents that read `~/.agents/skills`, and `ls "$SKILLS_DIR"` does after **Manual install**; Muse installs `snaplii-cli` only. Your agent loads them after the new session the report's `reload_host` step may need. Then check the connection state: in this session, run the report's CLI path with `config show`, and use that absolute path for every CLI command; if your agent uses MCP, also call the `snaplii_config_show` tool once it loads in the new session. Never buy anything to test the install.
 
 ---
 
 ## Table of Contents
 
-- [Availability by country](#availability-by-country)
+- [For AI agents: start here](#for-ai-agents-start-here)
+  - [Choose how to connect](#choose-how-to-connect)
+  - [Install from a release](#install-from-a-release)
+  - [Install the execution layer](#install-the-execution-layer)
+- [What you can do with Snaplii](#what-you-can-do-with-snaplii)
 - [How authorization works](#how-authorization-works)
-- [How Snaplii and agent tools work together](#how-snaplii-and-agent-tools-work-together)
+  - [Sessions and reconnecting](#sessions-and-reconnecting)
 - [Requirements](#requirements)
 - [Quick Start](#quick-start)
 - [CLI Commands](#cli-commands)
 - [Integration Guides](#integration-guides)
-  - [REST API (Any LLM)](#rest-api-any-llm)
-  - [MCP Server (Claude, OpenClaw, Cursor)](#mcp-server-claude-openclaw-cursor)
-  - [Claude Code Skill](#claude-code-skill)
-  - [OpenClaw Skill](#openclaw-skill)
+  - [MCP Server (Claude, OpenClaw, Cursor, Instinct)](#mcp-server-claude-openclaw-cursor-instinct)
 - [Components](#components)
+- [Updating](#updating)
+- [Uninstall](#uninstall)
 - [Troubleshooting](#troubleshooting)
 - [Security](#security)
+- [Why Snaplii](#why-snaplii)
 - [License](#license)
+
+---
+
+## What you can do with Snaplii
+
+| Capability | What happens | Canada (CAD) | United States (USD) | Key scope |
+|---|---|---|---|---|
+| Buy gift cards | Browse 500+ brands, quote the exact price with vouchers and up to 10% cashback, buy, then read the redemption code | Yes | Yes | `PAY_WRITE` |
+| Pay a merchant with the card | Redeem the code on the merchant or delivery site and place the order; needs a browser-automation tool and the `snaplii-autopilot` skill or MCP prompt | Yes | Yes | `PAY_WRITE` |
+| Check balance and cards | Spendable Snaplii Cash, owned cards, cashback estimates | Yes | Yes | `PAY_READ` |
+| Pay bills | Supported utility, telecom and other billers, paid from Snaplii Cash; once sent, a bill payment cannot be undone | Yes | No | `PAY_WRITE` |
+| Send money (P2P) | Send Snaplii Cash to another Snaplii user's phone number; cancellable for about 5 minutes, then it sends itself | Yes | Yes | `P2P` or `ALL` |
+
+The account country is fixed at login, so the catalog, currency and bill pay follow it; do not ask the user for a region.
+
+---
+
+## How authorization works
+
+1. **Set aside funds.** Add the amount you want to make available as Snaplii Cash in the app.
+2. **Define access.** Create an API key with the scope and spending limit the agent's task needs. Scopes: `PAY_READ` (read-only), `PAY_WRITE` (read, purchase, bill pay), `P2P` (transfers), `ALL`.
+3. **Let the agent execute within that boundary.** Agent payments draw from Snaplii Cash, without exposing your bank or card credentials. You can change the limit or revoke the key in the app at any time.
+
+Gift-card purchases can help users save through eligible offers and cashback. Available brands and savings vary by country, brand, and current quote; merchant offers can be combined only where their terms allow.
+
+### Sessions and reconnecting
+
+Check the session in the runtime that runs the task: a session in `~/.snaplii/config.json` or the OS keychain serves both the CLI and the MCP server; one the MCP server keeps in memory serves only that server. A connection exchanges the API key once for a session token. The key is not kept, so connecting again needs it again unless the host's vault holds it (Muse, Instinct). The gateway sets when a session expires, so rely on `has_valid_token` rather than a fixed lifetime. Signing in with `--base-url` or `SNAPLII_BASE_URL` saves that gateway as the default, so later commands without it use the same session. The app shows a new key only once: the user should keep it in a password manager.
+
+The API key stays out of the chat where the host allows it: a secure card, the hosted connect page, or the host's vault (Muse, Instinct). Otherwise the user runs `snaplii init` in their own terminal or, if the Snaplii MCP tools are available, pastes the key for `snaplii_init`, which passes it through the model once. Only the Snaplii production and staging gateways accept a sign-in.
+
+`snaplii config show` and `snaplii_config_show` report `has_valid_token`, `auth_state`, `host`, `credential_storage` and `next_action`. `auth_state` is `ready`, `auth_required` (never connected), `reauth_required` (expired, rejected, or a memory-only MCP session lost in a restart) or `mcp_required` (the CLI was called in Instinct). `host` is `unknown` everywhere except Muse and Instinct, which is normal. Follow `next_action`:
+
+| `next_action` | What to do |
+|---|---|
+| `run_cli` | The user runs its `argv` in their own terminal: from a shell tool `init` has no key to read and answers `api_key_missing`; never pipe a key into it; in Muse the agent runs `init --vault-auth` itself. `argv[0]` is `snaplii`, or the CLI's absolute path when the `snaplii` on PATH is a different CLI; relay `argv` unchanged |
+| `call_mcp_tool` | The agent calls `snaplii_connect`, only while `has_valid_token` is false. Only `authenticated` or `already_connected` means connected; after `card_requested`, `pending` or `use_terminal_or_chat_key`, check the status again once the user has acted; after `unreachable`, call `snaplii_connect` again once Snaplii can be reached, without asking for the key again |
+| `muse_secure_entry` | The agent opens Muse's secure input; a stored key is reused without asking |
+| `offer_legacy` | The key was rejected (`invalid_key`); the user enters a key again |
+| `retry_auth_later` | Snaplii was unreachable; retry later |
+| `stop` | Cancelled, or no session could be stored; report it and do not retry or switch methods |
+
+- **Shell-only agent.** On a machine without an OS keychain, `init` in a terminal first asks whether this and future sessions may be kept in the owner-only config file: yes saves `allow_insecure_mode: true` there, no stops before the key is typed. Without a terminal, or when a detected keychain fails to save, `init` answers `session_cache_failed` with reason `no_persistent_storage`; the user then sets `allow_insecure_mode: true` in the config file, or `SNAPLII_ALLOW_INSECURE=1`, and runs `init` again. The config-file setting applies to every Snaplii process, including an MCP server the host starts, until `snaplii config clear`; the environment variable reaches that server only if the host passes it on.
+- **MCP host.** A session the server keeps only in memory ends with the server; connect again after a restart.
+- **Instinct.** Repeat the two `snaplii_connect` calls with the vault fill; the vault keeps the key.
 
 ---
 
 ## Requirements
 
-- Python 3.10+  
-  _CLI works on Python 3.9+, but the MCP server requires Python 3.10+._
+- Any Python 3.8+ to start the installer, which fetches CPython 3.12 with uv when no 3.10+ is available  
+  _CLI needs 3.9+, the MCP server 3.10+. With no Python at all, see [No Python on the machine](#no-python-on-the-machine)._
 - Git
+- Node.js with `npx`, only for the one-line `npx skills add` install; the manual copy needs neither
 - Snaplii Mobile App  
   _Required to generate your API key._
-
-<details>
-<summary><strong>Mac users: check your Python version</strong></summary>
-
-```bash
-python3 --version
-```
-
-If your Python version is below 3.10, install Python via Homebrew:
-
-```bash
-brew install python@3.12
-```
-
-Then use `python3.12` and `pip3.12` instead of `python3` / `pip3` in the steps below.
-
-</details>
 
 ---
 
@@ -201,82 +152,33 @@ Then use `python3.12` and `pip3.12` instead of `python3` / `pip3` in the steps b
 
 ### 1. Get Your API Key via Snaplii App
 
-Before using the CLI or configuring your AI agent, generate a secure API key from the Snaplii mobile app:
+Installing needs no key. To connect the CLI or your AI agent, generate a secure API key in the Snaplii mobile app:
 
 1. Download the Snaplii app for [iOS](https://apps.apple.com/app/snaplii/id1596924498) or [Android](https://play.google.com/store/apps/details?id=com.snaplii.app).
 2. Register an account and bind a payment method to load your Snaplii Cash balance.
 3. In the app, go to **More → Payment Methods → AI Payment Management**.
 4. Tap **+ New API Key**.
-5. Set a name, define the permission scope, and set a hard spending limit.
-   - Example scopes: **Read-only** or **Purchase**
+5. Set a name, choose the scope (`PAY_READ`, `PAY_WRITE`, `P2P`, or `ALL`), and set a hard spending limit.
 6. Copy the API key.
    - Format: `snp_sk_live_...`
-   - Keep it safe — it will only be shown once.
+   - Keep it safe. It is shown only once.
 
-### 2. Get the Code
+### 2. Install the CLI and MCP server
 
-```bash
-git clone https://github.com/Snaplii-Inc/agent-to-merchant-payments.git
-cd agent-to-merchant-payments
-```
-
-### 3. Install the CLI
-
-`pipx` is the smoothest path. It installs the CLI in its own isolated environment and puts the `snaplii` executable on your `PATH`.
-
-#### macOS
+Clone a release and run its installer (see [Install the execution layer](#install-the-execution-layer) for the Windows and no-Python variants):
 
 ```bash
-brew install pipx
-pipx ensurepath
+git clone --depth 1 --branch v0.20.0 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
+python3 snaplii-src/scripts/install.py --source ./snaplii-src
 ```
 
-#### Linux
+It creates `~/.snaplii-env`, builds `snaplii-cli` and `snaplii-mcp` from the clone, verifies both, and prints the executables' absolute paths. Add `--cli-only` if you do not need the MCP server.
 
-```bash
-python3 -m pip install --user pipx
-python3 -m pipx ensurepath
-```
+The steps below call `snaplii` by name. Use the absolute path from the report (`~/.snaplii-env/bin/snaplii`, or `%USERPROFILE%\.snaplii-env\Scripts\snaplii.exe` on Windows), or run the report's `cli_on_path` command first.
 
-#### Windows
+### 3. Authenticate
 
-**Option A — Scoop** (recommended):
-
-```powershell
-scoop install pipx
-pipx ensurepath
-```
-
-**Option B — pip**:
-
-```powershell
-py -m pip install --user pipx
-```
-
-> If you see a warning that `pipx.exe` is not on PATH, run the following from the displayed path:
-> ```powershell
-> .\pipx.exe ensurepath
-> ```
-
-Restart your terminal after running `ensurepath`.
-
-> **Note:** If you installed Python from the Microsoft Store, use `python3` instead of `py`.
-
-#### All platforms
-
-```bash
-pipx install -e ./snaplii-cli
-```
-
-Open a new terminal window so the updated `PATH` takes effect, then verify the installation:
-
-```bash
-snaplii --help
-```
-
-> If you see `command not found`, see [Troubleshooting](#troubleshooting).
-
-### 4. Authenticate
+Only when connecting, and only in the user's own interactive terminal; an agent's shell tool cannot answer the prompt.
 
 ```bash
 snaplii init
@@ -295,30 +197,37 @@ snaplii config show
 
 `--agent-id` is optional: Snaplii reuses a saved ID or generates one on successful login. Before using Snaplii, check that `has_valid_token` is `true`; the status output does not display credentials.
 
-When Muse is recognized, `snaplii init` selects secure credential authentication by default and caches the session token in an owner-only file so later CLI commands can reuse it. The API key stays in Muse's secure credential store. The accompanying skill directs Muse to open its native secure input when a key is needed; cancellation stops the connection attempt.
-
-When you ask Muse to install the Snaplii skill for the first time, the skill instructs Muse to continue with account connection after installation, unless you ask to connect later. It reuses an existing session or stored key where possible; otherwise it guides you to create a key in the Snaplii App and enter it only in Muse's native secure dialog. If you cancel or connection fails, the skill stays installed but is not connected. The skill does not treat updating, reinstalling, or simply downloading it as a new connection request. Other agents keep their existing connection flow.
+When Muse is recognized, `snaplii init` selects secure credential authentication by default and caches the session token in an owner-only file so later CLI commands can reuse it. The API key stays in Muse's secure credential store. The accompanying skill directs Muse to open its native secure input when a key is needed; cancellation stops the connection attempt. The skill describes when a first install in Muse connects on its own.
 
 Use `snaplii config doctor` to check runtime detection and storage without logging in. If secure credential authentication is unavailable, you can explicitly choose `snaplii init --legacy-auth` and enter your API key at the terminal's hidden prompt.
 
-### 5. Use the CLI
+Muse must use only the key it holds: never type, rebuild or copy a key into a command, including one pasted into the chat, since the value Muse sees there may not be the real key. In Muse, a raw key that is not a Snaplii key, or that Snaplii rejects, answers `auth_required` with `next_action` pointing to `snaplii init --vault-auth`, which uses the stored key.
+
+#### Instinct
+
+In Instinct the CLI does not authenticate at all. Connect through the MCP server and the Instinct vault, as described under [MCP Server](#mcp-server-claude-openclaw-cursor-instinct).
+
+### 4. Use the CLI
 
 ```bash
 snaplii browse tags                                  # Browse gift card categories
 snaplii browse brand --id CB...                      # See denominations and cashback
-snaplii balance --country CA                         # Check spendable Snaplii Cash balance (CA=CAD, US=USD)
+snaplii balance                                      # Check spendable Snaplii Cash balance
 snaplii quote --item-id CB...-CT... --price 50       # Preview price with voucher/cashback
 snaplii giftcard list                                # View owned cards
 snaplii purchase --item-id CB...-CT... --price 50    # Buy a card
+snaplii giftcard detail --card-no ...                # Read the redemption code
 ```
 
-> `--item-id` is formatted as `{cardBrandId}-{cardTemplateId}`. Both IDs are available from `snaplii browse brand`.
+> **`--item-id` must be exactly `{cardBrandId}-{cardTemplateId}`** (e.g. `CB00000000000086-CT000000003618`). Copy it verbatim from the `item_id` in the `denominations` that `snaplii browse brand` returns, and use the same value for `quote` and `purchase`. Never pass either ID alone or build one by hand: a different well-formed ID buys a different card.
 >
-> The catalog is scoped to your account's country (fixed at login, enforced server-side), so there's no region/province flag to pass.
+> The catalog is scoped to your account's country (fixed at login, enforced server-side), so there's no region/province flag to pass. `balance` labels the currency from the stored country; `--country CA|US` is only a fallback for older sessions.
 >
-> `--price` must be within the brand's denomination range — `browse brand` shows each card's min/max (variable) or fixed amount. `quote` and `purchase` reject an out-of-range price up front (e.g. \$10 on a \$20-minimum card) so you never pay for a card that can't be issued.
+> `--price` must be within the brand's denomination range — `browse brand` shows each card's min/max (variable) or fixed amount. When the brand's rules are available, `quote` and `purchase` reject an out-of-range price up front (e.g. \$10 on a \$20-minimum card); if the catalog lookup fails, the check is skipped and the gateway decides.
+>
+> Always `quote` before `purchase`. The quote's `you_pay` is what Snaplii Cash does not cover; if it is above zero, the user needs to top up in the app first.
 
-### 6. Pay a Bill — Canada only
+### 5. Pay a Bill — Canada only
 
 Canadian accounts can pay supported utility, telecom, and other bills from Snaplii Cash. Bill pay is not available for US accounts. Check the account country before starting; use the live biller list and quote for availability and any applicable savings.
 
@@ -333,45 +242,47 @@ snaplii billpay result --payment-no PSP...                                   # C
 
 > Bill pay flow: **payees → detail → save (returns payCode) → quote → pay → result**. Payment draws from your prepaid Snaplii Cash balance without giving the agent access to your bank accounts or credit cards.
 
-### 7. Send Money (P2P Transfer)
+### 6. Send Money (P2P Transfer)
 
-Available in Canada and the United States: send Snaplii Cash to another Snaplii user's phone number. Requires an API key whose scope includes `P2P` or `ALL`.
+Available in Canada and the United States: send Snaplii Cash to another Snaplii user's phone number. Requires an API key whose scope is `P2P` or `ALL`.
 
 ```bash
 snaplii transfer create --to-phone 4165550006 --amount 12.50   # Cancellable ~5 min, then auto-sends
 snaplii transfer cancel --order-no ZZ...                       # Undo within the window
-snaplii transfer finish --order-no ZZ...                       # Send NOW instead of waiting
-snaplii transfer status --order-no ZZ... --wait                # Poll until FINISHED / CANCELLED / FAILED
+snaplii transfer finish --order-no ZZ...                       # Send NOW; only when the user explicitly asks
+snaplii transfer status --order-no ZZ... --wait --timeout 330  # Poll until FINISHED / CANCELLED / FAILED
 snaplii transfer list                                          # List transfers, newest first
 ```
 
-> A new transfer stays **cancellable until `auto_finish_at`** (~5 minutes), then the gateway sends it automatically. Cross-currency transfers (recipient in another country) return the exact `received_amount` / `received_currency` / `conversion_rate` up front. Transfers are capped by a rolling 24-hour per-key limit set in the app.
+> A new transfer stays **cancellable until `auto_finish_at`** (~5 minutes), then the gateway sends it automatically. After `create`, tell the user the amount, the masked recipient, and that deadline. Cross-currency transfers (recipient in another country) return the exact `received_amount` / `received_currency` / `conversion_rate` and a `cross_currency_notice` up front; show it and let the user keep or cancel. `--wait` polls every 3 seconds and its `--timeout` defaults to 120 seconds, shorter than the window, so size it to the time left plus settlement (about 330 right after `create`) or re-run on `wait_timed_out`. Transfers are capped by a rolling 24-hour per-key limit set in the app.
 
 ---
 
 ## CLI Commands
 
+Every operation prints one JSON document on stdout, or one JSON error on stderr with exit code 1; `help`, `--help`, and `--version` print plain text, and `init` writes its hidden prompt to stderr. A refused connection is reported as JSON too, but another transport failure during a read, such as a timeout, can still surface as a Python traceback. A few lookups report a not-found condition as an `error` field inside the stdout JSON with exit code 0, for example `smart cashback` when no denomination matches, so inspect the body as well as the exit code. Authentication errors carry `auth_state` and a `next_action` the agent can follow.
+
 | Command | Purpose |
 |---|---|
-| `snaplii init [--agent-id ID] [--vault-auth \| --legacy-auth]` | Authenticate; Muse defaults to secure credentials, with an explicit original-input fallback |
-| `snaplii config show` | Show current config and auth status |
-| `snaplii config doctor` | Diagnose runtime detection and storage without logging in |
-| `snaplii config set --base-url URL` | Set the gateway URL |
+| `snaplii init [--agent-id ID] [--vault-auth \| --legacy-auth]` | Authenticate. Interactive: the user runs it in a terminal; without an OS keychain it first asks whether sessions may be kept in an owner-only file. A gateway given with `--base-url` or `SNAPLII_BASE_URL` becomes the saved default. Muse defaults to secure credentials, with an explicit original-input fallback. Refused in Instinct |
+| `snaplii config show` | Show current config and auth status, including `has_valid_token`, `host`, and `next_action` |
+| `snaplii config doctor` | Diagnose runtime detection (Muse, Instinct) and storage without logging in |
+| `snaplii config set --base-url URL` | Set the gateway URL. Sign-in works only with production `https://aipayment.snaplii.com` and staging `https://aipay.stage.snaplii.com` |
 | `snaplii config clear` | Clear local configuration and session; does not delete the host-stored API key |
 | `snaplii browse tags` | Browse card categories and brands |
 | `snaplii browse brand --id ID` | View brand details, denominations, and cashback |
 | `snaplii giftcard list` | List owned gift cards |
 | `snaplii giftcard detail --card-no NO` | View card redemption code and PIN |
-| `snaplii balance [--country CA\|US]` | Show spendable Snaplii Cash balance (run before quoting; `--country` sets currency CA=CAD/US=USD) |
+| `snaplii balance [--country CA\|US]` | Show spendable Snaplii Cash balance; currency follows the stored account country |
 | `snaplii quote --item-id ID --price P` | Preview price with voucher/cashback before buying |
-| `snaplii purchase --item-id ID --price P` | Purchase a gift card |
+| `snaplii purchase --item-id ID --price P [--voucher V] [--cashback C] [--voucher-id ID]` | Purchase a gift card; pass the same options you quoted with |
 | `snaplii smart cashback --brand-id ID --amount A` | Calculate cashback savings |
 | `snaplii smart dashboard` | View card inventory summary |
 | `snaplii billpay payees` | Canada only: list available billers (electricity, gas, telecom) |
 | `snaplii billpay detail --payee-code CODE` | View biller account validation rules |
 | `snaplii billpay save --payee-code CODE --first-name F --last-name L --amount A --account NO` | Save a bill pay instruction |
 | `snaplii billpay vouchers --pay-code PC --price P` | List eligible bill-payment vouchers |
-| `snaplii billpay history --payee-code CODE` | List payment history for a biller |
+| `snaplii billpay history --payee-code CODE` | Get the previous bill instruction for a biller, for autofill; not a ledger of what was paid |
 | `snaplii billpay quote --pay-code PC --price P` | Preview bill price with voucher/cashback |
 | `snaplii billpay pay --pay-code PC --price P` | Canada only: pay the bill from Snaplii Cash |
 | `snaplii billpay result --payment-no NO` | Check bill payment status |
@@ -383,84 +294,27 @@ snaplii transfer list                                          # List transfers,
 | `snaplii update` | Check for and install a CLI update |
 | `snaplii help` | Show top-level help; use `snaplii <command> --help` for command flags |
 
+In Instinct, only `help`, `update`, `--version`, and `config` run; every other command answers `auth_state=mcp_required` and points to the `snaplii_connect` MCP tool.
+
 ---
 
 ## Integration Guides
 
-### REST API (Any LLM)
+### MCP Server (Claude, OpenClaw, Cursor, Instinct)
 
-The simplest integration — works with **any language, any LLM, any framework**. Just make HTTP calls.
-
-**Base URL:** `https://aipayment.snaplii.com`
-
-#### Step 1: Authenticate
-
-```bash
-curl -X POST https://aipayment.snaplii.com/v2/auth/token \
-  -H "Content-Type: application/json" \
-  -d '{"agent_id": "my-agent", "api_key": "snp_sk_live_..."}'
-```
-
-Returns a JWT token. Use it as `Authorization: Bearer <token>` for all subsequent calls.
-
-#### Step 2: Browse gift cards
-
-```bash
-curl https://aipayment.snaplii.com/v2/card-brands?channel=HOME_PAGE \
-  -H "Authorization: Bearer <token>"
-```
-
-#### Step 3: Get a price quote
-
-```bash
-curl -X POST https://aipayment.snaplii.com/v2/quote \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "orderInfo": {"orderType": "GIFT_CARD", "item": {"itemId": "CB...-CT...", "price": "50"}, "orderContext": {"giftOrder": "false"}, "businessChannel": "APP"},
-    "paymentContext": {"specifiedPrimaryPaymentMethod": "SNAPLII_CREDIT", "voucherOption": "BEST_FIT", "cashbackOption": "USE"}
-  }'
-```
-
-#### Step 4: Purchase
-
-```bash
-curl -X POST https://aipayment.snaplii.com/v2/purchase \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "orderInfo": {"orderType": "GIFT_CARD", "item": {"itemId": "CB...-CT...", "price": "50"}, "orderContext": {"giftOrder": "false"}, "businessChannel": "APP"},
-    "paymentContext": {"specifiedPrimaryPaymentMethod": "SNAPLII_CREDIT", "voucherOption": "BEST_FIT", "cashbackOption": "USE"},
-    "delivery": {"type": "WALLET", "immediateSend": "true"}
-  }'
-```
-
----
-
-### MCP Server (Claude, OpenClaw, Cursor)
-
-The MCP server exposes 26 tools via the [Model Context Protocol](https://modelcontextprotocol.io/). Works with any MCP-compatible client.
+The MCP server exposes 26 tools via the [Model Context Protocol](https://modelcontextprotocol.io/). One of them, `snaplii_submit_api_key`, is callable only by the host's secure card, and Instinct hides it together with `snaplii_init`. Works with any MCP-compatible client.
 
 #### Step 1: Install dependencies
 
-```bash
-pip3 install -e ./snaplii-cli
-pip3 install "mcp[cli]"
-```
-
-If you get an `externally-managed-environment` error, add `--break-system-packages`.
-
-#### Step 2: Authenticate
+Run the installer from the release clone (see [Install from a release](#install-from-a-release)) and keep the `register_mcp` step from its report; it contains the absolute path of `snaplii-mcp` and the exact command or config snippet for your host:
 
 ```bash
-snaplii init
+python3 snaplii-src/scripts/install.py --host claude-desktop --source ./snaplii-src   # or claude-code, codex, cursor, openclaw, instinct
 ```
 
-Enter your API key when prompted.
+#### Step 2: Configure your MCP client
 
-In Instinct, skip this step and follow the **Instinct** instructions under Step 3.
-
-#### Step 3: Configure your MCP client
+Use the `snaplii-mcp` path from the installer's `register_mcp` step; the report already contains the exact command or snippet for your host.
 
 <details>
 <summary><strong>Claude Desktop</strong></summary>
@@ -477,22 +331,38 @@ Edit your config file:
 {
   "mcpServers": {
     "snaplii": {
-      "command": "/absolute/path/to/python",
-      "args": ["/absolute/path/to/agent-to-merchant-payments/mcp-server/server.py"]
+      "command": "/Users/you/.snaplii-env/bin/snaplii-mcp"
     }
   }
 }
 ```
 
-Restart Claude Desktop after saving.
+Use the absolute path from the report's `register_mcp` step; the file does not expand `~`. Restart Claude Desktop after saving.
 
 </details>
 
 <details>
 <summary><strong>Claude Code</strong></summary>
 
+Register the installer's server for your user, so it works in every project, then check it:
+
 ```bash
-claude mcp add snaplii -- python3 /path/to/agent-to-merchant-payments/mcp-server/server.py
+claude mcp add --scope user snaplii -- ~/.snaplii-env/bin/snaplii-mcp
+claude mcp get snaplii   # expect "User config" and "Connected"
+```
+
+Without `--scope user`, Claude Code registers the server only for the directory you ran the command in. If it says the server already exists, check that `claude mcp get snaplii` shows the report's path; if it does not, run `claude mcp remove snaplii` and add it again.
+
+</details>
+
+<details>
+<summary><strong>Codex</strong></summary>
+
+Register the installer's server for your user, then check it:
+
+```bash
+codex mcp add snaplii -- ~/.snaplii-env/bin/snaplii-mcp
+codex mcp list
 ```
 
 </details>
@@ -500,37 +370,26 @@ claude mcp add snaplii -- python3 /path/to/agent-to-merchant-payments/mcp-server
 <details>
 <summary><strong>OpenClaw</strong></summary>
 
+Register the server with the OpenClaw CLI ([reference](https://docs.openclaw.ai/cli/mcp/registry)):
+
 ```bash
-clawhub install snaplii-a2m-payment
+openclaw mcp add snaplii --command ~/.snaplii-env/bin/snaplii-mcp
 ```
 
-Or add to your OpenClaw MCP config:
-
-```json
-{
-  "mcp": {
-    "servers": {
-      "snaplii": {
-        "command": "python3",
-        "args": ["/path/to/agent-to-merchant-payments/mcp-server/server.py"]
-      }
-    }
-  }
-}
-```
+Then install the skills from the same release clone, as [Install from a release](#install-from-a-release) shows, if you have not already.
 
 </details>
 
 <details>
 <summary><strong>Instinct</strong></summary>
 
-Instinct installs the MCP server from this repository and connects through the Instinct vault, so the API key never enters the chat.
+Instinct installs the MCP server with the installer and connects through the Instinct vault, so the API key never enters the chat.
 
-1. Clone the repository and install the dependencies from Step 1.
-2. Register `python3 /path/to/agent-to-merchant-payments/mcp-server/server.py` as a stdio MCP server in Instinct.
+1. Run the installer from the release clone: `python3 snaplii-src/scripts/install.py --host instinct --source ./snaplii-src`. It refuses `--cli-only` because Instinct executes only through MCP.
+2. Register the `snaplii-mcp` executable from the report's `register_mcp` step (`~/.snaplii-env/bin/snaplii-mcp`) as a stdio MCP server in Instinct.
 3. Skip `snaplii init`. In Instinct the CLI only serves `help`, `update`, `--version` and `config`; everything else runs through the MCP tools.
-4. Connect right away. Call `snaplii_connect` and open the returned `connect_url` in the cloud browser. Use the Instinct vault fill action on the API key field with the returned `vault_entry`, click **Connect**, then call `snaplii_connect` again with the returned `eid` within 2 minutes. If the MCP tools only load in a new session, connect at the start of that session.
-5. If the vault has no entry yet, the agent explains how to create a key in the Snaplii App and sends the vault's encrypted submission link so you can save it there.
+4. Make sure the Instinct vault holds the entry named below. If it does not, the agent explains how to create a key in the Snaplii App and sends the vault's encrypted submission link so you can save it there.
+5. Connect right after the first install, without waiting for a request. Call `snaplii_connect` and open the returned `connect_url` in the cloud browser. Use the Instinct vault fill action on the API key field with the returned `vault_entry`, click **Connect**, then call `snaplii_connect` again with the returned `eid` within 2 minutes. If the MCP tools only load in a new session, connect at the start of that session.
 
 The vault entry is `Snaplii API Key` for the production gateway. Other gateways append their host, for example `Snaplii API Key aipay.stage.snaplii.com`.
 
@@ -543,57 +402,54 @@ The one-time `eid` in the connect link is visible to the agent. Whoever holds it
 <details>
 <summary><strong>Cursor / VS Code / Other MCP clients</strong></summary>
 
-Any MCP-compatible client can connect to the Snaplii MCP server. The server runs via stdio:
+Any MCP-compatible client can start the Snaplii MCP server over stdio. Register the absolute `snaplii-mcp` path from the report's `register_mcp` step as a stdio server; for Cursor, that step names `~/.cursor/mcp.json`. Most clients take a JSON entry like this:
 
-```bash
-python3 /path/to/agent-to-merchant-payments/mcp-server/server.py
+```json
+{
+  "mcpServers": {
+    "snaplii": {
+      "command": "/Users/you/.snaplii-env/bin/snaplii-mcp"
+    }
+  }
+}
 ```
 
-Configure your client to launch this command as an MCP stdio server.
-
 </details>
+
+#### Step 3: Connect
+
+Connect when the user asks to connect or gives a Snaplii task; installing alone does not connect. Connecting from inside the client is preferred: call `snaplii_connect`, and the host renders a secure card or opens a hosted page where the user enters the key off-model. If the client can do neither, the user authenticates in their own terminal first; an agent cannot answer the hidden prompt:
+
+```bash
+~/.snaplii-env/bin/snaplii init
+```
+
+Enter your API key when prompted.
+
+In Instinct, skip this step and follow the **Instinct** instructions under Step 2.
 
 #### Available MCP Tools
 
 | Tool | Description |
 |---|---|
-| `snaplii_connect` | Securely connect via an off-model card — the key never enters the chat/model |
-| `snaplii_init` | Authenticate with API key (terminal fallback; not stored) |
-| `snaplii_config_show` | Show auth status |
-| `snaplii_balance` | Real spendable Snaplii Cash balance |
-| `snaplii_browse_tags` | Browse gift card categories (CA/US) |
+| `snaplii_connect` | Connect the account off-model: a secure card on hosts that render MCP Apps, a hosted page on hosts with URL elicitation, the vault-filled page in Instinct. Call only when `has_valid_token` is false |
+| `snaplii_init` | Authenticate with an API key passed as an argument. Fallback for clients with neither card nor page; hidden in Instinct |
+| `snaplii_config_show` | Auth status: `has_valid_token`, `host`, `next_action` |
+| `snaplii_balance` | Real spendable Snaplii Cash balance, labelled in the account's currency |
+| `snaplii_browse_tags` | Browse gift card categories; returns `account_country` |
 | `snaplii_browse_brand` | Brand details and denominations |
 | `snaplii_giftcard_list` | List owned gift cards |
 | `snaplii_giftcard_detail` | Card redemption code (sensitive) |
 | `snaplii_quote` | Preview price with voucher/cashback |
-| `snaplii_purchase` | Buy a gift card (no per-transaction confirmation; capped by the daily limit) |
+| `snaplii_purchase` | Buy a gift card from Snaplii Cash; the charge happens as soon as it runs, within the daily limit |
 | `snaplii_cashback_calc` | Calculate cashback savings |
 | `snaplii_dashboard` | Owned card inventory summary |
-| `snaplii_billpay_*` | Canada only: bill pay — payees, detail, save, quote, pay, result |
-| `snaplii_transfer_*` | P2P transfers: create (cancellable ~5 min, then auto-sends), cancel, finish (send now), status, list |
+| `snaplii_billpay_*` | Canada only: `payees`, `detail`, `history`, `save`, `vouchers`, `quote`, `pay`, `result` |
+| `snaplii_transfer_*` | P2P transfers: `create` (cancellable ~5 min, then auto-sends), `cancel`, `finish` (send now), `status`, `list` |
 
-> API keys are created and managed **only in the Snaplii app** — there are no CLI/MCP tools to list, create, or delete them.
+The server also offers one MCP prompt, `snaplii_autopilot`, which carries the end-to-end buy, redeem, and order flow for hosts that can drive a browser.
 
----
-
-### Claude Code Skill
-
-```bash
-mkdir -p ~/.claude/skills/snaplii-cli
-cp skills/snaplii-cli.md ~/.claude/skills/snaplii-cli/SKILL.md
-```
-
----
-
-### OpenClaw Skill
-
-Install from ClawHub:
-
-```bash
-clawhub install snaplii-a2m-payment
-```
-
-Or browse on ClawHub: [snapliiai/snaplii-a2m-payment](https://clawhub.ai/snapliiai/snaplii-a2m-payment)
+> API keys are created and managed **only in the Snaplii app**. There are no CLI or MCP tools to list, create, or delete them.
 
 ---
 
@@ -601,12 +457,37 @@ Or browse on ClawHub: [snapliiai/snaplii-a2m-payment](https://clawhub.ai/snaplii
 
 ```text
 agent-to-merchant-payments/
-├── snaplii-cli/       # Python CLI — pip-installable, works with any agent
-├── mcp-server/        # MCP server — Claude, OpenClaw, Cursor, VS Code
-├── skills/            # Claude Code skill definition
-├── clawhub-publish/   # ClawHub skill artifact
-└── clawhub-plugin/    # ClawHub MCP bundle plugin
+├── snaplii-cli/        # Python CLI (PyPI: snaplii-cli); also the library the MCP server uses
+├── mcp-server/         # MCP server (PyPI: snaplii-mcp), 26 tools + the snaplii_autopilot prompt
+├── skills/             # Source text of the two skills (snaplii-cli.md, snaplii-autopilot.md)
+├── clawhub-publish/    # snaplii-cli skill as a SKILL.md folder (ClawHub: snaplii-a2m-payment)
+├── clawhub-autopilot/  # snaplii-autopilot skill as a SKILL.md folder (ClawHub: snaplii-autopilot)
+├── clawhub-plugin/     # ClawHub MCP bundle plugin (snaplii-a2m-mcp)
+├── claude-desktop/     # Older project instructions for Claude Desktop; the MCP server's own instructions take precedence
+├── scripts/            # The installer (install.py), Claude Desktop setup, skill Auth-block sync, candidate bundles
+└── tests/              # pytest suite for the CLI, the MCP server, and the skill documents
 ```
+
+The `skills/*.md` files and the `clawhub-*/SKILL.md` folders are kept byte-identical; `scripts/sync_muse_auth_docs.py --check` verifies that their Auth sections match the code.
+
+---
+
+## Updating
+
+When the user asks to update Snaplii, repeat the three commands with the new release tag, from a directory with no `snaplii-src` folder, so `--source` points at the new clone. On `files_in_use`, the running Snaplii server holds the files: the user closes the host and runs the report's retry command in a terminal; then open a new session. Do not use `snaplii update` here: it upgrades only the CLI, not the MCP server.
+
+---
+
+## Uninstall
+
+Remove what the installer and the host registration added:
+
+1. Revoke the API key in the Snaplii App: **More → Payment Methods → AI Payment Management**.
+2. Sign out locally: `~/.snaplii-env/bin/snaplii config clear`. It does not delete a key the host stores (Muse, the Instinct vault).
+3. Remove the MCP registration: `claude mcp remove snaplii` in Claude Code, `codex mcp remove snaplii` in Codex, or delete the `snaplii` entry from `claude_desktop_config.json` or `~/.cursor/mcp.json`.
+4. Remove the skills: `npx --yes skills remove -g -y snaplii-cli snaplii-autopilot`. After **Manual install**, delete the two folders from that skills directory instead; a skill installed earlier from ClawHub is removed with ClawHub.
+5. Delete the environment and the local configuration: `rm -rf ~/.snaplii-env ~/.snaplii` (PowerShell: `Remove-Item -Recurse -Force $HOME\.snaplii-env, $HOME\.snaplii`).
+6. If the installer fetched CPython 3.12 with uv and nothing else uses it, remove it with `uv python uninstall 3.12`. If the installer also installed uv into `~/.local/bin`, delete `uv` and `uvx` there.
 
 ---
 
@@ -614,49 +495,102 @@ agent-to-merchant-payments/
 
 ### `snaplii: command not found` after install
 
-The console script was placed somewhere not on your `PATH`. Run:
+If you used the installer, the CLI is not on `PATH` by design: call `~/.snaplii-env/bin/snaplii` (`Scripts\snaplii.exe` on Windows) or run the report's `cli_on_path` command.
+
+### The skill is installed but the agent does not use it
+
+Check that the folder is named after the skill (`snaplii-cli` or `snaplii-autopilot`) and contains `SKILL.md` at its top level, and that it sits in the skills directory your agent reads. Most agents load skills at session start, so open a new session after installing. Muse names the folder itself; there, find the skill with `grep -l '^name: snaplii-cli' ~/workspace/skills/*/SKILL.md`.
+
+### Every Snaplii call answers `auth_required`, `reauth_required`, or `mcp_required`
+
+There is no valid session in the runtime that is executing the task. `reauth_required` means there was one and it expired, was rejected, or was lost when the MCP server restarted. Run `snaplii config show` or `snaplii_config_show` and follow its `next_action`; [Sessions and reconnecting](#sessions-and-reconnecting) lists the actions by host. `mcp_required` means the host is Instinct: connect with `snaplii_connect` instead of the CLI.
+
+### No Python on the machine
+
+Bootstrap uv into `~/.local/bin` and let it fetch CPython 3.12, then start the installer with that Python and the same flags you chose:
 
 ```bash
-python3 -m pip show -f snaplii-cli
+export UV_INSTALL_DIR="$HOME/.local/bin" UV_NO_MODIFY_PATH=1
+curl -LsSf https://astral.sh/uv/install.sh | sh
+"$UV_INSTALL_DIR/uv" python install --no-bin --no-registry 3.12
+PY312="$("$UV_INSTALL_DIR/uv" python find --no-project --managed-python 3.12)"
+"$PY312" snaplii-src/scripts/install.py --host claude-code --source ./snaplii-src   # your --host or --cli-only
 ```
 
-Look for an entry ending in `bin/snaplii` or `Scripts\snaplii.exe` on Windows. Then either prepend that directory to `PATH` in your shell configuration, or reinstall using `pipx`.
+In PowerShell on Windows:
 
-### `externally-managed-environment` from pip
-
-Your system Python forbids global package installs. Use `pipx`, which is recommended, or a virtual environment. As a last resort, append `--break-system-packages` to the pip command.
-
-### MCP server: `ModuleNotFoundError: No module named 'mcp'` or `'snaplii'`
-
-The Python interpreter your MCP client is using does not have the required dependencies. Confirm with:
-
-```bash
-/absolute/path/to/python -c "import mcp, snaplii; print('ok')"
+```powershell
+$env:UV_INSTALL_DIR = "$HOME\.local\bin"; $env:UV_NO_MODIFY_PATH = "1"
+irm https://astral.sh/uv/install.ps1 | iex
+& "$env:UV_INSTALL_DIR\uv.exe" python install --no-bin --no-registry 3.12
+$py312 = & "$env:UV_INSTALL_DIR\uv.exe" python find --no-project --managed-python 3.12
+& $py312 snaplii-src\scripts\install.py --host claude-code --source .\snaplii-src   # your --host or --cli-only
 ```
 
-If it fails, install the missing packages into that specific interpreter:
+The environment then depends on that Python; [Uninstall](#uninstall) removes both.
 
-```bash
-pip install -e ./snaplii-cli
-pip install "mcp[cli]"
-```
+### The installer reported `failed` or `partial`
 
-### REST API returns `401` or `403`
+Read `failure.code`, `failure.remedy` and `failure.retryable`:
 
-Your JWT token has expired. Call `/v2/auth/token` again with your API key to get a new token.
+| Code | Meaning | Retryable |
+|---|---|---|
+| `python_too_old`, `python_download_failed`, `venv_create_failed` | No Python 3.10+ that can create an environment, and uv could not fetch one | yes, after the remedy |
+| `venv_path_occupied`, `venv_locked`, `destination_unwritable`, `source_invalid` | The destination or `--source` cannot be used as given | `venv_locked` only |
+| `venv_broken`, `venv_python_too_old` | The installer's own environment exists but cannot be reused, for example after the base Python was upgraded | no: delete that directory and re-run (it is recreated at the same path, so the host registration keeps working), or pass another `--venv` |
+| `index_unreachable`, `disk_full`, `files_in_use` | pip could not download or write | yes |
+| `index_auth_failed`, `tls_failed`, `package_unavailable`, `build_failed`, `permission_denied`, `dependency_conflict`, `pip_failed` | pip failed for a reason a re-run will not fix | no |
+| `cli_missing`, `mcp_missing`, `cli_verification_failed`, `mcp_handshake_failed`, `*_timeout` | The installed component is missing or did not answer as expected | yes |
+| `bad_arguments`, `mcp_required_on_instinct`, `*_spawn_failed`, `internal_error` | The command line cannot work here, or the installer hit a bug | no |
+| `cleanup_incomplete` | A helper process could not be stopped; the lock file was kept on purpose | no: wait for the listed pids, delete the lock, re-run |
+
+When `retryable` is true, apply the `required` step's `why`, then run its `command` once; if the same code returns, report it. `files_in_use` means the host's registered Snaplii server holds the files: close the host, then re-run.
+
+### The host's Snaplii server stopped working after `~/.snaplii-env` was deleted
+
+The registration points at `~/.snaplii-env/bin/snaplii-mcp`. Clone the release again and re-run its installer with `--source`: it recreates the environment at the same path, so the registration works again without changes.
 
 ---
 
 ## Security
 
 - **Isolated spending access:** agents can spend only the prepaid Snaplii Cash available within their permissions and limits. They do not receive direct access to your bank accounts or credit cards.
-- **Scoped API keys:** keys can be restricted to `PAY_READ` view-only or `PAY_WRITE` view + purchase.
-- **Spending limits:** strict per-key consumption caps are set via the mobile app.
-- **Consent is the daily limit, set once.** You authorize spending when you create the key and set its per-day cap in the app; within that cap the agent buys and pays **without a per-transaction confirmation**, so the flow stays smooth. Spending is prepaid-only and the key is revocable, so the daily limit is the blast radius. On connect, the agent surfaces this once.
-- **Off-model key entry.** The API key is entered through a secure MCP Apps card rendered by the host — it never passes through the chat or the model. Clients that can't render the card can choose hidden terminal input. The access token is kept in the OS keychain (or, for a long-lived MCP server, in process memory). Recognized Muse runtimes use a private plaintext session file automatically; other keychain-less CLI environments require explicit `SNAPLII_ALLOW_INSECURE=1` opt-in for file caching.
-- **Charges are sent once.** Charges are not auto-retried. On an ambiguous bill-pay failure, query `billpay result` by `paymentNo` before retrying rather than re-paying.
-- **No credential storage:** API keys are used once to obtain a token and are never saved to disk.
-- **Data protection:** card redemption codes and PINs are strictly masked and never exposed without explicit user consent.
+- **Scoped API keys:** `PAY_READ` (read-only), `PAY_WRITE` (read, purchase, bill pay), `P2P` (transfers), `ALL`.
+- **Spending limits:** strict per-key consumption caps are set via the mobile app. Transfers also have a rolling 24-hour per-key limit.
+- **The daily limit is the boundary.** You set a per-day cap when you create the key in the app; the agent spends only within it, from prepaid funds, and you can lower the cap or revoke the key at any time. The agent tells you this once when it connects.
+- **Off-model key entry.** The API key is entered through a secure MCP Apps card rendered by the host, on the hosted connect page, in a hidden terminal prompt, or supplied by the host's credential store (Muse) or vault (Instinct). A client with none of those offers the user's own terminal prompt and, where the MCP tools exist, `snaplii_init`; with `snaplii_init` the key passes through the model once. The session token is kept in the OS keychain, or in process memory for a long-lived MCP server. Recognized Muse runtimes use a private session file automatically; other keychain-less CLI environments keep it in the owner-only config file only after an explicit opt-in: a yes to `init`'s question in the terminal, `allow_insecure_mode: true`, or `SNAPLII_ALLOW_INSECURE=1`.
+- **Snaplii gateways only.** An API key is sent, and the connect page opened, only at production `https://aipayment.snaplii.com` or staging `https://aipay.stage.snaplii.com`. The terminal prompt and the secure card name the gateway the key goes to. A connect page set with `SNAPLII_ELICIT_URL` or `elicit_url` must be on the gateway's own address.
+- **Charges are sent once.** Charges are not auto-retried. On an ambiguous bill-pay failure, query `billpay result` by `paymentNo` before retrying rather than re-paying; without a `paymentNo`, treat the outcome as unknown and reconcile before resubmitting. Transfers carry an idempotency key; retry a `CREATING` transfer with the same key, never a fresh one.
+- **The API key is not stored:** Snaplii uses it once to obtain a token and never writes it to disk; only a host's own vault (Muse, Instinct) keeps it.
+- **Data protection:** card redemption codes and PINs are shown only when the user asks for them or needs them to finish a purchase, and never appear in logs or summaries.
+
+---
+
+## Why Snaplii
+
+### Why AI agents need a new payment layer
+
+AI agents are increasingly capable of discovering products and services, comparing options, navigating merchant websites, selecting the product or service, filling out forms, completing checkout flows, and taking actions on behalf of users.
+
+But payment remains a critical gap. Giving an agent direct access to a user's credit card, debit card, or bank account creates unnecessary exposure of sensitive financial credentials. The question is no longer "Can AI agents shop?" but "How can AI agents pay safely?" Snaplii is built to solve that problem.
+
+### Three reasons to pay through Snaplii
+
+1. **Get more value from every payment.** At supported merchants, Snaplii can provide 5–10% additional discounts when users pay through Snaplii. An agent can find the right product, choose the right payment method, and complete the purchase at a better price. The payment layer becomes part of the shopping decision.
+2. **Pay across multiple currencies.** Snaplii, the product, supports payment experiences across CAD, USD, RMB, USDT/USDC, and more. This integration currently exposes Canadian (CAD) and US (USD) accounts; see the capability table above for what an agent can execute today.
+3. **Keep your credit card away from the agent.** Don't give your AI agent your credit card. Give it a payment account with controlled authorization. The agent never sees or stores the user's card credentials; it only uses the payment capabilities Snaplii makes available. Combined with tokenized payment infrastructure and scoped authorization, this puts a security boundary between the user's financial credentials and the agent's actions.
+
+### Completing a merchant purchase
+
+For merchant purchases, Snaplii provides the payment information required for the transaction while keeping the underlying payment credentials separated from the AI model. An agent can understand the user's intent, navigate the merchant website, select the product or service, reach checkout, use Snaplii's authorized payment capability, and complete the transaction.
+
+When the agent has the required browser capabilities, account access, and user authorization, Snaplii can become part of the full shopping-to-payment workflow. When those conditions are not available, Snaplii provides the agent with the payment or exchange information needed for the user to complete the next step.
+
+### Built for agentic commerce
+
+Traditional payments were designed for humans holding cards and entering credentials. Agentic commerce introduces a different model: intent → agent → authorization → payment → merchant. The payment layer needs to understand not only who is paying, but also which agent is acting, what it is authorized to do, how much it can spend, which payment method it can access, whether the transaction can be reused, and when authorization should expire. Snaplii is building this infrastructure for the emerging AI agent economy.
+
+Snaplii is model-agnostic. Whether you build with Claude, ChatGPT, Gemini, Llama, Mistral, OpenClaw, Muse, Instinct, or any other model or agent, if it can read a skill, call a tool, or run a command, it can use Snaplii.
 
 ---
 

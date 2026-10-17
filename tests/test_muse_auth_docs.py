@@ -94,6 +94,19 @@ def test_all_distributed_skills_have_the_current_auth_gate():
         assert "401 / 403" not in content
 
 
+@pytest.mark.parametrize("relative", SKILLS)
+def test_cli_login_guidance_gives_the_command_and_never_collects_the_key(relative):
+    # Wrapping differs between distributions only by line breaks.
+    text = " ".join((ROOT / relative).read_text().split(BEGIN)[1].split(END)[0].split())
+    assert ("When CLI authentication is needed, your first message asking the user to act "
+            "gives that exact command, with the "
+            "installed CLI's path and the task's gateway options; do not ask for the key in "
+            "the chat or in a file.") in text
+    assert "`init` first asks whether sessions may be kept in an owner-only file" in text
+    # The MCP chat fallback stays available when the user explicitly chooses it.
+    assert "use `snaplii_init` only when the user explicitly chooses that fallback" in text
+
+
 @pytest.fixture
 def skill_artifacts(tmp_path):
     # Check standalone distribution files, not just imported source constants.

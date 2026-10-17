@@ -114,7 +114,7 @@ def test_muse_init_defaults_to_secure_auth_and_keeps_explicit_legacy_fallback(tm
     monkeypatch.setenv("SNAPLII_CONFIG_PATH", str(tmp_path / "config.json"))
     monkeypatch.setenv("SNAPLII_VAULT_HELPER_PATH", str(tmp_path / "missing-helper"))
     runner = CliRunner()
-    first = runner.invoke(main, ["init"], input="synthetic-key\n")
+    first = runner.invoke(main, ["init"], input="snp_sk_live_synthetickey00000000000000000000\n")
     assert first.exit_code != 0
     error = first.exception.to_dict()
     assert error["auth_state"] == "secure_entry_unavailable"
@@ -124,7 +124,7 @@ def test_muse_init_defaults_to_secure_auth_and_keeps_explicit_legacy_fallback(tm
 
     httpx_mock.add_response(method="POST", url=auth.DEFAULT_ORIGIN + "/v2/auth/token",
                             json={"access_token": "synthetic-token", "expires_in": 600})
-    fallback = runner.invoke(main, ["init", "--legacy-auth"], input="synthetic-key\n")
+    fallback = runner.invoke(main, ["init", "--legacy-auth"], input="snp_sk_live_synthetickey00000000000000000000\n")
     assert fallback.exit_code == 0, fallback.output
     state = json.loads(fallback.output)
     assert state["has_valid_token"] is True
@@ -180,3 +180,36 @@ def test_gateway_url_rejects_ambiguous_or_secret_bearing_urls(tmp_path, url):
 def test_cancellation_and_denial_never_fall_back_or_retry(state):
     action = auth.build_auth_action(state, host="muse")
     assert action == {"type": "stop", "reason": state}
+
+
+NOT_A_KEY = "0123456789abcdef0123456789abcdef01234567"
+WELL_FORMED_KEY = "snp_sk_live_" + "A1b2" * 8
+
+
+def _assert_points_to_the_stored_key(result, reason):
+    assert result.exit_code != 0
+    error = result.exception.to_dict()
+    assert (error["auth_state"], error["reason_code"]) == ("auth_required", reason)
+    assert error["next_action"]["type"] == "run_cli"
+    assert error["next_action"]["argv"][-2:] == ["init", "--vault-auth"]
+    text = error.get("message", "") + error.get("error", "")  # AuthError vs GatewayApiError
+    assert "secure credential store" in text
+    assert "do not type, rebuild or copy a key yourself" in text
+    return error
+
+
+def test_muse_raw_login_with_a_non_key_points_back_to_the_stored_key(tmp_path, monkeypatch, muse_filesystem, httpx_mock):
+    monkeypatch.setenv("SNAPLII_CONFIG_PATH", str(tmp_path / "config.json"))
+    result = CliRunner().invoke(main, ["init", "--legacy-auth"], input=NOT_A_KEY + "\n")
+    error = _assert_points_to_the_stored_key(result, "api_key_format_invalid")
+    assert NOT_A_KEY not in json.dumps(error)
+    assert httpx_mock.get_requests() == []
+
+
+def test_muse_raw_login_the_gateway_rejects_points_back_to_the_stored_key(tmp_path, monkeypatch, muse_filesystem, httpx_mock):
+    monkeypatch.setenv("SNAPLII_CONFIG_PATH", str(tmp_path / "config.json"))
+    httpx_mock.add_response(method="POST", url=auth.DEFAULT_ORIGIN + "/v2/auth/token", status_code=401,
+                            json={"status": "error", "message": "Snaplii core rejected the credentials (MCA20101: x)"})
+    result = CliRunner().invoke(main, ["init", "--legacy-auth"], input=WELL_FORMED_KEY + "\n")
+    error = _assert_points_to_the_stored_key(result, "auth_gateway_rejected")
+    assert WELL_FORMED_KEY not in json.dumps(error)

@@ -18,6 +18,7 @@ def test_candidate_update_never_replaces_the_bundle_with_pypi(tmp_path, monkeypa
     assert result.exit_code == 0, result.output
     output = json.loads(result.output)
     assert output["status"] == "candidate-pinned"
+    assert "new release tag" in output["action"] and "README" in output["action"]
     assert output["version"] == "0.17.0rc1"
     assert httpx_mock.get_requests() == []
     assert not (tmp_path / "config.json").exists()

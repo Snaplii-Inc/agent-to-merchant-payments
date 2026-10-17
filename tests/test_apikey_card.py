@@ -11,6 +11,7 @@ import json
 import server
 
 from snaplii.cards import APIKEY_RES_URI, MCP_APP_MIME, SUBMIT_TOOL, APIKEY_CARD_HTML
+from snaplii.exceptions import GatewayConnectionError
 
 
 class FakeClient:
@@ -44,10 +45,12 @@ def _call(name, args):
 
 # ── the card resource ─────────────────────────────────────────────────────────
 
-def test_read_resource_serves_card_with_app_mime():
+def test_read_resource_serves_card_with_app_mime(monkeypatch):
+    monkeypatch.setattr(server, "_base_url", lambda: "https://aipayment.snaplii.com")
     res = asyncio.run(server.read_resource(APIKEY_RES_URI))
     assert res[0].mime_type == MCP_APP_MIME == "text/html;profile=mcp-app"
-    assert res[0].content == APIKEY_CARD_HTML
+    assert res[0].content == APIKEY_CARD_HTML.replace(
+        'var GATEWAY_HOST = "";', 'var GATEWAY_HOST = "aipayment.snaplii.com";')
 
 
 def test_unknown_resource_raises():
@@ -83,7 +86,7 @@ def test_card_default_collapse_for_other_clients(monkeypatch):
     other_app = SimpleNamespace(request_context=SimpleNamespace(session=SimpleNamespace(
         client_params=SimpleNamespace(clientInfo=SimpleNamespace(name="claude-ai")))))
     monkeypatch.setattr(server, "app", other_app)
-    assert server._card_html_for_client() == APIKEY_CARD_HTML  # unchanged → collapses
+    assert "var NO_COLLAPSE = false;" in server._card_html_for_client()  # unchanged → collapses
 
 
 def test_card_self_checks_connection_on_load():
@@ -224,7 +227,21 @@ def test_connect_card_route_warns_against_pasting_key(monkeypatch):
     out = _call("snaplii_connect", {})
     assert out["status"] == "card_requested"
     assert "paste" in out["message"].lower()
-    assert "snaplii init" in out["message"]
+    assert "in their own terminal" in out["message"]
+
+
+def test_connect_card_route_waits_for_the_card_before_any_fallback(monkeypatch):
+    monkeypatch.setattr(server, "_connect_route", lambda: "card")
+    for storage in ("system keychain", "process memory"):
+        class Store(_DisconnectedStore):
+            def auth_status(self, *, origin, _s=storage):
+                return {"has_valid_token": False, "host": "unknown", "credential_storage": _s}
+        monkeypatch.setattr(server, "ConfigStore", Store)
+        text = _call("snaplii_connect", {})["message"].lower()
+        # The card is the route: no key in chat unless the user says it never appeared.
+        assert "do not ask for the key in chat" in text
+        gate = text.index("only if the user says no card appeared")
+        assert gate < text.index("paste")
 
 
 class _FakeSession:
@@ -267,6 +284,8 @@ def _wire_elicit(monkeypatch, action, captured):
     # No real waiting between polls in tests.
     monkeypatch.setattr(server, "_ELICIT_POLL_MAX_ATTEMPTS", 2)
     monkeypatch.setattr(server, "_ELICIT_POLL_INTERVAL_S", 0)
+    monkeypatch.setattr(server, "_pending_connect_eid", None)
+    monkeypatch.setattr(server, "_elicit_failures", 0)
 
 
 def test_connect_elicit_opens_page_polls_and_caches_token(monkeypatch):
@@ -326,7 +345,142 @@ def test_connect_elicit_pending_when_token_never_arrives(monkeypatch):
     monkeypatch.setattr(server, "_get_client", lambda: FakeClient())
     out = _call("snaplii_connect", {})
     assert out["status"] == "pending"
-    assert "snaplii init" in out["message"]
+    # The secure page is open, so the key is never asked for in chat or a terminal.
+    assert "paste" not in out["message"].lower()
+    assert "own terminal" not in out["message"]
+    assert "out of chat" in out["message"]
+
+
+class _CountingSession(_FakeSession):
+    def __init__(self, action, captured):
+        super().__init__(action, captured)
+        captured["opened"] = []
+
+    async def elicit_url(self, message, url, elicitation_id):
+        self._captured["opened"].append(url)
+        return await super().elicit_url(message, url, elicitation_id)
+
+
+class _ParkedClient:
+    """The gateway parks a token under one eid; polls of any other eid see nothing."""
+    def __init__(self, parked):
+        self.parked = parked
+        self.polled = []
+
+    def poll_connect_token(self, eid):
+        self.polled.append(eid)
+        if eid == self.parked.get("eid"):
+            return {"access_token": "jwt-x", "expires_in": 1800, "country": "ca"}
+        return None
+
+    def accept_connect_token(self, response):
+        self.parked["accepted"] = True
+
+    def auth_status(self):
+        return {"has_valid_token": True, "auth_method": "url"}
+
+
+def test_connect_elicit_pending_tells_the_agent_to_call_again_soon(monkeypatch):
+    captured = {}
+    _wire_elicit(monkeypatch, "accept", captured)
+    monkeypatch.setattr(server, "_get_client", lambda: _ParkedClient({}))
+    out = _call("snaplii_connect", {})
+    assert out["status"] == "pending"
+    assert "within 2 minutes" in out["message"]
+
+
+def test_connect_elicit_second_call_collects_the_first_page(monkeypatch):
+    captured = {}
+    _wire_elicit(monkeypatch, "accept", captured)
+    monkeypatch.setattr(server, "app", _FakeApp(_CountingSession("accept", captured)))
+    parked = {}
+    client = _ParkedClient(parked)
+    monkeypatch.setattr(server, "_get_client", lambda: client)
+    assert _call("snaplii_connect", {})["status"] == "pending"
+    first_page = captured["opened"][0]
+    # The user finishes on that page after the first call gave up waiting.
+    parked["eid"] = client.polled[0]
+    out = _call("snaplii_connect", {})
+    assert out["status"] == "authenticated"
+    assert parked["accepted"] is True
+    assert captured["opened"] == [first_page]  # no second page was opened
+
+
+def test_connect_elicit_second_call_reopens_the_same_page(monkeypatch):
+    captured = {}
+    _wire_elicit(monkeypatch, "accept", captured)
+    monkeypatch.setattr(server, "app", _FakeApp(_CountingSession("accept", captured)))
+    monkeypatch.setattr(server, "_get_client", lambda: _ParkedClient({}))
+    _call("snaplii_connect", {})
+    _call("snaplii_connect", {})
+    # A key submitted on either open page reaches the eid being polled.
+    assert len(captured["opened"]) == 2
+    assert captured["opened"][0] == captured["opened"][1]
+
+
+class _UnreachableClient:
+    """Every poll fails before Snaplii answers (network down, read timeout)."""
+    def __init__(self):
+        self.polled = []
+
+    def poll_connect_token(self, eid):
+        self.polled.append(eid)
+        raise GatewayConnectionError("https://aipayment.snaplii.com", OSError("down"))
+
+
+def _assert_unreachable(out):
+    assert out["status"] == "unreachable"
+    text = out["message"].lower()
+    # Polling failed, so nothing says the submission is missing: never ask for the key again.
+    assert "paste" not in text and "own terminal" not in text and "submit again" not in text
+    assert "out of chat" in text
+
+
+def test_connect_elicit_unreachable_when_every_poll_fails(monkeypatch):
+    captured = {}
+    _wire_elicit(monkeypatch, "accept", captured)
+    client = _UnreachableClient()
+    monkeypatch.setattr(server, "_get_client", lambda: client)
+    out = _call("snaplii_connect", {})
+    _assert_unreachable(out)
+    assert len(client.polled) == 2
+    # The open page stays the one to collect from on the next call.
+    assert server._pending_connect_eid == captured["eid"]
+
+
+def test_connect_elicit_second_call_unreachable_keeps_the_page(monkeypatch):
+    captured = {}
+    _wire_elicit(monkeypatch, "accept", captured)
+    monkeypatch.setattr(server, "app", _FakeApp(_CountingSession("accept", captured)))
+    monkeypatch.setattr(server, "_get_client", lambda: _ParkedClient({}))
+    assert _call("snaplii_connect", {})["status"] == "pending"
+    eid = server._pending_connect_eid
+    monkeypatch.setattr(server, "_get_client", lambda: _UnreachableClient())
+    out = _call("snaplii_connect", {})
+    _assert_unreachable(out)
+    assert len(captured["opened"]) == 1  # no page reopened for a key nobody lost
+    assert server._pending_connect_eid == eid
+
+
+def test_connect_elicit_pending_when_one_poll_reaches_snaplii(monkeypatch):
+    captured = {}
+    _wire_elicit(monkeypatch, "accept", captured)
+
+    class FlakyClient:
+        def __init__(self, failing_call):
+            self.calls = 0
+            self.failing_call = failing_call
+
+        def poll_connect_token(self, eid):
+            self.calls += 1
+            if self.calls == self.failing_call:
+                raise GatewayConnectionError("https://aipayment.snaplii.com", OSError("blip"))
+            return None  # Snaplii answered: nothing parked yet
+
+    for failing_call in (1, 2):
+        monkeypatch.setattr(server, "_pending_connect_eid", None)
+        monkeypatch.setattr(server, "_get_client", lambda: FlakyClient(failing_call))
+        assert _call("snaplii_connect", {})["status"] == "pending"
 
 
 # ── Codex terminal vs desktop routing ──────────────────────────────────────────
@@ -422,3 +576,94 @@ def test_balance_falls_back_when_country_unknown(monkeypatch):
     out = _call("snaplii_balance", {})
     assert "currency" not in out
     assert "currency_note" in out
+
+
+class _FailingSession:
+    """elicit_url stub that raises, recording the eid of each page it was asked to open."""
+    def __init__(self, exc, captured):
+        self._exc = exc
+        self._captured = captured
+        captured["eids"] = []
+
+    async def elicit_url(self, message, url, elicitation_id):
+        self._captured["eids"].append(elicitation_id)
+        raise self._exc
+
+
+def test_connect_elicit_failure_retries_the_page_before_any_fallback(monkeypatch):
+    captured = {}
+    _wire_elicit(monkeypatch, "accept", captured)
+    monkeypatch.setattr(server, "app", _FakeApp(_FailingSession(TimeoutError("slow"), captured)))
+    monkeypatch.setattr(server, "_get_client", lambda: _ParkedClient({}))
+    first = _call("snaplii_connect", {})
+    assert first["status"] == "elicit_failed"
+    text = first["message"].lower()
+    # One failure does not show the secure page is unavailable: no key in chat yet.
+    assert "paste" not in text and "own terminal" not in text
+    assert "do not ask for the key in chat" in text
+    second = _call("snaplii_connect", {})
+    assert second["status"] == "elicit_failed"
+    assert "in their own terminal" in second["message"]  # a second failure opens the fallback
+    assert captured["eids"][0] == captured["eids"][1]  # the retry reused the same page
+
+
+def test_connect_elicit_unsupported_falls_back_at_once(monkeypatch):
+    captured = {}
+    _wire_elicit(monkeypatch, "accept", captured)
+    err = RuntimeError("-32602 Client does not support URL-mode elicitation requests")
+    monkeypatch.setattr(server, "app", _FakeApp(_FailingSession(err, captured)))
+    out = _call("snaplii_connect", {})
+    assert out["status"] == "elicit_unsupported"
+    assert "in their own terminal" in out["message"]
+
+
+def test_connect_elicit_failure_count_resets_after_the_page_opens(monkeypatch):
+    captured = {}
+    _wire_elicit(monkeypatch, "accept", captured)
+    monkeypatch.setattr(server, "_get_client", lambda: _ParkedClient({}))
+    monkeypatch.setattr(server, "app", _FakeApp(_FailingSession(TimeoutError("slow"), captured)))
+    _call("snaplii_connect", {})
+    monkeypatch.setattr(server, "app", _FakeApp(_FakeSession("accept", captured)))
+    assert _call("snaplii_connect", {})["status"] == "pending"
+    monkeypatch.setattr(server, "app", _FakeApp(_FailingSession(TimeoutError("slow"), captured)))
+    out = _call("snaplii_connect", {})
+    assert "own terminal" not in out["message"]  # a fresh first failure, not a second one
+
+
+def test_connect_elicit_failure_count_resets_when_a_connection_completes(monkeypatch):
+    captured = {}
+    _wire_elicit(monkeypatch, "accept", captured)
+    parked = {}
+    client = _ParkedClient(parked)
+    monkeypatch.setattr(server, "_get_client", lambda: client)
+    monkeypatch.setattr(server, "app", _FakeApp(_FailingSession(TimeoutError("slow"), captured)))
+    _call("snaplii_connect", {})  # first failure; the page may still have opened
+    parked["eid"] = captured["eids"][0]  # the user submitted on it after all
+    assert _call("snaplii_connect", {})["status"] == "authenticated"
+    # The session later ends; the next failure is a first failure again.
+    out = _call("snaplii_connect", {})
+    assert out["status"] == "elicit_failed"
+    assert "own terminal" not in out["message"] and "paste" not in out["message"].lower()
+
+
+def test_connect_elicit_other_invalid_params_retry_first(monkeypatch):
+    captured = {}
+    _wire_elicit(monkeypatch, "accept", captured)
+    err = RuntimeError("-32602 Invalid params: invalid elicitationId")
+    monkeypatch.setattr(server, "app", _FakeApp(_FailingSession(err, captured)))
+    monkeypatch.setattr(server, "_get_client", lambda: _ParkedClient({}))
+    out = _call("snaplii_connect", {})
+    # An invalid-params error does not show URL mode is unsupported: retry before any fallback.
+    assert out["status"] == "elicit_failed"
+    assert "own terminal" not in out["message"] and "paste" not in out["message"].lower()
+
+
+def test_card_waits_for_the_login_longer_than_the_gateway_timeout():
+    # The gateway client allows 30 s per request; the card must not report a failure
+    # (and invite a second entry) while a slow login can still succeed.
+    import re
+    html = APIKEY_CARD_HTML
+    wait = int(re.search(r"SUBMIT_TIMEOUT_MS = (\d+)", html).group(1))
+    assert wait > 30000
+    assert "arguments: { api_key: key } }, SUBMIT_TIMEOUT_MS)" in html
+    assert "timeoutMs || 8000" in html  # other host calls keep the short timeout

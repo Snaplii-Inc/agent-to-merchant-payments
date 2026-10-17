@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import uuid
 from urllib.parse import urlsplit
 
@@ -8,6 +9,8 @@ import httpx
 from snaplii.config_store import ConfigStore
 from snaplii import auth
 from snaplii.exceptions import (
+    ItemCheckUnavailableError,
+    ItemIdError,
     AmountValidationError,
     AuthError,
     ConfigError,
@@ -16,6 +19,30 @@ from snaplii.exceptions import (
     SnapliiCliError,
     TransferApiError,
 )
+
+
+_ITEM_ID = re.compile(r"[^\s-]+-[^\s-]+\Z")  # {cardBrandId}-{cardTemplateId}: two parts, one hyphen
+
+
+def _client_version() -> str:
+    try:
+        from importlib.metadata import version
+        return version("snaplii-cli")
+    except Exception:
+        return "unknown"
+
+
+def brand_detail(brand_resp) -> dict:
+    """The brand object of a brand-detail reply, given directly or wrapped in "data"."""
+    if not isinstance(brand_resp, dict):
+        return {}
+    data = brand_resp.get("data")
+    return data if isinstance(data, dict) else brand_resp
+
+
+def card_cashback_percent(card: dict):
+    """A card's cashback percent as the catalog states it: discount, else regularDiscount."""
+    return card.get("discount") or card.get("regularDiscount")
 
 
 def summarize_denominations(brand_resp: dict) -> list:
@@ -44,11 +71,22 @@ def summarize_denominations(brand_resp: dict) -> list:
             entry["max"] = fv.get("priceEnd")
         else:
             entry["amount"] = fv.get("priceStart")
-        disc = c.get("discount") or c.get("regularDiscount")
+        disc = card_cashback_percent(c)
         if disc:
             entry["cashback_percent"] = disc
         out.append(entry)
     return out
+
+
+def _unreadable_transfer(status_code: int, path: str) -> TransferApiError:
+    return TransferApiError(status_code, {
+        "code": "CLIENT_UNREADABLE_RESPONSE",
+        "message": ("The gateway sent an unreadable response; the operation may "
+                    "or may not have gone through. Check 'snaplii transfer list' "
+                    "(or retry the identical request with the SAME Idempotency-Key) "
+                    "— never create again with a fresh key."),
+        "retryable": True,
+    }, path)
 
 
 class GatewayClient:
@@ -70,18 +108,40 @@ class GatewayClient:
                 "re-resolves dependencies."
             ) from e
         self._config = config_store
-        self._http = httpx.Client(timeout=30.0)
+        self._http = httpx.Client(timeout=30.0, event_hooks={"request": [self._identify]})
+
+    def _identify(self, request: httpx.Request) -> None:
+        """Name the official client on every request, e.g. `snaplii-cli/0.19.0 (mcp)`, so the
+        gateway can tell CLI and MCP traffic from agents calling the API directly. Telemetry
+        only: any caller can send this header, so it must never gate access."""
+        request.headers["X-Snaplii-Client"] = "snaplii-cli/%s (%s)" % (
+            _client_version(), getattr(self._config, "runtime", None) or "library")
 
     # ── Auth ──────────────────────────────────────────────────────
 
-    def login(self, agent_id: str, api_key: str) -> dict:
+    @property
+    def origin(self) -> str:
+        return self._origin
+
+    def login(self, agent_id: str, api_key: str, *, remember_base_url: bool = False) -> dict:
+        auth.require_login_origin(self._origin)
+        if not auth.valid_api_key(api_key):
+            # Never send a vault reference, surrogate or hash as a key, and never
+            # echo what was given: the message names the format, not the value.
+            if self.auth_status()["host"] == "muse":
+                raise self._auth_error("auth_required", "api_key_format_invalid",
+                                       "That is not a Snaplii API key. " + self._MUSE_USE_STORED_KEY, "vault")
+            raise self._auth_error("invalid_key", "api_key_format_invalid",
+                                   "That is not a Snaplii API key. A key is snp_sk_live_ followed by "
+                                   "32 letters and digits; copy it again from the Snaplii app.", "api_key")
         resp = self._post("/v2/auth/token", json={
             "agent_id": agent_id,
             "api_key": api_key,
         })
-        return self._finish_login(resp, agent_id=agent_id, auth_method="api_key")
+        return self._finish_login(resp, agent_id=agent_id, auth_method="api_key",
+                                  remember_base_url=remember_base_url)
 
-    def login_via_vault(self, agent_id: str) -> dict:
+    def login_via_vault(self, agent_id: str, *, remember_base_url: bool = False) -> dict:
         """Exchange a host-managed API key without exposing it to this process.
 
         The host owns input and cancellation; this method only exchanges an
@@ -151,25 +211,58 @@ class GatewayClient:
             raise self._auth_error("secure_entry_unavailable", "credential_redirect_blocked",
                                    "A redirect was blocked during secure credential authentication.", "vault")
         body = self._parse_login_response(httpx.Response(status, text=raw), "vault")
-        return self._finish_login(body, agent_id=agent_id, auth_method="vault")
+        return self._finish_login(body, agent_id=agent_id, auth_method="vault",
+                                  remember_base_url=remember_base_url)
+
+    # The gateway's reply when it refuses a key; its message may carry an error
+    # code, e.g. "... (MCA20101: ...)".
+    _GATEWAY_KEY_REJECTION = "Snaplii core rejected the credentials"
+    # In Muse the user's key is in the secure credential store, so a raw key that
+    # fails was typed or rebuilt by the agent: send it back to the stored one.
+    _MUSE_USE_STORED_KEY = ("In Muse the real key is already in the secure credential store; "
+                            "do not type, rebuild or copy a key yourself. "
+                            "Run `snaplii init --vault-auth` to use the stored key.")
 
     def _parse_login_response(self, response, method):
         try:
             return self._parse_response(response, "/v2/auth/token")
         except GatewayApiError as exc:
+            if exc.body.get("unreadable"):
+                return {}  # _finish_login reports the missing access token
+            message = exc.body.get("message")
+            gateway_rejected = (exc.status_code in (401, 403) and isinstance(message, str)
+                                and message.startswith(self._GATEWAY_KEY_REJECTION))
             code = exc.body.get("rspMsgCd")
+            if not code and gateway_rejected:
+                found = re.search(r"\((MCA\d+)", message)
+                code = found.group(1) if found else ""
             code = code if isinstance(code, str) and code in self._ERROR_MESSAGES else ""
             safe = {"rspMsgCd": code}
             if code:
                 safe["friendly_message"] = self._ERROR_MESSAGES[code]
+            if gateway_rejected or code.startswith("MCA201"):
+                state, reason = "invalid_key", "auth_gateway_rejected"
+            elif exc.status_code in (401, 403):
+                # Something other than the gateway refused the request (a proxy, a
+                # host's credential layer, a wrong address): the key was never judged.
+                state, reason = "auth_response_invalid", "auth_rejected_unverified"
+                safe["friendly_message"] = (
+                    "Authentication was rejected before Snaplii checked the key, so the key may still be "
+                    "valid. Check the gateway address and how the key reaches it before replacing the key.")
+            else:
+                state = "temporary_gateway_error" if exc.status_code >= 500 else "auth_response_invalid"
+                reason = "auth_gateway_rejected"
+            if state == "invalid_key" and method == "api_key" and self.auth_status()["host"] == "muse":
+                state, method = "auth_required", "vault"
+                safe["friendly_message"] = "That key was not accepted. " + self._MUSE_USE_STORED_KEY
             error = GatewayApiError(exc.status_code, safe, "/v2/auth/token")
-            state = ("invalid_key" if exc.status_code in (401, 403) or code.startswith("MCA201")
-                     else "temporary_gateway_error" if exc.status_code >= 500 else "auth_response_invalid")
-            error.auth_fields = self._auth_fields(state, "auth_gateway_rejected", method)
+            error.auth_fields = self._auth_fields(state, reason, method)
             raise error from None
 
-    def _finish_login(self, resp: dict, *, agent_id, auth_method: str) -> dict:
-        """Shared tail of every login path: validate the token and cache it."""
+    def _finish_login(self, resp: dict, *, agent_id, auth_method: str,
+                      remember_base_url: bool = False) -> dict:
+        """Shared tail of every login path: validate the token and cache it. With
+        remember_base_url, this gateway becomes the saved default in the same write."""
         body = resp if isinstance(resp, dict) else {}
         token = body.get("access_token")
         if not token:
@@ -179,7 +272,8 @@ class GatewayClient:
         expires_in = body.get("expires_in", 3600)
         self._config.commit_session(token, expires_in, agent_id=agent_id,
                                     auth_method=auth_method, token_origin=self._origin,
-                                    country=body.get("country"))
+                                    country=body.get("country"),
+                                    base_url=self._base_url if remember_base_url else None)
         if self._config.get_cached_token(origin=self._origin) != token:
             raise self._auth_error("session_cache_failed", "session_readback_failed",
                                    "The session could not be verified. Authentication is incomplete.", auth_method)
@@ -213,10 +307,11 @@ class GatewayClient:
         header — the endpoint is guarded by possession of the one-time eid. Returns
         the token dict on 200, or None when not ready yet (204) / on any other
         status, so the caller can keep polling."""
+        auth.require_login_origin(self._origin)
         url = f"{self._base_url}/v2/auth/elicit/{eid}/token"
         try:
             resp = self._http.get(url)
-        except httpx.ConnectError as e:
+        except httpx.RequestError as e:
             raise GatewayConnectionError(url, e)
         if resp.status_code == 200:
             try:
@@ -233,6 +328,22 @@ class GatewayClient:
             "page": str(page),
             "pageSize": str(page_size),
         })
+
+    def list_all_user_cards(self, status: str = "ACTIVE", page_size: int = 100) -> list:
+        """Every owned card. The list carries no total, so a short page ends it;
+        a page identical to the one before means the server ignored paging."""
+        cards, previous, page = [], None, 1
+        while True:
+            resp = self.list_user_cards(status=status, page=page, page_size=page_size)
+            rows = resp.get("data") if isinstance(resp, dict) else None
+            rows = rows if isinstance(rows, list) else []
+            if rows == previous:
+                break
+            cards.extend(rows)
+            if len(rows) < page_size:
+                break
+            previous, page = rows, page + 1
+        return cards
 
     def get_card_detail(self, card_no: str) -> dict:
         return self._get(f"/v2/cards/{card_no}")
@@ -259,35 +370,79 @@ class GatewayClient:
 
     # ── Amount guard ──────────────────────────────────────────────
 
-    def validate_amount(self, item_id: str, price) -> None:
-        """Guard quote/purchase: confirm `price` falls within the brand's
-        allowed denomination for `item_id` ({brandId}-{templateId}).
+    def validate_amount(self, item_id: str, price) -> dict:
+        """Guard quote/purchase: `item_id` must be exactly {cardBrandId}-{cardTemplateId}
+        with a template that is a card of that brand, and `price` must fall within
+        that card's allowed denomination.
 
-        Raises AmountValidationError when the amount is confirmed out of range.
-        Fails open (returns silently) whenever the catalog can't be resolved —
-        the server stays the final authority. This mirrors the app's UI check
-        (DrawerBottomInputAmount) which the agent path would otherwise bypass.
+        Returns {"item_id", "brand_name"} for the verified card. Raises ItemIdError for a
+        malformed item_id, a brand the catalog does not have, or a template the brand does
+        not list; ItemCheckUnavailableError when the catalog cannot be read; and
+        AmountValidationError when the amount is out of range. Nothing is sent unless the
+        card is verified, so an ID that could name a different card never reaches the
+        gateway. This mirrors the app's UI check (DrawerBottomInputAmount) which the agent
+        path would otherwise bypass.
         """
-        try:
-            amount = float(price)
-        except (TypeError, ValueError):
-            return  # malformed price — let the server reject it
-
-        brand_id, _, template_id = (item_id or "").partition("-")
-        if not brand_id or not template_id:
-            return  # can't parse the item id — don't block on the guard
+        if not isinstance(item_id, str) or not _ITEM_ID.match(item_id):
+            raise ItemIdError(
+                "item_id must be exactly {cardBrandId}-{cardTemplateId}, copied verbatim from "
+                "browse brand (e.g. CB00000000000086-CT000000003618); got %r." % (item_id,),
+                item_id=item_id if isinstance(item_id, str) else "")
+        brand_id, _, template_id = item_id.partition("-")
 
         try:
             detail = self.get_card_brand_by_id(brand_id)
-        except SnapliiCliError:
-            return  # catalog fetch failed — don't block; server decides
+        except ConfigError:
+            raise  # authentication or configuration state: report it as it is
+        except GatewayApiError as e:
+            if e.auth_fields or e.status_code in (401, 403):
+                raise  # a session or permission problem, not an item problem
+            if e.status_code >= 500 and self._brand_listed(brand_id) is False:
+                # After a failed detail lookup, readable brand lists that do not name
+                # the brand mean the item_id is wrong.
+                raise ItemIdError(
+                    "Brand %s is not in the brand lists you can browse (browse tags), so item_id "
+                    "%s was not copied from browse brand." % (brand_id, item_id),
+                    item_id=item_id) from e
+            if e.status_code >= 500 or e.status_code == 429 or (
+                    isinstance(e.body, dict) and e.body.get("unreadable")):
+                raise ItemCheckUnavailableError(
+                    "The catalog could not be read, so item_id %s could not be verified."
+                    % item_id, item_id=item_id) from e
+            raise ItemIdError(
+                "Brand %s was not found in the catalog, so item_id %s cannot be the card the "
+                "user chose." % (brand_id, item_id), item_id=item_id) from e
+        except SnapliiCliError as e:
+            raise ItemCheckUnavailableError(
+                "The catalog could not be reached, so item_id %s could not be verified."
+                % item_id, item_id=item_id) from e
 
-        brand = detail.get("data", detail) if isinstance(detail, dict) else {}
-        cards = brand.get("cards", []) if isinstance(brand, dict) else []
-        card = next((c for c in cards if isinstance(c, dict)
-                     and c.get("cardTemplateId") == template_id), None)
+        # A reply we cannot read says nothing about the ID; an empty brand says it is wrong.
+        raw_cards = brand_detail(detail).get("cards")
+        data = detail.get("data") if isinstance(detail, dict) else None
+        if (not isinstance(detail, dict) or (data is not None and not isinstance(data, dict))
+                or (raw_cards is not None and not isinstance(raw_cards, list))):
+            raise ItemCheckUnavailableError(
+                "The catalog sent an unreadable reply, so item_id %s could not be verified."
+                % item_id, item_id=item_id)
+        brand = brand_detail(detail)
+        cards = [c for c in raw_cards or [] if isinstance(c, dict)]
+        card = next((c for c in cards if c.get("cardTemplateId") == template_id), None)
         if not card:
-            return  # unknown template — server decides
+            raise ItemIdError(
+                "Brand %s has no card %s, so this item_id would not buy the card the user "
+                "chose." % (brand_id, template_id), item_id=item_id)
+        checked = {"item_id": item_id}
+        desc = brand.get("desc")
+        brand_name = ((desc.get("name") if isinstance(desc, dict) else None)
+                      or brand.get("name") or brand.get("alternativeName"))
+        if isinstance(brand_name, str) and brand_name.strip():
+            checked["brand_name"] = brand_name.strip()
+
+        try:
+            amount = float(price)
+        except (TypeError, ValueError):
+            return checked  # malformed price — let the server reject it
 
         fv = card.get("faceValueRules", {}) or {}
         ftype = fv.get("type")
@@ -321,6 +476,43 @@ class GatewayClient:
                     f"For larger amounts, contact Snaplii.",
                     item_id=item_id, amount=amount, min_amount=lo, max_amount=hi,
                 )
+        return checked
+
+    def _brand_listed(self, brand_id: str):
+        """Whether the account's brand lists (both channels) name brand_id: True as soon as
+        one does, False when every list is read in full and none does, None when a list
+        cannot be read or is malformed, or all are empty."""
+        listed = set()
+        for channel in ("HOME_PAGE", "SEND_GIFT"):
+            try:
+                tags = self.get_all_card_tags(channel=channel)
+            except ConfigError:
+                raise
+            except GatewayApiError as e:
+                if e.auth_fields or e.status_code in (401, 403):
+                    raise
+                return None
+            except SnapliiCliError:
+                return None
+            rows = tags.get("data") if isinstance(tags, dict) else None
+            if not isinstance(rows, list):
+                return None
+            for tag in rows:
+                if not isinstance(tag, dict):
+                    return None
+                brands = tag.get("cardBrands")
+                if brands is None:
+                    continue  # an empty category leaves cardBrands out (or sends null)
+                if not isinstance(brands, list):
+                    return None
+                for brand in brands:
+                    bid = brand.get("cardBrandId") if isinstance(brand, dict) else None
+                    if not isinstance(bid, str) or not bid:
+                        return None
+                    listed.add(bid)
+            if brand_id in listed:
+                return True
+        return False if listed else None
 
     # ── Purchase ──────────────────────────────────────────────────
 
@@ -376,6 +568,7 @@ class GatewayClient:
             payment_ctx["specifiedPrimaryPaymentToken"] = payment_token
         if specified_voucher:
             payment_ctx["specifiedVoucher"] = specified_voucher
+            payment_ctx["voucherOption"] = "USE"   # match create_order_and_pay
         return self._post("/v2/quote", json={
             "orderInfo": {
                 "orderType": "GIFT_CARD",
@@ -504,11 +697,12 @@ class GatewayClient:
         try:
             resp = self._transfer_request("POST", "/v2/transfers", json_body=body,
                                           extra_headers={"Idempotency-Key": key})
+            if not (isinstance(resp, dict) and (resp.get("order_no") or resp.get("status"))):
+                raise _unreadable_transfer(200, "/v2/transfers")
         except TransferApiError as e:
             e.idempotency_key = key
             raise
-        if isinstance(resp, dict):
-            resp.setdefault("idempotency_key", key)
+        resp.setdefault("idempotency_key", key)
         return resp
 
     def transfer_cancel(self, order_no: str) -> dict:
@@ -520,7 +714,7 @@ class GatewayClient:
 
     def transfer_finish(self, order_no: str) -> dict:
         """Send the transfer now (moves auto_finish_at to now). The response is
-        still PENDING — the background sweeper settles it within ~15s; poll
+        still PENDING and normally settles within ~15s; poll
         transfer_get for the outcome."""
         return self._transfer_request("POST", f"/v2/transfers/{order_no}/finish")
 
@@ -554,13 +748,16 @@ class GatewayClient:
                                       headers=headers)
         except httpx.ConnectError as e:
             raise GatewayConnectionError(url, e)
-        except httpx.TimeoutException:
-            # A timed-out create is indeterminate: the transfer may exist. Never
+        except httpx.RequestError as e:
+            # A timeout, a reset connection or a broken response may follow a request
+            # the gateway already processed, so the transfer may exist. Never
             # auto-create again under a fresh key — surface it as retryable with
             # the same-key instruction (transfer_create attaches the key).
+            timed_out = isinstance(e, httpx.TimeoutException)
             raise TransferApiError(0, {
-                "code": "CLIENT_TIMEOUT",
-                "message": ("The request timed out before the gateway answered; "
+                "code": "CLIENT_TIMEOUT" if timed_out else "CLIENT_TRANSPORT_ERROR",
+                "message": (("The request timed out" if timed_out else "The connection failed")
+                            + " before the gateway answered; "
                             "the operation may or may not have gone through. "
                             "Check 'snaplii transfer list' (or retry the identical "
                             "request with the SAME Idempotency-Key) — never create "
@@ -570,6 +767,10 @@ class GatewayClient:
         try:
             body = resp.json()
         except Exception:
+            if resp.is_success:
+                # The gateway answered but the reply cannot be read: as with a
+                # timeout, the transfer may exist, so keep the same-key rule.
+                raise _unreadable_transfer(resp.status_code, path)
             body = {"raw": resp.text}
         if self._session_rejected(resp.status_code, body):
             error = TransferApiError(resp.status_code, body if isinstance(body, dict) else {}, path)
@@ -639,8 +840,8 @@ class GatewayClient:
         headers = {"Authorization": f"Bearer {token}"}
         try:
             resp = self._http.get(url, params=params, headers=headers)
-        except httpx.ConnectError as e:
-            raise GatewayConnectionError(url, e)
+        except httpx.RequestError as e:
+            raise GatewayConnectionError(url, e)  # a read is safe to retry
         return self._protected_response(resp, path, token)
 
     def _post(self, path: str, json: dict | None = None, params: dict | None = None) -> dict:
@@ -679,6 +880,7 @@ class GatewayClient:
         "MACP6005": "Payment service error. This may be a temporary issue — please wait a moment and retry. If it persists, check your Snaplii Cash balance in the app.",
         "MACP6006": "Service call failed. The downstream gift card service is temporarily unavailable. Please try again later.",
         "MCAP9999": "Session expired. Please run 'snaplii init' to re-authenticate.",
+        "MCAP2107": "The gateway rejected this item_id, so nothing was charged.",
         "MCA20004": "That payment method isn't enabled on this account. Purchases use the default Snaplii Cash (SNAPLII_CREDIT), which works — retry without specifying a payment method.",
         "MCA20101": "Invalid API key format or request parameters.",
         "MCA20102": "This API key has been deactivated.",
@@ -698,27 +900,51 @@ class GatewayClient:
         try:
             body = resp.json()
         except Exception:
+            if resp.is_success or path == "/v2/purchase":
+                # A reply we cannot read is not a result. After a purchase it leaves
+                # the outcome unknown whatever its status: a business rejection is
+                # readable, and a rejected session never reaches this point.
+                raise GatewayApiError(resp.status_code, {"unreadable": True}, path)
             body = {"raw": resp.text}
         if resp.is_success:
+            payment = path == "/v2/purchase"
             if isinstance(body, dict):
                 rsp_code = body.get("rspMsgCd", "")
                 if not isinstance(rsp_code, str):
-                    raise GatewayApiError(resp.status_code, {}, path)
+                    raise GatewayApiError(resp.status_code, {"unreadable": True} if payment else {}, path)
                 if rsp_code and not rsp_code.endswith("00000"):
                     cls._attach_friendly_message(body, rsp_code)
                     raise GatewayApiError(resp.status_code, body, path)
+            if payment and not (isinstance(body, dict) and body):
+                # null, a list or an empty object says nothing about the payment.
+                raise GatewayApiError(resp.status_code, {"unreadable": True}, path)
             return body
         # Non-success HTTP. If the body carries a business error code (e.g. a 422
         # business rejection like a spending-limit hit), surface its real message
         # instead of a generic status-based fallback.
+        rsp_code = body.get("rspMsgCd", "") if isinstance(body, dict) else ""
+        if path == "/v2/purchase" and not cls._readable_rejection(body):
+            # Only a readable rejection says the payment did not happen.
+            raise GatewayApiError(resp.status_code, {"unreadable": True}, path)
         if not isinstance(body, dict):
             body = {"raw": body}
-        rsp_code = body.get("rspMsgCd", "")
         if not isinstance(rsp_code, str):
             raise GatewayApiError(resp.status_code, {}, path)
         if rsp_code:
             cls._attach_friendly_message(body, rsp_code)
         raise GatewayApiError(resp.status_code, body, path)
+
+    @staticmethod
+    def _readable_rejection(body) -> bool:
+        """True when a reply says why it was refused: a code or a text message."""
+        if not isinstance(body, dict):
+            return False
+        code = body.get("rspMsgCd", "")
+        if not isinstance(code, str):
+            return False
+        return bool(code.strip()) or any(
+            isinstance(body.get(key), str) and body[key].strip()
+            for key in ("rspMsgInf", "rspMsgInfo", "message"))
 
     @classmethod
     def _attach_friendly_message(cls, body: dict, rsp_code: str) -> None:

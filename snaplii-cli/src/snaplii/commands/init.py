@@ -6,6 +6,7 @@ import click
 
 from snaplii import auth
 from snaplii.client import GatewayClient
+from snaplii.config_store import no_persistent_storage_error
 from snaplii.exceptions import AuthError, ConfigError
 from snaplii.output import print_json
 
@@ -41,6 +42,9 @@ def init_cmd(ctx, agent_id, vault_auth, legacy_auth):
     """
     client: GatewayClient = ctx.obj["client"]
     store = ctx.obj["config_store"]
+    # A gateway chosen for this login (--base-url or SNAPLII_BASE_URL) becomes the
+    # saved default, so later commands without it reach the same session.
+    remember = ctx.obj.get("base_url") is not None
     if vault_auth and legacy_auth:
         raise click.UsageError("Choose only one of --vault-auth and --legacy-auth.")
     if not legacy_auth and client.auth_status()["host"] == "muse":
@@ -49,13 +53,25 @@ def init_cmd(ctx, agent_id, vault_auth, legacy_auth):
     if vault_auth:
         agent_id = agent_id or store.get("agent_id") or "agent-" + secrets.token_hex(4)
         _require_valid_agent_id(agent_id)
-        client.login_via_vault(agent_id)
+        client.login_via_vault(agent_id, remember_base_url=remember)
         print_json({"status": "authenticated", **client.auth_status()})
         return
 
+    # Refuse an unknown gateway before the key is typed, and show the person
+    # typing it where it will go.
+    origin = auth.require_login_origin(client.origin)
     try:
         if sys.stdin.isatty():
-            api_key = click.prompt("API key", hide_input=True, err=True)
+            if store.session_needs_file_consent():
+                # Ask before the key is typed: without a keychain or file storage
+                # the session would end with this process.
+                if not click.confirm(
+                        "No usable system keyring was found. Save this and future Snaplii sessions "
+                        "in the owner-only file %s? The API key itself is never saved." % store.path,
+                        default=False, err=True):
+                    raise no_persistent_storage_error()
+                store.set("allow_insecure_mode", True)
+            api_key = click.prompt("Snaplii API key for %s" % origin, hide_input=True, err=True)
         else:
             # Explicit stdin input remains supported without echoing a secret or
             # mixing a prompt into the JSON result consumed by an agent.
@@ -74,5 +90,5 @@ def init_cmd(ctx, agent_id, vault_auth, legacy_auth):
     _require_valid_agent_id(agent_id)
 
     # API key is NOT stored — only used to obtain a token
-    client.login(agent_id, api_key)
+    client.login(agent_id, api_key, remember_base_url=remember)
     print_json({"status": "authenticated", **client.auth_status()})

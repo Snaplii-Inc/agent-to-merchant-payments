@@ -77,7 +77,7 @@ def test_error_envelope_surfaced_meaningfully(httpx_mock):
 
 
 def test_validation_400_field_errors_joined(httpx_mock):
-    # @Valid 400s use the common shape: message null, per-field messages in `errors`.
+    # A field validation error: per-field messages in `errors`, no top-level message.
     httpx_mock.add_response(
         method="POST", url="https://gw.test/v2/transfers", status_code=400,
         json={"status": "error", "message": None,
@@ -124,6 +124,21 @@ def test_timeout_is_indeterminate_and_keeps_key(httpx_mock):
     assert out["retryable"] is True
     assert out["idempotency_key"] == "k" * 20
     assert "never a fresh key" in out["retry_hint"]
+
+
+
+@pytest.mark.parametrize("error", [httpx.ReadError("connection reset by peer"),
+                                   httpx.RemoteProtocolError("server disconnected")])
+def test_transport_failure_after_sending_is_indeterminate_and_keeps_key(httpx_mock, error):
+    httpx_mock.add_exception(error)
+    with pytest.raises(TransferApiError) as exc:
+        _client().transfer_create("4165550006", "12.50")
+    out = exc.value.to_dict()
+    assert out["code"] == "CLIENT_TRANSPORT_ERROR"
+    assert out["retryable"] is True
+    assert out["idempotency_key"] == httpx_mock.get_requests()[0].headers["Idempotency-Key"]
+    assert "never a fresh key" in out["retry_hint"]
+    assert str(error) not in json.dumps(out)
 
 
 # ── Decoration ───────────────────────────────────────────────────
@@ -223,3 +238,26 @@ def test_cli_finish_points_to_status_polling():
     result = _run(finish_cmd, client, ["--order-no", "ZZ1"])
     out = json.loads(result.output)
     assert "transfer status" in out["next_step"]
+
+
+def test_unreadable_success_is_indeterminate_and_keeps_key(httpx_mock):
+    httpx_mock.add_response(status_code=200, content=b"not json")
+    with pytest.raises(TransferApiError) as exc:
+        _client().transfer_create("4165550006", "12.50", idempotency_key="k" * 20)
+    out = exc.value.to_dict()
+    assert out["code"] == "CLIENT_UNREADABLE_RESPONSE"
+    assert out["retryable"] is True
+    assert out["idempotency_key"] == "k" * 20
+    assert "never a fresh key" in out["retry_hint"]
+    assert "not json" not in str(out)
+
+
+@pytest.mark.parametrize("content", [b"{}", b"null"], ids=["empty", "null"])
+def test_create_reply_without_a_transfer_keeps_key(httpx_mock, content):
+    httpx_mock.add_response(status_code=201, content=content)
+    with pytest.raises(TransferApiError) as exc:
+        _client().transfer_create("4165550006", "12.50", idempotency_key="k" * 20)
+    out = exc.value.to_dict()
+    assert out["code"] == "CLIENT_UNREADABLE_RESPONSE"
+    assert out["idempotency_key"] == "k" * 20
+    assert "never a fresh key" in out["retry_hint"]

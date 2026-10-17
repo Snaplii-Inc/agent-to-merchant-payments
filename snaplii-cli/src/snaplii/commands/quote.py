@@ -5,7 +5,8 @@ from snaplii.output import print_json
 
 
 @click.command("quote")
-@click.option("--item-id", required=True, help="Item ID: {brandId}-{templateId}")
+@click.option("--item-id", required=True,
+              help="Exactly {cardBrandId}-{cardTemplateId}, copied verbatim from the item_id in `snaplii browse brand` denominations (e.g. CB00000000000086-CT000000003618)")
 @click.option("--price", required=True, help="Price in dollars")
 @click.option("--voucher", default="BEST_FIT", type=click.Choice(["BEST_FIT", "USE", "NOT_USE"]),
               help="Voucher option: BEST_FIT (auto-apply best), USE, NOT_USE")
@@ -20,9 +21,9 @@ def quote_cmd(ctx, item_id, price, voucher, cashback, voucher_id):
     and the actual amount you'll pay.
     """
     client: GatewayClient = ctx.obj["client"]
-    # Reject amounts outside the brand's denomination range before quoting —
-    # the backend would accept it, return you_pay=0, then fail the card.
-    client.validate_amount(item_id, price)
+    # Verify the card and reject amounts outside its denomination range before
+    # quoting, as the app does.
+    checked = client.validate_amount(item_id, price)
     resp = client.quote_order(
         item_id=item_id,
         price=price,
@@ -31,11 +32,13 @@ def quote_cmd(ctx, item_id, price, voucher, cashback, voucher_id):
         specified_voucher=voucher_id,
     )
 
-    # Format a clean summary
-    summary = {
+    # Format a clean summary. The verified card leads it, so the agent can check it is
+    # the brand the user asked for before purchasing.
+    summary = dict(checked or {})
+    summary.update({
         "order_amount": resp.get("orderAmount"),
         "you_pay": resp.get("primaryPayAmount"),
-    }
+    })
 
     voucher_amount = resp.get("voucherAmount")
     if voucher_amount:

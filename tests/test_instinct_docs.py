@@ -16,13 +16,13 @@ def test_skill_block_routes_instinct_to_mcp():
 
 def test_readme_instinct_section_skips_cli_login_and_states_the_risk():
     section = README.split("<summary><strong>Instinct</strong></summary>", 1)[1].split("</details>", 1)[0]
-    for phrase in ("mcp-server/server.py", "Skip `snaplii init`", "snaplii_connect",
+    for phrase in ("snaplii-env/bin/snaplii-mcp", "Skip `snaplii init`", "snaplii_connect",
                    auth.INSTINCT_VAULT_ENTRY, "INSTINCT_", "one-time `eid`", "2 minutes"):
         assert phrase in section
 
 
 def test_readme_cli_login_step_points_instinct_elsewhere():
-    step = README.split("#### Step 2: Authenticate", 1)[1].split("#### Step 3", 1)[0]
+    step = README.split("#### Step 3: Connect", 1)[1].split("\n####", 1)[0]
     assert "In Instinct, skip this step" in step
 
 

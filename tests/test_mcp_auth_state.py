@@ -50,6 +50,10 @@ def test_autopilot_prompt_requires_shared_muse_auth_before_business():
     assert "host=muse" in gate
     assert "next_action" in gate
     assert "snaplii_connect" in gate
+    # The account country is fixed at login and returned by browse/balance, so the
+    # prompt must not send the agent back to the user for it.
+    assert "ask region" not in text
+    assert "account_country" in text
     assert "snaplii_init only when the user explicitly chooses" in gate
     assert "host=unknown" in gate and "snaplii config doctor" in gate
     assert "call snaplii_init with the user's API key" not in text
@@ -75,7 +79,7 @@ def test_mcp_raw_login_uses_verified_session(setup_auth, httpx_mock, tool):
     store, _ = setup_auth
     httpx_mock.add_response(method="POST", url=auth.DEFAULT_ORIGIN + "/v2/auth/token",
                             json={"access_token": "synthetic-token", "debug": "synthetic-secret"})
-    result = call(tool, {"api_key": "synthetic-key"})
+    result = call(tool, {"api_key": "snp_sk_live_synthetickey00000000000000000000"})
     assert result["status"] == "authenticated"
     assert result["has_valid_token"] is True
     assert result["auth_method"] == "api_key"
@@ -87,7 +91,7 @@ def test_mcp_init_transport_failure_is_reported_as_auth_failed(setup_auth, httpx
     import httpx
 
     httpx_mock.add_exception(httpx.ConnectError("connection refused"))
-    result = call("snaplii_init", {"api_key": "synthetic-key"})
+    result = call("snaplii_init", {"api_key": "snp_sk_live_synthetickey00000000000000000000"})
     assert result["error"] == "auth_failed"
     assert result["auth_state"] == "temporary_gateway_error"
     assert "connection refused" not in json.dumps(result)
@@ -97,13 +101,13 @@ def test_mcp_init_transport_failure_is_reported_as_auth_failed(setup_auth, httpx
 @pytest.mark.parametrize("agent_id", ["bad id", "x" * 129])
 def test_mcp_invalid_agent_id_is_rejected_before_login(setup_auth, httpx_mock, tool, agent_id):
     store, _ = setup_auth
-    result = call(tool, {"api_key": "synthetic-key", "agent_id": agent_id})
+    result = call(tool, {"api_key": "snp_sk_live_synthetickey00000000000000000000", "agent_id": agent_id})
     assert httpx_mock.get_requests() == []
     assert result["error"] == "auth_failed"
     assert result["reason_code"] == "invalid_agent_id"
     assert result["next_action"] == {"type": "stop", "reason": "invalid_agent_id"}
     assert store.get_cached_token() is None
-    assert "synthetic-key" not in json.dumps(result)
+    assert "snp_sk_live_synthetickey00000000000000000000" not in json.dumps(result)
 
 
 def test_real_config_error_does_not_ask_for_api_key(setup_auth, monkeypatch):
@@ -186,7 +190,7 @@ def test_expired_session_recovers_through_mcp_without_a_shell(setup_auth, httpx_
     assert call(result["next_action"]["tool"])["status"] == "card_requested"
     httpx_mock.add_response(method="POST", url=auth.DEFAULT_ORIGIN + "/v2/auth/token",
                             json={"access_token": "renewed-token", "expires_in": 600})
-    assert call("snaplii_submit_api_key", {"api_key": "synthetic-key"})["has_valid_token"] is True
+    assert call("snaplii_submit_api_key", {"api_key": "snp_sk_live_synthetickey00000000000000000000"})["has_valid_token"] is True
     httpx_mock.add_response(method="GET", url=auth.DEFAULT_ORIGIN + "/v2/balance", json={"data": {"balance": 42}})
     assert call("snaplii_balance")["balance"] == 42
     assert store.get_cached_token() == "renewed-token"
@@ -201,6 +205,17 @@ def test_rejected_transfer_keeps_idempotency_and_mcp_recovery(setup_auth, httpx_
     assert result["next_action"]["tool"] == "snaplii_connect"
     assert result["idempotency_key"] == "same-key"
     assert len(httpx_mock.get_requests()) == 1
+
+
+def test_transfer_reset_after_sending_returns_the_key_to_retry_with(setup_auth, httpx_mock):
+    import httpx
+
+    store, _ = setup_auth
+    store.commit_session("live-token", 3600, agent_id="agent-1", auth_method="api_key", token_origin=auth.DEFAULT_ORIGIN)
+    httpx_mock.add_exception(httpx.ReadError("connection reset by peer"))
+    result = call("snaplii_transfer_create", {"to_phone": "+14165550123", "amount": "10"})
+    assert result["code"] == "CLIENT_TRANSPORT_ERROR"
+    assert result["idempotency_key"] == httpx_mock.get_requests()[0].headers["Idempotency-Key"]
 
 
 @pytest.mark.parametrize("muse", [False, True])
@@ -237,3 +252,13 @@ def test_mcp_transfer_with_broken_config_preserves_recovery_key(setup_auth, http
     assert result["idempotency_key"] == "same-key"
     assert "synthetic-secret" not in json.dumps(result)
     assert len(httpx_mock.get_requests()) == 1
+
+
+@pytest.mark.parametrize("tool", ["snaplii_init", "snaplii_submit_api_key"])
+def test_mcp_login_refuses_a_non_key_before_any_request(setup_auth, httpx_mock, tool):
+    value = "0123456789abcdef0123456789abcdef01234567"
+    result = call(tool, {"api_key": value})
+    assert result["error"] == "auth_failed"
+    assert (result["auth_state"], result["reason_code"]) == ("invalid_key", "api_key_format_invalid")
+    assert value not in json.dumps(result)
+    assert httpx_mock.get_requests() == []

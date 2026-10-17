@@ -12,6 +12,9 @@ from urllib.parse import urlsplit
 from snaplii.exceptions import ConfigError
 
 DEFAULT_ORIGIN = "https://aipayment.snaplii.com"
+STAGING_ORIGIN = "https://aipay.stage.snaplii.com"
+# The only gateways that may receive an API key, a connect eid, or a connect page.
+LOGIN_ORIGINS = (DEFAULT_ORIGIN, STAGING_ORIGIN)
 MUSE_HELPER = Path("/opt/hatch/skills/skill-creator/bin/dynamic_credentials.py")
 MUSE_SOCKET = Path("/run/hatch/auth/authd.sock")
 MUSE_MIN_APP_VERSION = "9.0.0.23.178"
@@ -52,6 +55,13 @@ the user does not need to explicitly ask to log in or mention an API key.
 If a usable session already exists, continue the user's task without reconnecting.
 Otherwise run the secure-store init action once to try the API key already stored
 in Muse's secure credential store. The store holds the API key, not the session.
+
+Use only the key Muse holds. Never type, guess, rebuild, transform or copy an API
+key into a command, including one the user pasted into the chat: the value you can
+see there may not be the real key, and a key you make up is always rejected. The
+secure-store init action uses the stored key without showing it to you. If a
+raw-key login reports api_key_format_invalid or points you to --vault-auth, run
+the secure-store init action; do not try another key.
 
 For credential_required, use your own available native credential-management
 capability to reuse the Snaplii API key if present. If it is missing, you MUST open
@@ -206,7 +216,8 @@ def secure_entry_actions() -> dict | None:
 def render_auth_skill_block() -> str:
     """Canonical Auth text for each independently distributed Snaplii skill."""
     action = build_auth_action("auth_required", host="muse")
-    command = " ".join(action["argv"])
+    # Distributed skill text names the CLI portably, never this machine's path.
+    command = " ".join(["snaplii", *action["argv"][1:]])
     secure_actions = secure_entry_actions()
     if secure_actions is None:
         invocation = ("Automatic secure-input invocation is unavailable in this version. A missing or\n"
@@ -286,10 +297,16 @@ Keep authentication in the runtime that will use it. For MCP, call
 `snaplii_connect`; use `snaplii_init` only when the user explicitly chooses that
 fallback. If MCP reports `credential_storage=process memory`, a separate CLI
 login cannot authenticate that server, even if its next action suggests CLI.
-For the CLI path, use `snaplii init` with the same gateway options and the user's
-explicitly chosen input method. Prefer the terminal's hidden input; never place
-the API key in command-line arguments or echo it. Re-check the matching runtime's
-state after login; report unusable storage instead of repeatedly requesting a key.
+For the CLI path, the user runs `snaplii init` with the same gateway options in
+their own terminal and types the key at its hidden prompt. When CLI
+authentication is needed, your first message asking the user to act gives that
+exact command, with the installed CLI's path and the task's gateway options; do
+not ask for the key in the chat or in a file. Never pass the key yourself: not
+through your shell tool, stdin, a heredoc, an environment variable or a command
+argument, and never echo it. Without an OS keychain, `init` first asks whether
+sessions may be kept in an owner-only file; the user answers it there. Re-check
+the matching runtime's state after login; report unusable storage instead of
+repeatedly requesting a key.
 
 ### Reauthentication
 
@@ -384,6 +401,34 @@ def normalize_base_url(base_url: str) -> str:
     return origin + urlsplit(base_url).path.rstrip("/")
 
 
+def cli_executable() -> str:
+    """How a relayed command names the CLI: the bare name when `snaplii` on PATH is
+    this very CLI, else the absolute path beside this interpreter. The installer's
+    environment is deliberately not on PATH, so a bare name would not be found."""
+    import shutil
+    import sys
+    bindir = Path(sys.executable).parent
+    for name in (("snaplii.exe", "snaplii") if os.name == "nt" else ("snaplii",)):
+        local = bindir / name
+        if local.is_file():
+            found = shutil.which("snaplii")
+            if found and os.path.realpath(found) == os.path.realpath(local):
+                return "snaplii"
+            return str(local)
+    return "snaplii"
+
+
+def require_login_origin(base_url: str) -> str:
+    """Return the gateway origin, or refuse when it is not a Snaplii gateway."""
+    origin = normalize_origin(base_url)
+    if origin not in LOGIN_ORIGINS:
+        raise ConfigError(
+            "Snaplii sign-in works only with the Snaplii gateways: %s (production) and %s "
+            "(staging). The configured gateway is %s. Change it with `snaplii config set "
+            "--base-url`, or remove SNAPLII_BASE_URL." % (DEFAULT_ORIGIN, STAGING_ORIGIN, origin))
+    return origin
+
+
 def validate_vault_origin(base_url: str) -> str:
     origin = normalize_origin(base_url)
     if origin != DEFAULT_ORIGIN or urlsplit(base_url).path not in ("", "/"):
@@ -393,6 +438,11 @@ def validate_vault_origin(base_url: str) -> str:
 
 def valid_agent_id(value) -> bool:
     return isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", value) is not None
+
+
+def valid_api_key(value) -> bool:
+    """The gateway's own key format (snp_sk_live_ + 32 letters and digits)."""
+    return isinstance(value, str) and re.fullmatch(r"snp_sk_live_[A-Za-z0-9]{32}", value) is not None
 
 
 def build_auth_action(state: str, *, host: str, auth_method=None, origin=DEFAULT_ORIGIN) -> dict | None:
@@ -423,8 +473,8 @@ def build_auth_action(state: str, *, host: str, auth_method=None, origin=DEFAULT
                 "after_success": build_auth_action("auth_required", host=host, auth_method="vault", origin=origin)}
     if state in ("secure_entry_unavailable", "credential_required", "invalid_key", "credential_lookup_failed"):
         return {"type": "offer_legacy", "requires_user_choice": True,
-                "argv": ["snaplii", "--base-url", normalize_base_url(origin), "init", "--legacy-auth"]}
-    argv = ["snaplii", "--base-url", normalize_base_url(origin), "init"]
+                "argv": [cli_executable(), "--base-url", normalize_base_url(origin), "init", "--legacy-auth"]}
+    argv = [cli_executable(), "--base-url", normalize_base_url(origin), "init"]
     if secure:
         argv.append("--vault-auth")
     action = {"type": "run_cli", "argv": argv}

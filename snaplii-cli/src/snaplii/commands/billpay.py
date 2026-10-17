@@ -151,8 +151,9 @@ def quote_cmd(ctx, pay_code, price, voucher_id):
 def pay_cmd(ctx, pay_code, price, voucher_id):
     """Pay the bill from Snaplii Cash balance.
 
-    Spends within the per-key daily limit set in the app; no per-transaction
-    confirmation. If this fails or times out ambiguously, check status with
+    The charge happens as soon as the command runs, within the per-key daily
+    limit set in the app. Once sent, a bill payment cannot be undone. If this
+    fails or times out ambiguously, check status with
     `snaplii billpay result --payment-no <paymentNo>` before retrying — don't
     re-pay blindly.
     """

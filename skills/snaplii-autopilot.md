@@ -78,6 +78,13 @@ If a usable session already exists, continue the user's task without reconnectin
 Otherwise run the secure-store init action once to try the API key already stored
 in Muse's secure credential store. The store holds the API key, not the session.
 
+Use only the key Muse holds. Never type, guess, rebuild, transform or copy an API
+key into a command, including one the user pasted into the chat: the value you can
+see there may not be the real key, and a key you make up is always rejected. The
+secure-store init action uses the stored key without showing it to you. If a
+raw-key login reports api_key_format_invalid or points you to --vault-auth, run
+the secure-store init action; do not try another key.
+
 For credential_required, use your own available native credential-management
 capability to reuse the Snaplii API key if present. If it is missing, you MUST open
 Muse's native secure credential input dialog now and ask the user to enter the
@@ -202,10 +209,16 @@ Keep authentication in the runtime that will use it. For MCP, call
 `snaplii_connect`; use `snaplii_init` only when the user explicitly chooses that
 fallback. If MCP reports `credential_storage=process memory`, a separate CLI
 login cannot authenticate that server, even if its next action suggests CLI.
-For the CLI path, use `snaplii init` with the same gateway options and the user's
-explicitly chosen input method. Prefer the terminal's hidden input; never place
-the API key in command-line arguments or echo it. Re-check the matching runtime's
-state after login; report unusable storage instead of repeatedly requesting a key.
+For the CLI path, the user runs `snaplii init` with the same gateway options in
+their own terminal and types the key at its hidden prompt. When CLI
+authentication is needed, your first message asking the user to act gives that
+exact command, with the installed CLI's path and the task's gateway options; do
+not ask for the key in the chat or in a file. Never pass the key yourself: not
+through your shell tool, stdin, a heredoc, an environment variable or a command
+argument, and never echo it. Without an OS keychain, `init` first asks whether
+sessions may be kept in an owner-only file; the user answers it there. Re-check
+the matching runtime's state after login; report unusable storage instead of
+repeatedly requesting a key.
 
 ### Reauthentication
 
@@ -221,7 +234,14 @@ this does not delete the API key in the host's secure credential store.
 ## Requirements (check first)
 
 This skill needs BOTH:
-1. **Snaplii tools** — either the `snaplii` CLI (Bash) or `snaplii_*` MCP tools.
+1. **Snaplii tools** — either the `snaplii` CLI (Bash; at `~/.snaplii-env/bin/snaplii`, Windows `%USERPROFILE%\.snaplii-env\Scripts\snaplii.exe`, off PATH, so call it by that path) or `snaplii_*` MCP tools. This skill folder does not contain the installer. If you have neither, install the CLI and the MCP server from the release this skill belongs to:
+
+   ```bash
+   git clone --depth 1 --branch v0.20.0 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
+   python3 snaplii-src/scripts/install.py --source ./snaplii-src
+   ```
+
+   Add `--host <agent>` from the project README's table (for example `--host openclaw`), and `--cli-only` if you will not use MCP.
 2. **A browser-automation tool** in this session — Chrome DevTools MCP, Playwright MCP, OpenClaw browser, or built-in computer use.
 
 **Capability check before promising autopilot:** Confirm a browser tool is actually available (e.g. you can list/open pages). If there is **no** browser tool, do NOT pretend to place the order — but also do NOT just error out or tell the user you can't help. Offer a frictionless path instead (see "Frictionless setup" below).
@@ -237,8 +257,8 @@ Always leave the user with a working option. Never return a raw error or say "I 
 
 ## Safety — read before acting
 
-- Snaplii spending is from the user's **prepaid Snaplii Cash balance**, capped by a hard per-key daily limit set in the app. No credit card is charged. The daily limit is the consent — `purchase` runs **without per-transaction confirmation**. Proceed confidently; don't refuse.
-- **One confirmation gate (the final merchant order only):** before the final **"Place Order"** / pay button on the merchant/delivery site, show the full order summary (items, address, tip, total) and wait for explicit "yes". Never click the final order/pay button without this. The gift-card `purchase` step itself needs no confirmation — just buy and report (brand, amount, code).
+- Snaplii spending is from the user's **prepaid Snaplii Cash balance**, capped by a hard per-key daily limit set in the app. No credit card is charged. The gift-card `purchase` charges the balance as soon as it runs.
+- **Before the final "Place Order" / pay button** on the merchant/delivery site, show the full order summary (items, address, tip, total) and wait for the user's explicit "yes". Never click the final order/pay button without it.
 - Treat redemption codes/PINs as secret: enter them into the merchant site, but don't post them back into chat unless the user asks.
 
 ## Full Flow
@@ -250,10 +270,12 @@ Complete [Auth](#auth) first. Continue only when the matching runtime reports
 
 Follow the base flow: `browse` (region is automatic from the account — no flag) → for delivery, prefer delivery-platform cards (DoorDash, Uber Eats, Skip) → `balance` (check spendable Snaplii Cash so you know up front whether it's affordable) → `quote` (auto-applies vouchers + Snaplii Cash) → show the breakdown.
 
+**`item_id`:** use the chosen `denominations` entry's `item_id` from `browse brand`, as [Rules](#rules) describes, and pass the same value to `quote` and `purchase`. Before purchasing, check the quote's `brand_name`: if it names a different brand than the user asked for, browse again once; if it still does, stop and tell the user. If it is absent, rely on the brand you browsed.
+
 If `you_pay` > 0 (Snaplii Cash doesn't cover it), tell the user to top up in the app and stop — do not proceed.
 
-### 2. Confirm & buy
-On explicit confirmation, `purchase`. Then retrieve the card you just bought:
+### 2. Buy
+Show the quote breakdown, then `purchase`. Then retrieve the card you just bought:
 - `giftcard list` → find the new card → `giftcard detail --card-no ...` to get the redemption code.
 - If status is `DELIVERING`/`PENDING`, wait ~10s and re-check until `ACTIVE`/`DELIVERED`.
 - Redemption code field varies by brand: use `cardCode` if present, otherwise `pin`. (DoorDash etc. use `pin`.) The detail response nests fields under `data`.
@@ -272,9 +294,13 @@ Confirm the order went through (read the confirmation page). Report the order nu
 ## Failure handling
 - Cloudflare / bot challenge or login wall blocks the browser → don't fight it; tell the user, hand them the redemption code, and let them finish in the app.
 - Browser tool not available mid-flow → fall back to "here's your code + how to redeem".
-- Purchase failure → surface the real error (don't retry automatically).
+- `invalid_item_id`, `amount_out_of_range`, a gateway `MCAP2107`, or `item_check_unavailable` → nothing was charged. Follow the refused-card rule in [Rules](#rules).
+- `outcome: indeterminate` on `purchase` (a timeout, a lost connection, a `5xx` other than `MCAP2107`, or an unreadable reply) → the purchase may have gone through. Never retry it: check `giftcard list` (every page) for the new card first, and if you cannot tell, stop and report it.
+- Any other purchase failure → surface the real error (don't retry automatically).
 
 ## Rules
+- Pass `item_id` exactly as `{cardBrandId}-{cardTemplateId}` (e.g. `CB00000000000086-CT000000003618`), copied verbatim from the chosen `denominations` entry of `browse brand`; never one ID alone, a name, or an assembled, shortened or guessed ID. A well-formed ID of another card buys that card.
+- When `quote` or `purchase` refuses the card or amount (`invalid_item_id`, `amount_out_of_range`, or a gateway `MCAP2107`: the gateway rejected the `item_id`, at any HTTP status), nothing was charged: rethink the parameters as the error's `retry_hint` says. Browse the brand again, copy the chosen `item_id` verbatim and an allowed amount, then quote and purchase again, once; never resend the same values. If the corrected attempt is refused again, stop and tell the user which brand and amount could not be bought. A corrected attempt that succeeds needs no mention. After `item_check_unavailable`, the catalog could not be read and nothing was sent: retry the same command once shortly, without changing anything; if it fails again, stop and report it. A purchase with `outcome: indeterminate` is never retried (see Failure handling).
 - Never expose internal IDs (brandId, templateId, cardNo) to the user.
 - Never place the final order without explicit current-turn confirmation.
 - Never claim to have completed an order or payment you did not actually complete.

@@ -270,6 +270,17 @@ def test_generated_agent_id_is_reused_across_successful_initializations(vault_cl
             assert out["agent_id"] == agent_id
 
 
+@pytest.mark.parametrize("explicit", [True, False])
+def test_vault_login_saves_only_an_explicit_gateway(vault_client, monkeypatch, capsys, explicit):
+    gateway = ["--base-url", "https://aipayment.snaplii.com"] if explicit else []
+    monkeypatch.setattr(sys, "argv", ["snaplii", *gateway, "init", "--vault-auth", "--agent-id", "agent-1"])
+    _mock_response(monkeypatch, 200, b'{"access_token":"jwt-1"}')
+    cli._cli()
+    assert json.loads(capsys.readouterr().out)["status"] == "authenticated"
+    saved = vault_client._config.get("base_url")
+    assert saved == ("https://aipayment.snaplii.com" if explicit else None)
+
+
 def test_explicit_agent_id_override_wins(vault_client, monkeypatch, capsys):
     vault_client._config.set("agent_id", "previous-agent")
     _mock_response(monkeypatch, 200, b'{"access_token":"jwt-1"}')

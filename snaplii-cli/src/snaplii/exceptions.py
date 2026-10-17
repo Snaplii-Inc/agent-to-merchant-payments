@@ -15,9 +15,23 @@ class GatewayApiError(SnapliiCliError):
         if self.auth_fields.get("reason_code") == "stale_session_rejected":
             friendly = "The session used by this request was rejected. Check current authentication state before continuing."
         error_code = self.body.get("rspMsgCd", "")
+        unreadable = self.body.get("unreadable") is True
+        # /v2/purchase is not idempotent: a 5xx, even one carrying an upstream code,
+        # or an unreadable reply leaves the payment's outcome unknown. A business
+        # rejection is a 4xx and stays a plain error, and so does MCAP2107 at any
+        # status: the gateway rejected the item_id, so nothing was bought.
+        payment_unknown = self.endpoint == "/v2/purchase" and (
+            unreadable or (self.status_code >= 500 and error_code != "MCAP2107"))
+        if payment_unknown:
+            friendly = "The gateway did not confirm this payment, so it may have completed."
         if not friendly:
-            if self.status_code == 502:
+            if unreadable:
+                friendly = "The gateway sent an unreadable response."
+            elif self.status_code == 502:
                 friendly = "Gateway temporarily unavailable. Please wait a moment and try again."
+            elif self.status_code == 403 and not self.auth_fields:
+                # A permission rejection is not an authentication gate.
+                friendly = "Access denied (HTTP 403). Check the API key's permissions before retrying."
             elif self.status_code == 401 or self.status_code == 403:
                 friendly = "Authentication failed. Run 'snaplii init' to re-authenticate."
             elif self.status_code == 404:
@@ -32,12 +46,22 @@ class GatewayApiError(SnapliiCliError):
                 # endpoints carry the business reason the agent needs.
                 if self.endpoint != "/v2/auth/token" and isinstance(reason, str) and reason.strip():
                     friendly += " " + reason.strip()[:500]
-        return {
+        out = {
             "error": friendly,
             "error_code": error_code,
             "endpoint": self.endpoint,
+            "status_code": self.status_code,
             **self.auth_fields,
         }
+        if payment_unknown:
+            out["outcome"] = "indeterminate"
+            out["retry_hint"] = (
+                "Do not pay again until you know whether this payment went through: look "
+                "for the new card in the gift card list (every page), or check a bill "
+                "payment in the Snaplii app. If it stays unclear, stop and report it.")
+        elif error_code == "MCAP2107":
+            out["retry_hint"] = "The gateway refused this item_id, so nothing was charged. " + _ITEM_RETRY_STEPS
+        return out
 
 
 class GatewayConnectionError(SnapliiCliError):
@@ -72,9 +96,8 @@ class GatewayConnectionError(SnapliiCliError):
 class AmountValidationError(SnapliiCliError):
     """Requested amount is outside the brand's allowed denomination range.
 
-    Raised client-side before quote/purchase so an out-of-range order never
-    reaches the backend (which currently accepts it, returns you_pay=0, then
-    fails the card and refunds — burning a round-trip and a Snaplii Cash debit).
+    Raised client-side before quote/purchase, as the app does, so an
+    out-of-range order is never sent.
     """
 
     def __init__(self, message: str, *, item_id: str = "", amount=None,
@@ -88,7 +111,8 @@ class AmountValidationError(SnapliiCliError):
         super().__init__(message)
 
     def to_dict(self) -> dict:
-        out = {"error": "amount_out_of_range", "message": self.message}
+        out = {"error": "amount_out_of_range", "message": self.message,
+               "outcome": "not_sent", "retry_hint": _AMOUNT_RETRY_HINT}
         if self.item_id:
             out["item_id"] = self.item_id
         if self.amount is not None:
@@ -101,6 +125,51 @@ class AmountValidationError(SnapliiCliError):
             if self.max_amount is not None:
                 out["max_amount"] = self.max_amount
         return out
+
+
+# Verification failures happen before any request is sent, so the agent fixes its
+# parameters and tries again instead of stopping or repeating the same values.
+_ITEM_RETRY_STEPS = (
+    "Rethink the parameters: browse the brand the user asked for again (CLI: snaplii browse "
+    "brand --id <brand ID>; MCP: snaplii_browse_brand; find the brand ID in browse tags if "
+    "unsure), copy the item_id of the chosen denomination verbatim, then quote and purchase "
+    "again with that same item_id. Never edit, combine or guess IDs, and do not resend the "
+    "same item_id. If the corrected attempt is refused again, stop and tell the user which brand "
+    "and amount could not be bought.")
+_ITEM_RETRY_HINT = "Nothing was sent and nothing was charged. " + _ITEM_RETRY_STEPS
+
+_AMOUNT_RETRY_HINT = (
+    "Nothing was sent and nothing was charged. Rethink the parameters: pick an amount this card "
+    "allows (its denominations in browse brand), or another card of the brand, then quote and "
+    "purchase again. If the corrected attempt is refused again, stop and tell the user which "
+    "brand and amount could not be bought.")
+
+
+class ItemIdError(SnapliiCliError):
+    """The gift-card item_id is not exactly {cardBrandId}-{cardTemplateId}, its brand is not
+    in the catalog, or its template is not a card of that brand. Raised before quote/purchase
+    so the order never reaches the gateway with an ID that could name a different card."""
+
+    def __init__(self, message: str, *, item_id: str = ""):
+        self.message = message
+        self.item_id = item_id
+        super().__init__(message)
+
+    def to_dict(self) -> dict:
+        return {"error": "invalid_item_id", "message": self.message, "item_id": self.item_id,
+                "outcome": "not_sent", "retry_hint": _ITEM_RETRY_HINT}
+
+
+class ItemCheckUnavailableError(ItemIdError):
+    """The catalog could not be read, so the item_id could not be verified and nothing
+    was sent. The ID may be right; the same request can be tried again shortly."""
+
+    def to_dict(self) -> dict:
+        return {"error": "item_check_unavailable", "message": self.message,
+                "item_id": self.item_id, "outcome": "not_sent",
+                "retry_hint": ("Nothing was sent. Run the same command once more in a moment. "
+                               "If it fails again, stop and report it. Do not change the item_id "
+                               "to get past this check.")}
 
 
 class ConfigError(SnapliiCliError):
@@ -187,6 +256,7 @@ class TransferApiError(SnapliiCliError):
             elif out["retryable"] and (self.status_code in (0, 502, 503, 504)
                                        or code in ("TRANSFER_INDETERMINATE",
                                                    "CLIENT_TIMEOUT",
+                                                   "CLIENT_UNREADABLE_RESPONSE",
                                                    "CONCURRENT_DUPLICATE",
                                                    "UPSTREAM_ERROR")):
                 # Indeterminate: the transfer may exist — only the SAME key is safe.

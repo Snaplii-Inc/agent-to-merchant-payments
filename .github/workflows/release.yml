@@ -10,6 +10,7 @@ on:
   push:
     tags:
       - "v*"
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -22,8 +23,14 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.0.1
 
+      # The installer must start under Python 3.8; tests/test_installer_live.py finds this
+      # interpreter and skips when it is absent, so the download lives here, not in the test.
+      - name: Install CPython 3.8 for the installer test
+        run: uv python install 3.8
+
       # The tag is what users get; a mismatch would publish a version nobody asked for.
-      # Exact match is deliberate: it rules out prereleases (v0.15.0rc1) by design.
+      # A release-candidate tag (v0.20.0rc1) matches an rc version here, then only
+      # builds and tests: the publish jobs skip it, so testers install from the tag.
       - name: Tag must match both package versions
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
@@ -37,13 +44,15 @@ jobs:
       # Deps come from the packages themselves, so CI can't drift from what ships
       # (the mcp<2 ceiling lives in mcp-server/pyproject.toml and nowhere else).
       # Installing ./mcp-server also exercises its packaging and its snaplii-cli floor.
+      # uv prefers the interpreters it manages, and the only one is the 3.8 above,
+      # so the tests and the build name a supported Python explicitly.
       - name: Test
-        run: uv run --with "./snaplii-cli[dev]" --with ./mcp-server pytest tests -q
+        run: uv run --python 3.12 --with "./snaplii-cli[dev]" --with ./mcp-server pytest tests -q
 
       - name: Build
         run: |
-          uv build snaplii-cli --out-dir dist/cli
-          uv build mcp-server  --out-dir dist/mcp
+          uv build --python 3.12 snaplii-cli --out-dir dist/cli
+          uv build --python 3.12 mcp-server  --out-dir dist/mcp
 
       - uses: actions/upload-artifact@v7
         with:
@@ -53,7 +62,7 @@ jobs:
   # snaplii-mcp requires snaplii-cli>=<same version>, so the CLI lands first.
   publish-cli:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, 'rc')
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -72,7 +81,7 @@ jobs:
 
   publish-mcp:
     needs: publish-cli
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, 'rc')
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

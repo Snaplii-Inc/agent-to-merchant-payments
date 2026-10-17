@@ -266,6 +266,21 @@ def test_stale_save_does_not_replace_new_session(tmp_path, monkeypatch):
     assert store.get("_version_check_test") == 42
 
 
+def test_stale_save_does_not_roll_back_the_gateway_saved_with_a_session(tmp_path, monkeypatch):
+    monkeypatch.setenv("SNAPLII_ALLOW_INSECURE", "1")
+    store = _store_no_keyring(tmp_path)
+    store.commit_session("token-a", 3600, agent_id="agent-a", auth_method="api_key",
+                         token_origin="https://aipayment.snaplii.com",
+                         base_url="https://aipayment.snaplii.com")
+    stale = store.load()
+    store.commit_session("token-b", 3600, agent_id="agent-b", auth_method="api_key",
+                         token_origin="https://aipay.stage.snaplii.com",
+                         base_url="https://aipay.stage.snaplii.com/payments")
+    store.save(stale)
+    assert store.get("base_url") == "https://aipay.stage.snaplii.com/payments"
+    assert store.get_cached_token(origin="https://aipay.stage.snaplii.com") == "token-b"
+
+
 def test_symlink_config_is_rejected_without_touching_target(tmp_path):
     target = tmp_path / "target.json"
     target.write_text('{"untouched":true}')
@@ -560,11 +575,14 @@ def test_dropping_a_secret_with_none_is_ignored(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("operation", ["clear", "clear_token"])
-def test_legacy_keyring_session_remains_readable_and_clear_removes_it(tmp_path, fake_keyring, operation):
+def test_legacy_keyring_session_is_not_sent_anywhere_and_clear_removes_it(tmp_path, fake_keyring, operation):
+    # A pre-0.17 session never recorded its gateway, so it is not sent to one;
+    # the user signs in once more. It still clears.
     store = ConfigStore(tmp_path / "config.json")
     fake_keyring.values["snaplii-cli", "access_token"] = "legacy-token"
     store.set_many({"agent_id": "legacy-agent", "token_expires_at": 9999999999})
-    assert store.get_cached_token(origin="https://aipayment.snaplii.com") == "legacy-token"
+    assert store.get_cached_token(origin="https://aipayment.snaplii.com") is None
+    assert store.get_cached_token() == "legacy-token"
     getattr(store, operation)()
     assert store.get_cached_token() is None
     assert fake_keyring.get_password("snaplii-cli", "access_token") is None

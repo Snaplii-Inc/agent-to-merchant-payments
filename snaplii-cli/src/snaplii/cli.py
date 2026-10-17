@@ -98,7 +98,9 @@ def update_cmd(ctx):
     """Check for and install the latest snaplii-cli from PyPI."""
     if Version(_VERSION).is_prerelease:
         print_json({"status": "candidate-pinned", "version": _VERSION,
-                    "action": "Install a matching CLI and skill candidate bundle to update this prerelease."})
+                    "action": ("A prerelease is not updated from PyPI. Repeat the README's install "
+                               "commands with the new release tag, or install a matching candidate "
+                               "bundle with its own installer.")})
         return
     store = ctx.obj["config_store"]
     # Force a fresh check by clearing the daily cache.

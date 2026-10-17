@@ -33,7 +33,7 @@ snaplii init
 
 Prompts for your API key with hidden input. The key is exchanged for a session token and never stored; the token is kept in your OS keychain when one is available.
 
-Outside a recognized Muse runtime, a CLI without a working keychain stops with `no_persistent_storage` rather than keeping a session that the next command could not reuse; explicit `SNAPLII_ALLOW_INSECURE=1` opts into a private (mode 0600) plaintext token file. Only a long-lived MCP server may hold a memory-only session. `snaplii config show` reports the actual storage and `has_valid_token`, without showing the token or API key. Protected requests require a usable session and are not automatically replayed after authentication errors.
+Outside a recognized Muse runtime, a CLI without a working keychain does not keep a session that the next command could not reuse. In a terminal, `init` asks before the key whether this and future sessions may be kept in a private (mode 0600) plaintext token file; a yes saves `allow_insecure_mode: true`. Without a terminal it stops with `no_persistent_storage`, and explicit `SNAPLII_ALLOW_INSECURE=1` opts into the same file. Signing in with `--base-url` saves that gateway as the default. Only a long-lived MCP server may hold a memory-only session. `snaplii config show` reports the actual storage and `has_valid_token`, without showing the token or API key. Protected requests require a usable session and are not automatically replayed after authentication errors.
 
 ### Meta Muse secure credential store
 
@@ -75,7 +75,7 @@ snaplii transfer status --order-no ZZ... --wait --timeout 330
 snaplii transfer list
 ```
 
-- `--item-id` is `{cardBrandId}-{cardTemplateId}`; both come from `snaplii browse brand`.
+- **`--item-id` must be exactly `{cardBrandId}-{cardTemplateId}`**, copied verbatim from the `item_id` in the `denominations` of `snaplii browse brand`; never either ID alone or one built by hand. Use the same value for `quote` and `purchase`.
 - Bill pay flow: `payees → detail → save (returns payCode) → quote → pay → result`.
 - A new transfer stays cancellable (`transfer cancel`) for about 5 minutes, then sends automatically; `transfer finish` sends it immediately. `transfer status --wait` polls for the outcome, but its `--timeout` defaults to 120s — pass a larger value (e.g. `--timeout 330`) to poll through the whole cancellable window.
 - `snaplii help` and `snaplii <command> --help` list every flag.

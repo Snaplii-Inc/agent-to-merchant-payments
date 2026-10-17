@@ -1,0 +1,427 @@
+import json
+import os
+import sys
+
+import pytest
+
+
+def installed(installer, exe_dir="/home/u/.snaplii-env/bin"):
+    return {"cli": {"status": "installed", "version": "0.19.0", "executable": exe_dir + "/snaplii", "host_seen_by_cli": "unknown"},
+            "mcp": {"status": "installed", "version": "0.19.0", "executable": exe_dir + "/snaplii-mcp", "tools": 26}}
+
+
+def ids(steps):
+    return [s["id"] for s in steps]
+
+
+def test_render_command_posix_and_powershell(installer):
+    assert installer.render_command("claude", ["mcp", "add", "snaplii", "--", "/a b/snaplii-mcp"], "linux") == "claude mcp add snaplii -- '/a b/snaplii-mcp'"
+    rendered = installer.render_command("C:\\Users\\O'Brien\\my env\\Scripts\\snaplii-mcp.exe", ["$x"], "win32")
+    assert rendered.startswith("& '") and "''Brien" in rendered and "'$x'" in rendered
+
+
+def test_next_steps_per_host(installer):
+    comps = installed(installer)
+    for host, exe, first in [("claude-code", "claude", "claude mcp add --scope user snaplii -- /home/u/.snaplii-env/bin/snaplii-mcp"),
+                             ("codex", "codex", "codex mcp add snaplii -- /home/u/.snaplii-env/bin/snaplii-mcp"),
+                             ("openclaw", "openclaw", "openclaw mcp add snaplii --command /home/u/.snaplii-env/bin/snaplii-mcp")]:
+        steps = installer.next_steps(host, "unknown", comps, "/home/u/.snaplii-env", None, False, False, "linux", {"HOME": "/home/u"}, ["python3", "install.py"])
+        assert ids(steps) == ["install_skill", "register_mcp", "reload_host", "connect", "cli_on_path", "update"]
+        register = steps[1]
+        assert register["executable"] == exe and register["command"] == first and register["status"] == "pending"
+    skill = installer.next_steps("claude-code", "unknown", comps, "/v", None, False, False, "linux", {}, [])[0]
+    assert skill["args"] == ["--yes", "skills", "add", "https://github.com/Snaplii-Inc/agent-to-merchant-payments/tree/v0.19.0", "-g", "-a", "claude-code", "-y"]
+    assert installer.next_steps("openclaw", "unknown", comps, "/v", None, False, False, "linux", {}, [])[0]["executable"] == "npx"
+    desktop = [s for s in installer.next_steps("claude-desktop", "unknown", comps, "/v", None, False, False, "darwin",
+                                               {"HOME": "/Users/u"}, []) if s["id"] == "register_mcp"][0]
+    assert desktop["file"].endswith("Library/Application Support/Claude/claude_desktop_config.json")
+    assert desktop["json"] == {"mcpServers": {"snaplii": {"command": "/home/u/.snaplii-env/bin/snaplii-mcp"}}}
+    cursor = installer.next_steps("cursor", "unknown", comps, "/v", None, False, False, "linux", {}, [])[1]
+    assert cursor["file"] == os.path.join(installer.home_dir({}), ".cursor", "mcp.json")  # user-wide, like the -g skills
+    assert cursor["json"]["mcpServers"]["snaplii"]["command"].endswith("snaplii-mcp")
+    instinct = installer.next_steps("codex", "instinct", comps, "/v", None, False, False, "linux", {}, [])
+    assert "install_skill" not in ids(instinct) and "snaplii_connect" in instinct[0]["why"] and instinct[0]["id"] == "register_mcp"
+    generic = installer.next_steps(None, "unknown", comps, "/v", None, False, False, "linux", {}, [])[1]
+    assert generic["executable"].endswith("snaplii-mcp") and "README" in generic["why"]
+
+
+def test_next_steps_gating(installer):
+    comps = installed(installer)
+    comps["mcp"] = {"status": "failed"}
+    retryable = installer.InstallFailure("verify", "mcp_handshake_failed", "x", "re-run", retryable=True)
+    steps = installer.next_steps("claude-code", "unknown", comps, "/v", retryable, False, False, "linux", {}, ["python3", "install.py", "--host", "claude-code"])
+    assert "register_mcp" not in ids(steps) and "update" not in ids(steps)
+    required = [s for s in steps if s["status"] == "required"][0]
+    assert required["command"] == "python3 install.py --host claude-code" and "re-run" in required["why"]
+    fatal = installer.InstallFailure("pip", "index_auth_failed", "x", "fix the index", retryable=False)
+    steps = installer.next_steps("claude-code", "unknown", comps, "/v", fatal, False, False, "linux", {}, [])
+    required = [s for s in steps if s["status"] == "required"][0]
+    assert required["id"] == "report_to_user" and required["command"] is None and "fix the index" in required["why"]
+    comps["mcp"] = {"status": "skipped"}
+    steps = installer.next_steps("instinct", "unknown", comps, "/v", None, False, True, "linux", {}, ["python3", "install.py", "--cli-only"])
+    required = [s for s in steps if s["status"] == "required"][0]
+    assert "--cli-only" in required["why"] and "--cli-only" not in required["command"]
+    comps = {"cli": {"status": "missing"}, "mcp": {"status": "missing"}}
+    steps = installer.next_steps("claude-code", "unknown", comps, "/v", None, True, False, "linux", {}, ["python3", "install.py", "--check"])
+    required = [s for s in steps if s["status"] == "required"][0]
+    assert required["command"] == "python3 install.py" and "cli_on_path" not in ids(steps)
+
+
+def test_compute_status(installer):
+    comps = installed(installer)
+    assert installer.compute_status(comps, None, False, False) == "installed"
+    comps["mcp"] = {"status": "failed"}
+    assert installer.compute_status(comps, None, False, False) == "partial"
+    assert installer.compute_status({"cli": {"status": "installed"}, "mcp": {"status": "skipped"}}, None, False, True) == "installed"
+    assert installer.compute_status({"cli": {"status": "not_verified"}, "mcp": {"status": "not_verified"}}, "f", False, False) == "failed"
+    assert installer.compute_status({"cli": {"status": "missing"}, "mcp": {"status": "missing"}}, None, True, False) == "not_installed"
+
+
+def run_main(installer, capsys, argv, environ):
+    code = installer.main(argv, environ)
+    out = capsys.readouterr()
+    return code, json.loads(out.out)
+
+
+def test_main_bad_arguments_and_help(installer, capsys, tmp_path):
+    code, report = run_main(installer, capsys, ["--host", "Claude-Code"], {"HOME": str(tmp_path)})
+    assert code == 1 and report["status"] == "failed" and report["failure"]["code"] == "bad_arguments"
+    assert report["host"]["detected"] == "unknown"  # the host object is present on every report
+    assert installer.main(["--help"], {"HOME": str(tmp_path)}) == 0
+
+
+def test_main_instinct_refuses_cli_only_before_any_subprocess(installer, capsys, tmp_path, monkeypatch):
+    monkeypatch.setattr(installer, "run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no subprocess expected")))
+    code, report = run_main(installer, capsys, ["--cli-only"], {"HOME": str(tmp_path), "INSTINCT_X": "1"})
+    assert code == 1 and report["failure"]["code"] == "mcp_required_on_instinct" and report["failure"]["retryable"] is False
+    assert report["host"]["detected"] == "instinct" and report["host"]["instinct_variables"] == ["INSTINCT_X"]
+
+
+def test_main_host_instinct_refuses_cli_only_without_an_instinct_variable(installer, capsys, tmp_path, monkeypatch):
+    monkeypatch.setattr(installer, "run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no subprocess expected")))
+    code, report = run_main(installer, capsys, ["--host", "instinct", "--cli-only"], {"HOME": str(tmp_path)})
+    assert code == 1 and report["failure"]["code"] == "mcp_required_on_instinct" and report["failure"]["retryable"] is False
+
+
+def test_claude_desktop_gets_no_skill_step(installer):
+    # Claude Desktop loads no skill folders, so the report must not ask for one.
+    steps = installer.next_steps("claude-desktop", "unknown", installed(installer), "/v", None, False, False,
+                                 "darwin", {"HOME": "/Users/u"}, [])
+    assert "install_skill" not in ids(steps) and steps[0]["id"] == "register_mcp"
+
+
+def test_main_source_invalid_and_host_precedence_warnings(installer, capsys, tmp_path):
+    src = tmp_path / "src"
+    (src / "snaplii-cli").mkdir(parents=True)
+    code, report = run_main(installer, capsys, ["--source", str(src)], {"HOME": str(tmp_path)})
+    assert report["failure"]["code"] == "source_invalid" and "mcp-server" in report["failure"]["remedy"]
+    assert not (tmp_path / ".snaplii-env.lock").exists()
+    code, report = run_main(installer, capsys, ["--check", "--host", "codex"], {"HOME": str(tmp_path), "INSTINCT_Y": ""})
+    assert any("--host" in w and "Instinct" in w for w in report["warnings"])
+    code, report = run_main(installer, capsys, ["--check", "--host", "instinct"], {"HOME": str(tmp_path)})
+    assert any("instinct" in w.lower() for w in report["warnings"]) and report["status"] == "not_installed"
+
+
+def test_main_check_mode_absent_and_reserved_states(installer, capsys, tmp_path):
+    code, report = run_main(installer, capsys, ["--check"], {"HOME": str(tmp_path)})
+    assert code == 1 and report["status"] == "not_installed" and report["venv"]["state"] == "absent"
+    assert report["components"] == {"cli": {"status": "missing"}, "mcp": {"status": "missing"}}
+    assert not (tmp_path / ".snaplii-env.creating").exists() and not (tmp_path / ".snaplii-env.lock").exists()
+
+
+def test_main_install_happy_path_with_fake_stages(installer, capsys, tmp_path, monkeypatch):
+    venv = str(tmp_path / ".snaplii-env")
+    monkeypatch.setattr(installer, "locate_uv", lambda environ, **k: None)
+    monkeypatch.setattr(installer, "qualifying_candidates", lambda *a, **k: [{"argv": [sys.executable], "executable": sys.executable, "version": [3, 12, 0], "venv_ok": True}])
+
+    def fake_build(venv_path, reservation, candidates, need, env, mode):
+        os.makedirs(venv_path, exist_ok=True)
+        installer.write_marker(venv_path, sys.executable)
+        reservation.remove()
+        return {"executable": installer.venv_python(venv_path), "version": [3, 12, 0], "state": "created"}
+    monkeypatch.setattr(installer, "build_venv", fake_build)
+    monkeypatch.setattr(installer, "install_packages", lambda *a, **k: None)
+    monkeypatch.setattr(installer, "verify_cli", lambda v, env, t: {"status": "installed", "version": "0.19.0", "executable": installer.venv_exe(v, "snaplii"), "host_seen_by_cli": "unknown"})
+    monkeypatch.setattr(installer, "verify_mcp", lambda v, env, t, w: {"status": "installed", "version": "0.19.0", "executable": installer.venv_exe(v, "snaplii-mcp"), "tools": 26})
+    code, report = run_main(installer, capsys, ["--host", "claude-code"], {"HOME": str(tmp_path), "PATH": os.environ.get("PATH", "")})
+    assert code == 0 and report["status"] == "installed" and report["venv"] == {"path": venv, "state": "created"}
+    assert report["python"]["acquired_by"] is None and report["installer_version"] == "1"
+    assert ids(report["next_steps"]) == ["install_skill", "register_mcp", "reload_host", "connect", "cli_on_path", "update"]
+    update_why = [s for s in report["next_steps"] if s["id"] == "update"][0]["why"]
+    assert "files_in_use" in update_why and "same flags" in update_why
+    assert not os.path.exists(venv + ".lock")
+    monkeypatch.setattr(installer, "validate_existing", lambda v, need, env: {"executable": installer.venv_python(v), "version": [3, 12, 0]})
+    code, report = run_main(installer, capsys, ["--check", "--host", "claude-code"], {"HOME": str(tmp_path)})
+    assert code == 0 and report["status"] == "installed" and report["venv"]["state"] == "reused"
+    assert "update" in ids(report["next_steps"])
+
+
+def test_main_partial_and_pip_failure_states(installer, capsys, tmp_path, monkeypatch):
+    monkeypatch.setattr(installer, "qualifying_candidates", lambda *a, **k: [{"argv": [sys.executable], "executable": sys.executable, "version": [3, 12, 0], "venv_ok": True}])
+
+    def fake_build(venv_path, reservation, candidates, need, env, mode):
+        os.makedirs(venv_path, exist_ok=True)
+        installer.write_marker(venv_path, sys.executable)
+        reservation.remove()
+        return {"executable": installer.venv_python(venv_path), "version": [3, 12, 0], "state": "created"}
+    monkeypatch.setattr(installer, "build_venv", fake_build)
+    monkeypatch.setattr(installer, "install_packages", lambda *a, **k: None)
+    monkeypatch.setattr(installer, "verify_cli", lambda v, env, t: {"status": "installed", "version": "0.19.0", "executable": "x", "host_seen_by_cli": "unknown"})
+
+    def bad_mcp(v, env, t, w):
+        raise installer.InstallFailure("verify", "mcp_handshake_failed", "boom", "re-run", retryable=True)
+    monkeypatch.setattr(installer, "verify_mcp", bad_mcp)
+    code, report = run_main(installer, capsys, [], {"HOME": str(tmp_path)})
+    assert code == 1 and report["status"] == "partial" and report["components"]["mcp"]["status"] == "failed"
+    assert report["failure"]["code"] == "mcp_handshake_failed"
+
+    def bad_pip(*a, **k):
+        raise installer.InstallFailure("pip", "index_unreachable", "down", "retry", retryable=True)
+    monkeypatch.setattr(installer, "install_packages", bad_pip)
+    code, report = run_main(installer, capsys, ["--venv", str(tmp_path / "other")], {"HOME": str(tmp_path)})
+    assert report["status"] == "failed" and report["venv"]["state"] == "partial_install"
+    assert report["components"] == {"cli": {"status": "not_verified"}, "mcp": {"status": "not_verified"}}
+
+
+def test_main_python_download_failure_leaves_state_absent(installer, capsys, tmp_path, monkeypatch):
+    monkeypatch.setattr(installer, "qualifying_candidates", lambda *a, **k: [])
+
+    def no_python(*a, **k):
+        raise installer.InstallFailure("python", "python_download_failed", "offline", installer.required_python_remedy(), retryable=True)
+    monkeypatch.setattr(installer, "acquire_python", no_python)
+    code, report = run_main(installer, capsys, [], {"HOME": str(tmp_path)})
+    assert report["status"] == "failed" and report["venv"]["state"] == "absent"
+    assert [s for s in report["next_steps"] if s["status"] == "required"]
+
+
+def test_main_cleanup_incomplete_retains_the_lock(installer, capsys, tmp_path, monkeypatch):
+    monkeypatch.setattr(installer, "qualifying_candidates", lambda *a, **k: [])
+
+    def leaves_survivors(*a, **k):
+        installer.SURVIVORS.append(4242)
+        raise installer.InstallFailure("python", "python_download_failed", "x", "y", retryable=True)
+    monkeypatch.setattr(installer, "acquire_python", leaves_survivors)
+    monkeypatch.setattr(installer, "SURVIVORS", [])
+    code, report = run_main(installer, capsys, [], {"HOME": str(tmp_path)})
+    assert report["failure"]["code"] == "cleanup_incomplete" and report["failure"]["retryable"] is False
+    lock = json.load(open(str(tmp_path / ".snaplii-env.lock")))
+    assert lock["state"] == "cleanup_incomplete" and lock["surviving_pids"] == [4242]
+
+
+def test_main_check_mode_builds_a_bytecode_free_child_environment(installer, capsys, tmp_path, monkeypatch):
+    seen = []
+    real = installer.child_env
+
+    def spy(base, check_mode=False, for_uv=False):
+        env = real(base, check_mode=check_mode, for_uv=for_uv)
+        seen.append(env.get("PYTHONDONTWRITEBYTECODE"))
+        return env
+    monkeypatch.setattr(installer, "child_env", spy)
+    run_main(installer, capsys, ["--check"], {"HOME": str(tmp_path)})
+    assert seen == ["1"]
+    seen.clear()
+    monkeypatch.setattr(installer, "qualifying_candidates", lambda *a, **k: [])
+    monkeypatch.setattr(installer, "acquire_python", lambda *a, **k: (_ for _ in ()).throw(
+        installer.InstallFailure("python", "python_download_failed", "x", "y", retryable=True)))
+    run_main(installer, capsys, [], {"HOME": str(tmp_path)})
+    assert "1" not in seen                     # install mode never sets it
+
+
+def test_next_steps_cli_failure_with_mcp_installed_still_has_a_required_step(installer):
+    comps = installed(installer)
+    comps["cli"] = {"status": "failed", "code": "cli_verification_failed"}
+    failure = installer.InstallFailure("verify", "cli_verification_failed", "doctor crashed", "re-run", retryable=True)
+    steps = installer.next_steps("claude-code", "unknown", comps, "/v", failure, False, False, "linux", {}, ["python3", "install.py"])
+    assert "register_mcp" in ids(steps) and "cli_on_path" not in ids(steps) and "update" not in ids(steps)
+    assert [s["id"] for s in steps if s["status"] == "required"] == ["retry"]
+
+
+def test_check_mode_retry_step_runs_the_installer_not_another_check(installer):
+    comps = installed(installer)
+    comps["cli"] = {"status": "failed", "code": "cli_verification_failed"}
+    failure = installer.InstallFailure("verify", "cli_verification_failed", "x", "re-run the installer", retryable=True)
+    steps = installer.next_steps("claude-code", "unknown", comps, "/v", failure, True, False, "linux", {},
+                                 ["python3", "install.py", "--check", "--host", "claude-code"])
+    retry = [s for s in steps if s["status"] == "required"][0]
+    assert retry["command"] == "python3 install.py --host claude-code"
+
+
+def test_required_step_why_says_re_run_once(installer):
+    comps = {"cli": {"status": "not_verified"}, "mcp": {"status": "not_verified"}}
+    for remedy in (installer.required_python_remedy(), installer.pip_remedy("index_unreachable"), "wait for the other installer"):
+        failure = installer.InstallFailure("python", "python_too_old", "x", remedy, retryable=True)
+        steps = installer.next_steps(None, "unknown", comps, "/v", failure, False, False, "linux", {}, ["python3", "install.py"])
+        why = [s for s in steps if s["status"] == "required"][0]["why"]
+        assert why.count("re-run") == 1, why
+
+
+def test_readme_required_row_applies_the_remedy_before_the_rerun():
+    from pathlib import Path
+    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text()
+    section = readme.split("### Install the execution layer", 1)[1].split("\n### ", 1)[0]
+    row = [line for line in section.splitlines() if line.startswith("- `required`:")][0]
+    assert row.index("`why`") < row.index("`command`") and "re-runs the installer" in row
+
+
+def test_main_still_prints_json_when_report_assembly_fails(installer, capsys, tmp_path, monkeypatch):
+    def broken(*a, **k):
+        raise RuntimeError("boom")
+    monkeypatch.setattr(installer, "next_steps", broken)
+    code, report = run_main(installer, capsys, ["--check"], {"HOME": str(tmp_path)})
+    assert code == 1 and report["status"] == "failed" and report["failure"]["code"] == "internal_error"
+    assert report["host"]["detected"] == "unknown" and report["next_steps"][0]["id"] == "report_to_user"
+
+
+def test_main_lock_rewrite_failure_still_prints_json_and_keeps_the_lock(installer, capsys, tmp_path, monkeypatch):
+    monkeypatch.setattr(installer, "qualifying_candidates", lambda *a, **k: [])
+
+    def leaves_survivors(*a, **k):
+        installer.SURVIVORS.append(4242)
+        raise installer.InstallFailure("python", "python_download_failed", "x", "y", retryable=True)
+    monkeypatch.setattr(installer, "acquire_python", leaves_survivors)
+    monkeypatch.setattr(installer, "SURVIVORS", [])
+
+    def no_space(self, pids):
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(installer.Lock, "retain", no_space)
+    code, report = run_main(installer, capsys, [], {"HOME": str(tmp_path)})
+    assert code == 1 and report["failure"]["code"] == "cleanup_incomplete"
+    assert os.path.exists(str(tmp_path / ".snaplii-env.lock"))
+
+
+# The skill comes from the same release as the CLI and the MCP server.
+
+def test_skill_step_installs_from_the_source_clone(installer):
+    steps = installer.next_steps("claude-code", "unknown", installed(installer), "/v", None, False, False, "linux", {}, [],
+                                 source="/home/u/snaplii-src")
+    assert steps[0]["args"] == ["--yes", "skills", "add", "/home/u/snaplii-src", "-g", "-a", "claude-code", "-y"]
+
+
+def test_skill_step_pins_the_tag_of_the_installed_cli(installer):
+    steps = installer.next_steps("codex", "unknown", installed(installer), "/v", None, False, False, "linux", {}, [])
+    assert steps[0]["args"] == ["--yes", "skills", "add", "https://github.com/Snaplii-Inc/agent-to-merchant-payments/tree/v0.19.0",
+                                "-g", "-a", "codex", "-y"]
+
+
+def test_skill_step_without_a_known_version_uses_the_repository(installer):
+    comps = {"cli": {"status": "missing"}, "mcp": {"status": "missing"}}
+    steps = installer.next_steps(None, "unknown", comps, "/v", None, True, False, "linux", {}, ["python3", "install.py", "--check"])
+    skill = [s for s in steps if s["id"] == "install_skill"][0]
+    assert skill["command"] is None
+    assert "npx --yes skills add Snaplii-Inc/agent-to-merchant-payments -g -a AGENT -y" in skill["why"]
+
+
+def test_skill_step_runs_without_prompts(installer):
+    # A shell tool has no TTY: the skills installer aborts on its prompts unless -y is given.
+    for host in ("claude-code", "codex", "cursor", "openclaw"):
+        skill = installer.next_steps(host, "unknown", installed(installer), "/v", None, False, False, "linux", {}, [])[0]
+        assert skill["args"][-3:] == ["-a", host, "-y"], host
+        assert skill["args"][0] == "--yes" and skill["command"].startswith("npx --yes skills add"), host
+    # Without a known agent, -y would install into every agent the skills installer knows.
+    # Without a known agent the step is a template, never a command missing -a and -y.
+    generic = installer.next_steps(None, "unknown", installed(installer), "/v", None, False, False, "linux", {}, [])[0]
+    assert generic["command"] is None and "args" not in generic
+    # Same two routes as the README's table: an agent with an -a value runs the template, any other copies.
+    assert "-a AGENT -y" in generic["why"] and "README's table" in generic["why"] and "Manual install" in generic["why"]
+    assert "Supported Agents" not in generic["why"]
+
+
+def test_connect_step_names_both_hosts_that_connect_on_install(installer):
+    # The MCP server tells Instinct to connect right after install; the skill tells Muse the same.
+    connect = [s for s in installer.next_steps("instinct", "instinct", installed(installer), "/v", None, False, False,
+                                               "linux", {}, []) if s["id"] == "connect"][0]
+    assert "Muse" in connect["why"] and "Instinct" in connect["why"] and "Installing alone does not connect" in connect["why"]
+
+
+def test_update_step_points_at_a_release_tag(installer):
+    update = [s for s in installer.next_steps("claude-code", "unknown", installed(installer), "/v", None, False, False,
+                                              "linux", {}, []) if s["id"] == "update"][0]
+    assert "release tag" in update["why"] and "--source" in update["why"] and "same flags" in update["why"]
+
+
+def test_relative_source_is_resolved_for_the_install_and_the_report(installer, capsys, tmp_path, monkeypatch):
+    src = tmp_path / "snaplii-src"
+    (src / "snaplii-cli").mkdir(parents=True)
+    (src / "mcp-server").mkdir()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(installer, "locate_uv", lambda environ, **k: None)
+    monkeypatch.setattr(installer, "qualifying_candidates", lambda *a, **k: [{"argv": [sys.executable], "executable": sys.executable, "version": [3, 12, 0], "venv_ok": True}])
+
+    def fake_build(venv_path, reservation, candidates, need, env, mode):
+        os.makedirs(venv_path, exist_ok=True)
+        installer.write_marker(venv_path, sys.executable)
+        reservation.remove()
+        return {"executable": installer.venv_python(venv_path), "version": [3, 12, 0], "state": "created"}
+    seen = {}
+    monkeypatch.setattr(installer, "build_venv", fake_build)
+    monkeypatch.setattr(installer, "install_packages", lambda py, cli_only, source, env: seen.setdefault("source", source))
+    monkeypatch.setattr(installer, "verify_cli", lambda v, env, t: {"status": "installed", "version": "0.19.0", "executable": installer.venv_exe(v, "snaplii"), "host_seen_by_cli": "unknown"})
+    monkeypatch.setattr(installer, "verify_mcp", lambda v, env, t, w: {"status": "installed", "version": "0.19.0", "executable": installer.venv_exe(v, "snaplii-mcp"), "tools": 26})
+    code, report = run_main(installer, capsys, ["--source", "snaplii-src", "--host", "claude-code"], {"HOME": str(tmp_path), "PATH": os.environ.get("PATH", "")})
+    assert code == 0 and seen["source"] == str(src)
+    skill = [s for s in report["next_steps"] if s["id"] == "install_skill"][0]
+    assert skill["args"][3] == str(src)
+
+
+# Muse runs the CLI and installs skills itself.
+
+def test_host_muse_is_accepted(installer):
+    assert installer.parse_args(["--host", "muse"]).host == "muse"
+
+
+def test_muse_steps_skip_npx_and_mcp_registration(installer):
+    comps = {"cli": installed(installer)["cli"], "mcp": {"status": "skipped"}}
+    for host, detected in (("muse", "unknown"), (None, "muse")):
+        steps = installer.next_steps(host, detected, comps, "/v", None, False, True, "linux", {}, [])
+        skill = [s for s in steps if s["id"] == "install_skill"][0]
+        assert skill["command"] is None and "Muse installs" in skill["why"]
+        assert "register_mcp" not in ids(steps) and not any(s["status"] == "required" for s in steps)
+
+
+def test_detected_muse_installs_the_cli_only(installer, capsys, tmp_path, monkeypatch):
+    monkeypatch.setattr(installer, "detect_host", lambda environ, **k: {"detected": "muse", "instinct_variables": [], "platform": sys.platform})
+    monkeypatch.setattr(installer, "locate_uv", lambda environ, **k: None)
+    monkeypatch.setattr(installer, "qualifying_candidates", lambda *a, **k: [{"argv": [sys.executable], "executable": sys.executable, "version": [3, 12, 0], "venv_ok": True}])
+
+    def fake_build(venv_path, reservation, candidates, need, env, mode):
+        os.makedirs(venv_path, exist_ok=True)
+        installer.write_marker(venv_path, sys.executable)
+        reservation.remove()
+        return {"executable": installer.venv_python(venv_path), "version": [3, 12, 0], "state": "created"}
+    seen = {}
+    monkeypatch.setattr(installer, "build_venv", fake_build)
+    monkeypatch.setattr(installer, "install_packages", lambda py, cli_only, source, env: seen.setdefault("cli_only", cli_only))
+    monkeypatch.setattr(installer, "verify_cli", lambda v, env, t: {"status": "installed", "version": "0.19.0", "executable": installer.venv_exe(v, "snaplii"), "host_seen_by_cli": "muse"})
+    monkeypatch.setattr(installer, "verify_mcp", lambda *a, **k: pytest.fail("Muse does not run the MCP server"))
+    code, report = run_main(installer, capsys, [], {"HOME": str(tmp_path), "PATH": os.environ.get("PATH", "")})
+    assert code == 0 and report["status"] == "installed" and seen["cli_only"] is True
+    assert report["components"]["mcp"] == {"status": "skipped"}
+    assert any(w.startswith("muse:") for w in report["warnings"])
+
+
+# Second Codex review: the report follows the one-release flow and the skill's connection rule.
+
+def test_openclaw_skill_comes_from_the_same_release(installer):
+    comps = installed(installer)
+    from_clone = installer.next_steps("openclaw", "unknown", comps, "/v", None, False, False, "linux", {}, [], source="/src")[0]
+    assert from_clone["args"] == ["--yes", "skills", "add", "/src", "-g", "-a", "openclaw", "-y"]
+    from_tag = installer.next_steps("openclaw", "unknown", comps, "/v", None, False, False, "linux", {}, [])[0]
+    assert from_tag["args"] == ["--yes", "skills", "add", "https://github.com/Snaplii-Inc/agent-to-merchant-payments/tree/v0.19.0", "-g", "-a", "openclaw", "-y"]
+
+
+def test_muse_skill_step_names_the_clone(installer):
+    comps = {"cli": installed(installer)["cli"], "mcp": {"status": "skipped"}}
+    skill = installer.next_steps("muse", "unknown", comps, "/v", None, False, True, "linux", {}, [], source="/src")[0]
+    assert "/src/clawhub-publish" in skill["why"]
+
+
+def test_connect_step_waits_for_a_request(installer):
+    connect = [s for s in installer.next_steps("claude-code", "unknown", installed(installer), "/v", None, False, False,
+                                               "linux", {}, []) if s["id"] == "connect"][0]
+    assert "asks to connect" in connect["why"] and "Muse" in connect["why"]
+
+
+def test_update_step_upgrades_first_and_closes_the_host_only_when_files_are_in_use(installer):
+    update = [s for s in installer.next_steps("claude-code", "unknown", installed(installer), "/v", None, False, False,
+                                              "linux", {}, []) if s["id"] == "update"][0]
+    assert "quit the host" not in update["why"] and "files_in_use" in update["why"] and "new session" in update["why"]

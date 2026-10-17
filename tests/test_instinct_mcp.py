@@ -152,18 +152,27 @@ def test_second_call_takes_the_parked_token(instinct_mcp, monkeypatch, passed):
     assert "jwt-x" not in json.dumps(out)
 
 
-@pytest.mark.parametrize("client", [
-    _PollClient(token=None),
-    _PollClient(error=GatewayConnectionError("https://aipayment.snaplii.com", OSError("down"))),
-], ids=["not-ready", "gateway-down"])
-def test_second_call_reports_pending_without_raw_key_fallback(instinct_mcp, monkeypatch, client):
-    _use(monkeypatch, client)
+def test_second_call_reports_pending_without_raw_key_fallback(instinct_mcp, monkeypatch):
+    client = _use(monkeypatch, _PollClient(token=None))
     out = _call("snaplii_connect", {"eid": "a" * 32})
     assert out["status"] == "pending"
     assert len(client.polled) == 2
     text = json.dumps(out).lower()
     assert "without arguments" in text
-    assert "snaplii init" not in text and "paste" not in text
+    assert "snaplii init" not in text and "own terminal" not in text and "paste" not in text
+
+
+def test_second_call_unreachable_keeps_the_eid(instinct_mcp, monkeypatch):
+    client = _use(monkeypatch, _PollClient(
+        error=GatewayConnectionError("https://aipayment.snaplii.com", OSError("down"))))
+    out = _call("snaplii_connect", {"eid": "a" * 32})
+    assert out["status"] == "unreachable"
+    assert len(client.polled) == 2
+    text = json.dumps(out).lower()
+    # Polling failed, not the submission: retry the same eid, never start over or ask for the key.
+    assert "same eid" in text
+    assert "without arguments" not in text
+    assert "snaplii init" not in text and "own terminal" not in text and "paste" not in text
 
 
 @pytest.mark.parametrize("eid", ["short", "z" * 32, "https://evil.example/connect?x=1", 42])

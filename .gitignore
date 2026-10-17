@@ -10,3 +10,5 @@ build/
 skills/snaplii-ai-agent-cashback-payment/
 .agents/
 .gstack/
+# Local design specs, plans and execution ledgers: never committed
+docs/superpowers/

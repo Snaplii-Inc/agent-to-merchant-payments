@@ -6,6 +6,65 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
+## [0.20.0] — 2026-10-17
+
+### Added
+- **`scripts/install.py`, an installer for agents.** One standard-library script (Python 3.8+) installs `snaplii-cli` and `snaplii-mcp` into `~/.snaplii-env`, fetches CPython 3.12 with uv when needed, verifies the CLI and the MCP handshake against an isolated configuration, and prints a JSON report whose `next_steps` carry the exact skill-install and MCP-registration commands per host. Re-running it is the update path. Release steps: after each PyPI release run `SNAPLII_INSTALLER_LIVE=1 pytest tests/test_installer_live.py` (both variants) before announcing.
+- CI runs Test and Build on pull requests and provides CPython 3.8 for the installer's compatibility test; publishing stays tag-gated.
+
+### Changed
+- **A terminal login without a keychain asks first.** When no OS keychain is usable and file storage is not enabled, `snaplii init` in a terminal asks, before the key is typed, whether this and future sessions may be kept in the owner-only config file. Yes saves `allow_insecure_mode: true` and continues to the key prompt; no stops with `no_persistent_storage` before any key is entered. Piped input, Muse and the MCP server behave as before, and `snaplii config clear` removes the saved choice.
+- **The gateway signed in to becomes the default.** A successful `init` with `--base-url` or `SNAPLII_BASE_URL` saves that gateway, including any path prefix, in the same write as the session, so later commands and an MCP server sharing the configuration reach the same session without the flag. `SNAPLII_BASE_URL` still overrides the saved value.
+- Both skills: when CLI authentication is needed, the agent's first request to the user gives the exact `snaplii init` command for their own terminal and does not ask for the key in the chat or in a file; the skills mention the keychain question.
+- **Agents judge confirmation from stated facts.** The README, both skills, the MCP server instructions and tool descriptions, the CLI help, the Claude Desktop instructions and the plugin README state facts the agent judges by (prepaid balance, daily limit, revocable key, a sent bill cannot be undone, a transfer can be cancelled for about 5 minutes) instead of telling it when to ask the user for confirmation. The autopilot flow still confirms the final merchant order. `openapi.yaml`'s `bill_pay_confirmation` rule became `bill_pay_irreversible`.
+- **README rewritten for agents first.** Capabilities by country and key scope, how the skill, MCP and CLI fit together, a generic Agent Skills install (`npx skills add`) with per-agent directories, both skills, and the Muse and Instinct paths come first; the product background moved to the end.
+- The `snaplii_autopilot` MCP prompt no longer asks the user for a region; the account country is fixed at login.
+- **`quote` and `purchase` verify the `item_id` before any request.** The CLI and the MCP server read the brand from the catalog and send nothing unless the card is verified. They refuse an `item_id` that is not exactly `{cardBrandId}-{cardTemplateId}`, a brand the catalog does not have, and a template that is not a card of that brand with `invalid_item_id`; when the catalog cannot be read they refuse with `item_check_unavailable`. All of them carry `outcome: not_sent`. `invalid_item_id` and `amount_out_of_range` carry a `retry_hint` telling the agent to rethink the parameters from `browse brand` and retry once, never with the same values; if the corrected attempt is refused again, the agent stops and tells the user which brand and amount could not be bought. `item_check_unavailable` tells it to repeat the same command once, then stop and report. A gateway `MCAP2107` (the gateway rejected the `item_id`) gets the rethink hint at any HTTP status: it says nothing was bought, so even a 5xx carrying it is not an unknown outcome. `quote` output leads with the verified card's `brand_name`, and both skills, the MCP server instructions and the tool descriptions tell the agent to check it before purchasing: a different brand gets one corrected retry, and an absent name means relying on the brand it browsed.
+- **Gateway requests name the official client.** The CLI and the MCP server send `X-Snaplii-Client: snaplii-cli/<version> (<cli|mcp>)` on every gateway request, so the gateway can tell the official clients' traffic from any other caller. It is telemetry only: anyone can send the header, so it must never gate access. The Muse vault login request is unchanged.
+- **`openapi.yaml` brought to 0.19.0 as the contract for Snaplii's own CLI and MCP server.** It documents the hosted-connect token endpoint (`/v2/auth/elicit/{eid}/token`), tells AI agents not to call the API directly but to use the Agent Skill with the CLI or the MCP server, and lists the rules those clients apply machine-readably under `info.x-agent-rules`; implementation notes and fields agents must not use are gone from the public contract. The README no longer covers the REST API. Tests keep the spec's version equal to the packages', every gateway path the clients call documented, the rule list complete, and internal notes out; `pyyaml` joins the CLI's dev extras for them.
+- **The gift-card `item_id` format is now a stated rule everywhere an agent buys a card.** Both skills, the MCP server instructions, the `snaplii_quote` and `snaplii_purchase` parameter descriptions, the autopilot prompt, the CLI `--item-id` help and both READMEs say: exactly `{cardBrandId}-{cardTemplateId}`, copied verbatim from `browse brand`'s `denominations`, the same value for quote and purchase, never one ID alone or an assembled one. A test keeps each surface carrying the rule.
+- When no card or hosted page is available, the MCP server offers the user's own terminal first and keeps pasting the key in chat as a working option; when its session lives only in memory, it offers pasting alone. The `snaplii_init` description states the key's limits instead of calling it safe to accept.
+- **Snaplii works from any directory after the installer.** The installer's Claude Code registration uses `--scope user`, and its skill step installs with `-g`, so neither is tied to the directory it ran in or writes into a project. The README's Claude Code and skill commands match.
+- The `next_action` login command names the CLI by its absolute path when `snaplii` on PATH is not the same CLI, as with the installer's `~/.snaplii-env`.
+- The `snaplii-cli` skill looks for the CLI in `~/.snaplii-env` first, installs it with the README's installer, and sends updates of that environment through the installer; the autopilot skill names the same path.
+- README: an Uninstall section, every installer flag, session expiry and keeping the key, and which insecure-storage setting reaches an MCP server. The manual Python upgrade for Mac is gone because the installer fetches Python itself.
+- **Install all three from one release tag.** The README's install now clones a release tag, installs the skills from that clone, and runs the clone's installer with `--source`, so the skill, the CLI and the MCP server come from the same commit; the README names the tag of the current version. The installer resolves `--source` to an absolute path, and its `install_skill` step names the clone, or, when it installed from PyPI, the tag of the installed CLI. The update path is the same with the new tag.
+- **The installer knows Muse.** `--host muse` is accepted, and a detected or named Muse gets the CLI only, with an `install_skill` step that leaves skill installation to Muse and no MCP registration step.
+- **README install section tightened for any Agent-Skills agent.** It explains `-a` (always pass it; copy the folders for an agent the `skills` installer does not know) and `--host` (leave it out for other agents; `--cli-only` without MCP), says which report steps to skip, gives a check an agent can run instead of asking "What can Snaplii do?", registers the MCP server before connecting, points every MCP host example at the installed `snaplii-mcp`, and folds the duplicated rule and session text into shorter sections.
+- **One release is the only install route, with one ordered finish.** The README drops the other install routes (the no-clone skill command, ClawHub, pipx and pip, and running the clone's `server.py`) and the troubleshooting that only they needed. It says how to branch before the example, how to find a skills directory without guessing, and installs Muse's skill from the clone. It verifies after registration, and connects only when the user asks to connect or gives a Snaplii task, or on a first install in Muse. Updating runs the new release's installer first and closes the host only on `files_in_use`. The installer matches: OpenClaw's skill step uses the same clone or tag, Muse's names the clone, and the `connect`, `reload_host` and `update` steps say the same as the README.
+
+### Security
+- **Sign-in goes only to the Snaplii gateways.** `snaplii init`, `snaplii_init`, the secure card and the connect flows send an API key or a connect ID only to production `https://aipayment.snaplii.com` or staging `https://aipay.stage.snaplii.com`, and refuse any other gateway before a key is typed. A connect page set with `SNAPLII_ELICIT_URL` or `elicit_url` must be on the gateway's own address.
+- The terminal prompt and the secure card name the gateway the key goes to, and the hosted-page request names its host.
+- A session saved without its gateway, as releases before 0.17 did, is no longer reused; sign in once more.
+- The secure card ignores messages from windows other than its host and clears the key field after a failed submit.
+
+---
+
+### Fixed
+- **A login sends only a Snaplii key.** `snaplii init` and the MCP login refuse anything that is not `snp_sk_live_` plus 32 letters and digits (the gateway's own format) before any request, so a vault reference, surrogate or hash is never sent; the refusal never echoes the value.
+- **Muse is sent back to the key it holds.** In Muse, a raw-key login whose value is not a Snaplii key, or that Snaplii rejects, answers `auth_required` with `next_action` `snaplii init --vault-auth` and tells the agent not to type, rebuild or copy a key; the Muse instruction in both skills, the README and a new `openapi.yaml` rule (`muse_stored_key_only`) say the same.
+- **Only the gateway's own refusal means the key is invalid.** A 401/403 that did not come from the Snaplii gateway (a proxy, a host's credential layer, a wrong address) now reports `auth_response_invalid` / `auth_rejected_unverified` and stops, instead of telling the agent to replace a key that was never checked.
+- **`snaplii purchase` takes the quote's options.** `--voucher`, `--cashback` and `--voucher-id` are forwarded, and a quote with a voucher ID now uses that voucher (`voucherOption=USE`) as the purchase does, so the charge matches the quote.
+- **A transfer keeps its idempotency key on any lost connection.** A reset connection or broken response after sending is reported like a timeout (`CLIENT_TRANSPORT_ERROR`, same-key retry only) instead of an uncaught error. An unreadable reply to a transfer request, or a create reply with no transfer in it, is reported the same way (`CLIENT_UNREADABLE_RESPONSE`).
+- **An unclear purchase is checked before buying again.** A purchase or bill payment that ends in a 5xx, with or without an error code (except `MCAP2107`, a rejected item ID), or in a reply that cannot be read, or carries no result (`null`, a list, an empty object, a non-string code, an error that gives neither a code nor a message), at any status, now returns `"outcome": "indeterminate"`, its `status_code` and a hint not to pay again until the outcome is known, instead of "try again" or a success. The skill, the `snaplii_purchase` description and the plugin README point such an outcome at the owned-card list first, since a purchase is not idempotent. Every gateway error now carries `status_code`. The skill's advice for `MACP6005` checks `outcome` first instead of suggesting a retry.
+- **Both skills say how to install their CLI.** A skill installed on its own, for example from ClawHub, has no installer beside it; the snaplii-cli Prerequisites and the autopilot Requirements now give the release clone and installer commands at the matching tag.
+- **Plugin README matches the plugin.** It no longer pins `snaplii-cli==0.13.2` or tells agents to pass the user's key to `snaplii_init`; it states that the plugin runs `uvx snaplii-mcp` and connects with `snaplii_connect`.
+- **A connect page finished late is not lost.** After `snaplii_connect` reports `pending`, calling it again within 2 minutes collects the key the user submitted on that page, and otherwise reopens the same page instead of starting a new connection. While that page is open, the `pending` answer never offers pasting the key or a terminal login.
+- **`snaplii_giftcard_list` pages.** It takes `page` and `page_size` like `snaplii giftcard list`, and says that a card missing from one page does not show that a purchase failed.
+- `snaplii_balance` reads a balance returned at the top level as well as under `data`, as the CLI does.
+- Reads and hosted-page polling report a structured connection error on any transport failure, such as a read timeout, instead of a traceback or `unexpected_error`.
+- **A connect that cannot reach Snaplii says so.** When no poll of the hosted page reaches Snaplii, `snaplii_connect` answers `unreachable` instead of `pending`, keeps the open page or the Instinct `eid` to collect from on the next call, and does not ask for the key again.
+- **The secure card comes first.** When `snaplii_connect` requests the secure card, it tells the agent to wait for the user to enter the key there and not to ask for it in chat; the terminal and chat options apply only if the user says no card appeared.
+- **One failure to open the secure page is retried first.** When the hosted page fails to open for a reason other than the client not supporting it, `snaplii_connect` asks for one more try on the same page and not to ask for the key in chat; the terminal and chat options follow only after a second failure. A connection that completes clears that count, and only an explicit "not supported" answer counts as a client without the page.
+- **The terminal option names the installed CLI and this gateway.** When the MCP server offers a terminal login, the command is the CLI's own path (the installer keeps its environment off PATH) with `--base-url` for the gateway the server uses, so the session lands where the server looks for it. On Windows it is a PowerShell command, quoted the way the installer's commands are.
+- **The secure card waits for a slow login.** The card waits up to 45 seconds for the key submission, longer than a gateway request can take, so a login that succeeds slowly is no longer reported as a failure that invites a second entry.
+- **Cashback figures agree.** `snaplii smart cashback` and `snaplii_cashback_calc` read a card's cashback the way browsing does (`discount`, else `regularDiscount`), and the MCP calculator accepts brand detail given directly or wrapped in `data`.
+- `snaplii smart dashboard` and `snaplii_dashboard` count every owned card, page by page, instead of the first 100.
+- `snaplii update` on a prerelease says to repeat the README's install commands with the new release tag.
+- A plain 403 tells the CLI user to check the API key's permissions, as MCP already did, instead of to run `snaplii init`.
+- **The key never goes through the agent's shell.** Both skills say that raw-key CLI login is the user's own terminal and that the agent never passes the key through its shell tool, stdin, a heredoc, an environment variable or a command argument.
+
 ## [0.19.0] — 2026-10-08
 
 ### Added
@@ -60,14 +119,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 ## [0.15.0] — 2026-09-02
 
 ### Added
-- **P2P transfers — send Snaplii Cash to a phone number.** Backed by the gateway's `/v2/transfers` endpoints, with a 5-minute undo window before auto-send. CLI: `snaplii transfer create/cancel/finish/status/list`, where `status --wait` polls every 3s until FINISHED/CANCELLED/FAILED. MCP: `snaplii_transfer_*` tools plus P2P server instructions (**26 tools total**). Every request carries a UUID `Idempotency-Key` that is echoed back so a retry reuses the same key, and client-side timeouts map to a retryable `CLIENT_TIMEOUT`. Responses are decorated with `cross_currency_notice` (a recipient in another country receives a different amount/currency) and a human-readable `fail_message` for every documented `fail_reason`. The skill's Step 7 flow asks for the phone number when missing, discloses cross-currency and lets the user keep or cancel, finishes only on an explicit "send now", and polls status after `finish`/`auto_finish_at`. Verified end-to-end on staging: create/cancel/finish, idempotent replay and `IDEMPOTENCY_MISMATCH`, a cross-currency USD→CAD quote, a real balance debit, and meaningful errors.
+- **P2P transfers — send Snaplii Cash to a phone number.** Backed by the gateway's `/v2/transfers` endpoints, with a 5-minute undo window before auto-send. CLI: `snaplii transfer create/cancel/finish/status/list`, where `status --wait` polls every 3s until FINISHED/CANCELLED/FAILED. MCP: `snaplii_transfer_*` tools plus P2P server instructions (**26 tools total**). Every request carries a UUID `Idempotency-Key` that is echoed back so a retry reuses the same key, and client-side timeouts map to a retryable `CLIENT_TIMEOUT`. Responses are decorated with `cross_currency_notice` (a recipient in another country receives a different amount/currency) and a human-readable `fail_message` for every documented `fail_reason`. The skill's Step 7 flow asks for the phone number when missing, discloses cross-currency and lets the user keep or cancel, finishes only on an explicit "send now", and polls status after `finish`/`auto_finish_at`.
 
 ### Changed
 - **`snaplii-mcp` now requires `snaplii-cli>=0.15.0`.** The server imports `snaplii.commands.transfer`, which only exists from 0.15.0; the old `>=0.12.1` floor would have let a resolver pair the new server with a CLI that has no transfer module, failing at import.
 
 ### Fixed
-- **`snaplii init` no longer reports success on a failed login.** A 2xx `/v2/auth/token` response with no `access_token` is a failed login, not a success. It now raises `GatewayApiError` carrying the body's real reason (`rspMsgInf` / `message` / plain-text raw) instead of printing "authenticated" with nothing cached — the gateway currently answers HTTP 200 plus plain text when the core withholds the `x-auth-token` header.
-- **Readable transfer validation errors.** `TransferApiError` parses the common validation shape (null `message`, per-field messages in `errors[]`), so a `@Valid` 400 reads as "amount: amount must be …" rather than "Transfer request failed (HTTP 400)".
+- **`snaplii init` no longer reports success on a failed login.** A 2xx `/v2/auth/token` response with no `access_token` is a failed login, not a success. It now raises `GatewayApiError` carrying the body's real reason (`rspMsgInf` / `message` / plain-text raw) instead of printing "authenticated" with nothing cached.
+- **Readable transfer validation errors.** `TransferApiError` reads per-field validation messages, so a rejected field reads as "amount: amount must be …" rather than "Transfer request failed (HTTP 400)".
 - **Retry hints only where a retry is safe.** Only indeterminate outcomes (client timeout, `TRANSFER_INDETERMINATE`, `CONCURRENT_DUPLICATE`, `UPSTREAM_ERROR`, 5xx) get the same-key retry hint. `QUOTE_EXPIRED` now says to create again with a fresh key per the API spec, and terminal 4xx such as `INSUFFICIENT_BALANCE` get no hint at all.
 - **Source and editable installs of `snaplii-cli` work again.** hatchling >= 1.32 rejects a readme path outside the project directory, so `readme = {file = "../README.md"}` broke `pip install -e ./snaplii-cli` and `uvx --from ./snaplii-cli`; older hatchling built an sdist with a `snaplii_cli-X/../README.md` member that pip refuses to extract. A CLI-focused `snaplii-cli/README.md` is now in-tree and the sdist carries it with no path traversal. PyPI wheel installs were unaffected either way.
 - **Pin `mcp>=1.0,<2`.** mcp 2.x dropped the `list_tools`/`call_tool` decorators from `mcp.server.Server`, so `server.py` died at import with an `AttributeError` and the MCP server could not start on a clean install.
@@ -78,7 +137,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 ## [0.14.1] — 2026-06-23
 
 ### Fixed
-- **Reject gift-card amounts outside the brand's denomination range.** The app blocks an out-of-range amount in its UI, but the agent path (CLI/MCP) bypassed it: the backend accepted e.g. Uber Eats \$10 on a \$20-minimum card, returned `you_pay = 0`, charged Snaplii Cash, then the card failed and went to refund. `snaplii_quote` / `snaplii_purchase` and `snaplii quote` / `snaplii purchase` now validate `price` against the card's `faceValueRules` (VARIABLE → `priceStart ≤ price ≤ priceEnd`, FIXED → `price == priceStart`) before quoting or charging, and reject it with a clear message. The guard fails open if the catalog can't be read, so the server stays the final authority. This is client-side mitigation; the underlying gap is server-side (`quoteOrder.do` / `createOrderAndPay.do`).
+- **Reject gift-card amounts outside the brand's denomination range.** The app blocks an out-of-range amount in its UI, and the agent path (CLI/MCP) now does too. `snaplii_quote` / `snaplii_purchase` and `snaplii quote` / `snaplii purchase` now validate `price` against the card's `faceValueRules` (VARIABLE → `priceStart ≤ price ≤ priceEnd`, FIXED → `price == priceStart`) before quoting or charging, and reject it with a clear message. The guard fails open if the catalog can't be read, so the server stays the final authority.
 
 ### Changed
 - **Connect routing is purely capability-based.** Dropped the Codex client-name allowlist added in 0.14.0: some Codex terminal sessions share Codex Desktop's client name but can't render cards, so name-based routing would have hidden the URL-mode path. Card hosts are detected positively from advertised capabilities, so falling through to terminal `snaplii init` stays safe.
@@ -108,7 +167,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 ## [0.13.3] — 2026-06-16
 
 ### Changed
-- **Region is now automatic — `--prov` / `locationProv` removed from `browse`, `purchase`, and `billpay pay`.** The account's country is fixed at login and enforced server-side, so the catalog is already scoped to the user and `locationProv` is no longer sent. `purchase` / `billpay pay` no longer accept `--prov` (it was previously required on `purchase`); `browse tags` takes only `--channel`. Verified against the gateway that `/v2/purchase` does not require `locationProv` (a request without it still returns `SUCCESS`), and that `browse` defaults the region server-side. MCP tools, skills, plugin README, and README updated to drop the region parameter and to read the user's country from `snaplii config show` instead of asking.
+- **Region is now automatic — `--prov` / `locationProv` removed from `browse`, `purchase`, and `billpay pay`.** The account's country is fixed at login and enforced server-side, so the catalog is already scoped to the user and `locationProv` is no longer sent. `purchase` / `billpay pay` no longer accept `--prov` (it was previously required on `purchase`); `browse tags` takes only `--channel`. MCP tools, skills, plugin README, and README updated to drop the region parameter and to read the user's country from `snaplii config show` instead of asking.
 
 ### Removed
 - **Dead `card_brands` command module** removed from the CLI (no longer registered or referenced).
@@ -118,17 +177,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 ## [0.13.2] — 2026-06-09
 
 ### Fixed
-- **Balance currency is no longer hardcoded to CAD.** `snaplii balance` / `snaplii_balance` previously labeled every balance `CAD`, which is wrong for US users. Snaplii Cash is held in the account's local currency and the backend doesn't return it, so it now follows the user's country: pass `--country CA|US` (CLI) or `country` (MCP) → `CA=CAD`, `US=USD`. When no country is given, the currency is omitted (with a note) instead of asserting CAD. Tool/skill/instruction docs updated to pass the country and never assume CAD.
+- **Balance currency is no longer hardcoded to CAD.** `snaplii balance` / `snaplii_balance` previously labeled every balance `CAD`, which is wrong for US users. Snaplii Cash is held in the account's local currency, so the label now follows the user's country: pass `--country CA|US` (CLI) or `country` (MCP) → `CA=CAD`, `US=USD`. When no country is given, the currency is omitted (with a note) instead of asserting CAD. Tool/skill/instruction docs updated to pass the country and never assume CAD.
 
 ---
 
 ## [0.13.1] — 2026-06-05
 
 ### Fixed
-- **Purchase no longer fails when a non-default payment method is sent.** Explicit `SNAPLII_CASH` / `SNAPLII_DEBIT` is rejected by the backend as `MCA20004 服务未开通`, while the default `SNAPLII_CREDIT` (which draws from the same prepaid Snaplii Cash pool) works. Reported from the field: an agent that passed an explicit method hit MCA20004, then succeeded on retry without one.
+- **Purchases always pay with prepaid Snaplii Cash.** The payment method is no longer a choice: every purchase uses `SNAPLII_CREDIT`, which draws from the prepaid Snaplii Cash balance.
   - **MCP:** removed the `payment_method` parameter from `snaplii_purchase`; the handler now always uses `SNAPLII_CREDIT` (ignores any stray arg).
   - **CLI:** removed `--payment-method` / `--payment-token` from `purchase` and `--payment-method` from `quote`; both always use `SNAPLII_CREDIT`.
-  - **Errors:** `MCA20004` now maps to a friendly "that method isn't enabled — retry without specifying one" message.
   - Skill + plugin docs updated to stop presenting a payment-method knob.
 
 ---
@@ -137,7 +195,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ### Added
 - **Balance query (`snaplii balance` / `snaplii_balance`).** Read the user's real, current spendable Snaplii Cash balance — the same pool that pays for gift cards and bills. Reverses the previous "there is no balance query, never state it" rule now that a real endpoint exists. The recommended purchase flow is now **balance → quote → confirm → buy**: check the balance first to tell the user up front whether an order is affordable, with the quote's `you_pay` still the hard safety net for a specific order.
-  - Gateway: new `GET /v2/balance` (proxies `getUserCashBack.do`).
+  - Gateway: new `GET /v2/balance`.
   - CLI: `snaplii balance`. MCP: `snaplii_balance` tool (19 tools total).
 
 ### Changed
@@ -221,8 +279,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 - **API key management removed from CLI and MCP** — `snaplii apikey list/create/delete` and the `snaplii_apikey_*` MCP tools are gone. API keys are created, viewed, and revoked **only in the Snaplii app**. This is intentional: agents should never manage their own keys. (Breaking change for any scripts using `snaplii apikey`.)
 
 ### Fixed
-- **Spending-limit and business errors now show the real cause.** Previously a daily-spend-limit hit surfaced as a generic "Gateway temporarily unavailable" (HTTP 502). The gateway now returns business rejections as HTTP 422 with the full upstream body (error code + message), and the CLI surfaces the actual message (e.g. "you may have reached a spending limit").
-- Gateway logs the upstream error body on failure (was logging only the status code), making issues like spend-limit rejections debuggable.
+- **Spending-limit and business errors now show the real cause.** The CLI surfaces the business error's own message (e.g. "you may have reached a spending limit") instead of a generic "temporarily unavailable".
 
 ### Changed
 - CHANGELOG renamed from "AI Passport" to "Agent-to-Merchant Payments by Snaplii"
@@ -359,7 +416,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 | 0.14.0 | 2026-06-19 | Off-model API-key entry via MCP Apps card; zero-confirmation flow |
 | 0.13.3 | 2026-06-16 | Region automatic — `--prov` / `locationProv` dropped |
 | 0.13.2 | 2026-06-09 | Balance currency follows the account country, never hardcoded CAD |
-| 0.13.1 | 2026-06-05 | Always `SNAPLII_CREDIT` — payment-method knob removed (MCA20004) |
+| 0.13.1 | 2026-06-05 | Always `SNAPLII_CREDIT` — payment-method knob removed |
 | 0.13.0 | 2026-06-04 | Balance query (`snaplii balance`); 19 MCP tools |
 | 0.12.1 | 2026-06-02 | Fix `No module named 'httpcore'` — explicit dep + clear error |
 | 0.12.0 | 2026-06-02 | Exact denominations, Claude Desktop setup script, editable-aware updates, address confirmation |

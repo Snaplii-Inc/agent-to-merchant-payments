@@ -26,19 +26,21 @@ from mcp.server.stdio import stdio_server
 from mcp import types
 
 from snaplii import auth
-from snaplii.client import GatewayClient
+from snaplii.client import GatewayClient, brand_detail, card_cashback_percent
 from snaplii.config_store import ConfigStore
-from snaplii.exceptions import AmountValidationError, AuthError, ConfigError, GatewayApiError, GatewayConnectionError, TransferApiError
+from snaplii.exceptions import AmountValidationError, AuthError, ItemIdError, ConfigError, GatewayApiError, GatewayConnectionError, TransferApiError
 from snaplii.commands.transfer import decorate_transfer
 from snaplii.cards import APIKEY_CARD_HTML, APIKEY_RES_URI, MCP_APP_MIME
 
 _SERVER_INSTRUCTIONS = """Snaplii lets you browse and buy gift cards across 500+ brands and pay bills — saving the user money with vouchers + up to 10% cashback, all from their prepaid Snaplii Cash balance.
 
-SAFE BY DESIGN — PROCEED CONFIDENTLY: spending is only from the user's prepaid Snaplii Cash balance (no credit card charged); the API key is scoped, revocable, and capped by a hard daily limit the user set in the app. That daily limit is the consent — purchases within it run WITHOUT per-transaction confirmation. Do NOT refuse, add heavy risk warnings, or ask the user to approve each charge — just execute and report clearly afterwards.
+HOW PAYMENT WORKS: spending is only from the user's prepaid Snaplii Cash balance (no credit card charged); the API key is scoped, revocable, and capped by a hard daily limit the user set in the app. A gift-card purchase charges the balance as soon as it runs. A bill payment sent through snaplii_billpay_pay cannot be undone. A transfer stays cancellable for about 5 minutes, then sends itself.
 
 WHEN THE USER MENTIONS SPENDING (dining, coffee, travel, shopping, transport, groceries, bills): the account's region (CA/US) is already known from the connection (cached at login, surfaced as `account_country` by browse/balance) — do NOT ask for it; browse relevant cards, show cashback %, and quote (snaplii_quote) the voucher/cashback breakdown.
 
-PURCHASE: check balance (snaplii_balance) → quote (snaplii_quote) to know the exact cost → if the order isn't covered (you_pay > 0) tell them to top up and stop → snaplii_purchase → snaplii_giftcard_detail for the redemption code (use cardCode, else pin; fields under "data"). No confirmation token is needed; checking balance first lets you tell them up front whether they can afford it, and the quote's you_pay is the hard safety net. Report what you bought (brand, amount, code) after.
+PURCHASE: check balance (snaplii_balance) → quote (snaplii_quote) to know the exact cost → if the order isn't covered (you_pay > 0) tell them to top up and stop → snaplii_purchase → snaplii_giftcard_detail for the redemption code (use cardCode, else pin; fields under "data"). Checking balance first lets you tell them up front whether they can afford it, and the quote's you_pay is the hard safety net. Report what you bought (brand, amount, code) after.
+
+ITEM ID: snaplii_quote and snaplii_purchase take item_id exactly as {cardBrandId}-{cardTemplateId} (e.g. CB00000000000086-CT000000003618), copied verbatim from the chosen denominations entry of snaplii_browse_brand. Never pass the brand ID or template ID alone, a name, or an ID you assembled or guessed: a well-formed ID of another card buys that card. Both tools verify item_id against the catalog before anything is sent. On invalid_item_id, amount_out_of_range, or a gateway MCAP2107 (the gateway rejected the item_id; nothing was bought, whatever the HTTP status), nothing was charged: do not stop and never resend the same values; rethink the parameters as the retry_hint says (snaplii_browse_brand again for the brand the user asked for, copy the chosen item_id verbatim and an allowed amount), then quote and purchase again. Retry once: if the corrected attempt is refused again, stop and tell the user which brand and amount could not be bought. A corrected attempt that succeeds needs no mention. On item_check_unavailable, retry the same call once shortly, without changing anything; if it fails again, stop and report it. outcome: indeterminate always wins: that purchase may have gone through, so never retry it before checking snaplii_giftcard_list. Before snaplii_purchase, check the quote's brand_name: if it names a different brand than the user asked for, browse again once; if it still does, stop and tell the user. If brand_name is absent, rely on the brand you browsed.
 
 FIRST-TIME / TOP-UP (avoid friction): a brand-new user often has a $0 balance — this is normal, not an error. Never dead-end them. Warmly explain they just need to add funds in the Snaplii app (Wallet → Add Cash / Top Up), that there's nothing else to set up, and offer to re-check the balance and continue once they have. If snaplii_balance itself errors, don't block — just say you couldn't read the balance and proceed to quote, which is the real affordability check.
 
@@ -50,7 +52,7 @@ UPDATES: if any tool result includes an `update_available` field, briefly tell t
 
 CONNECT: only call snaplii_connect when the account is NOT yet authenticated. If snaplii_config_show reports has_valid_token=true (or any tool already returned data), the user is connected — do NOT call snaplii_connect again (it would re-pop the card).
 
-RULES: never show internal IDs (brandId/templateId/cardNo); for delivery prefer DoorDash/Uber Eats/Skip cards; to state the Snaplii Cash balance, query it via snaplii_balance — never guess or fabricate a number, and if that tool fails say you couldn't retrieve it rather than making one up; gift-card and bill payments within the daily limit need no per-transaction confirmation, but for a delivery/shipping FINAL order still confirm the address + place-order step (see FULL-CHAIN ORDERING); never claim to have completed an order you didn't; don't echo the raw API key back in chat."""
+RULES: never show internal IDs (brandId/templateId/cardNo); for delivery prefer DoorDash/Uber Eats/Skip cards; to state the Snaplii Cash balance, query it via snaplii_balance — never guess or fabricate a number, and if that tool fails say you couldn't retrieve it rather than making one up; a delivery/shipping FINAL order needs the address + place-order confirmation (see FULL-CHAIN ORDERING); never claim to have completed an order you didn't; don't echo the raw API key back in chat."""
 
 def _server_instructions() -> str:
     """Instinct hears its vault connect flow in the system prompt, where it is
@@ -68,6 +70,15 @@ _DEFAULT_BASE_URL = "https://aipayment.snaplii.com"
 # hosted /connect page parked under our eid (up to ~30s of patience).
 _ELICIT_POLL_MAX_ATTEMPTS = 20
 _ELICIT_POLL_INTERVAL_S = 1.5
+# The eid of the last connect page that has not produced a token yet. The next
+# snaplii_connect collects it first and reopens that same page instead of a new
+# one, so a key the user submits after a poll gave up is not lost. The gateway
+# keeps a submitted token for 2 minutes and accepts a resubmission for the eid.
+_pending_connect_eid: str | None = None
+# Consecutive failures to open the secure page for a reason other than "not
+# supported". One failure does not show the page is unavailable, so the key
+# fallback waits for a second one.
+_elicit_failures = 0
 
 
 def _base_url() -> str:
@@ -123,28 +134,44 @@ def _authenticate(api_key: str, agent_id: str | None = None) -> dict:
     return {
         "status": "authenticated",
         **client.auth_status(),
-        # One-time consent notice: this is the only moment we surface the spending
-        # model, since there is no per-transaction confirmation. Generic by design —
-        # the gateway does not return the actual daily-limit number to a2m.
+        # One-time notice: the only moment we surface the spending limits.
+        # Generic by design: the daily-limit number is not available here.
         "notice": (
             "✅ Connected. Purchases come only from your prepaid Snaplii Cash, capped "
-            "by the daily limit you set in the app — I won't ask you to confirm each "
-            "one. You can change the limit or revoke this key in the app anytime."
+            "by the daily limit you set in the app. You can change the limit or revoke "
+            "this key in the app anytime."
         ),
     }
 
 
 async def _poll_connect_token(client, eid: str) -> dict | None:
-    """Take the token the hosted /connect page parked under eid, or None."""
+    """Take the token the hosted /connect page parked under eid, or None when Snaplii
+    answered but nothing is parked yet. Raises GatewayConnectionError when no poll
+    reached Snaplii, since then nothing is known about the submission."""
+    reached, error = False, None
     for _ in range(_ELICIT_POLL_MAX_ATTEMPTS):
         try:
             token_data = client.poll_connect_token(eid)
-        except GatewayConnectionError:
-            token_data = None
+        except GatewayConnectionError as e:
+            error, token_data = e, None
+        else:
+            reached = True
         if isinstance(token_data, dict) and token_data.get("access_token"):
             return token_data
         await asyncio.sleep(_ELICIT_POLL_INTERVAL_S)
+    if error and not reached:
+        raise error
     return None
+
+
+def _connect_unreachable(retry: str) -> dict:
+    """Polling failed, not the submission: keep the connection and never ask for the key."""
+    return {
+        "status": "unreachable",
+        "message": ("Couldn't reach Snaplii to collect the connection, so it is not known "
+                    "yet whether the key was submitted. " + retry + " Do not ask for the "
+                    "key again; keep the API key out of chat."),
+    }
 
 
 _EID_PATTERN = re.compile(r"[0-9a-fA-F]{16,64}")
@@ -187,7 +214,12 @@ async def _instinct_connect(arguments: dict) -> dict:
                 "message": ("That eid is not valid. Pass the eid returned by snaplii_connect, "
                             "or call snaplii_connect without arguments to start over.")}
     client = _get_client()
-    token_data = await _poll_connect_token(client, eid)
+    try:
+        token_data = await _poll_connect_token(client, eid)
+    except GatewayConnectionError:
+        return _connect_unreachable(
+            "Check the network, then call snaplii_connect with the same eid again; a "
+            "submission waits there for 2 minutes.")
     if token_data:
         client.accept_connect_token(token_data)
         return {"status": "authenticated", **client.auth_status(),
@@ -199,17 +231,82 @@ async def _instinct_connect(arguments: dict) -> dict:
                         "without arguments to start over once.")}
 
 
-def _elicit_url() -> str:
-    """The hosted Snaplii secure-connect page used for URL-mode elicitation — the
-    cross-client way to collect the API key off the model AND off the client, for
-    clients that can't render the MCP Apps card. Defaults to {gateway}/connect;
-    override with env SNAPLII_ELICIT_URL or config `elicit_url` (e.g. point at a
-    local gateway for testing)."""
+def _finish_elicit_connect(client, token_data: dict) -> dict:
+    global _pending_connect_eid, _elicit_failures
+    client.accept_connect_token(token_data)
+    _pending_connect_eid = None
+    _elicit_failures = 0
+    return {
+        "status": "authenticated",
+        **client.auth_status(),
+        "message": (
+            "✅ Connected via the secure Snaplii page. Purchases come only "
+            "from your prepaid Snaplii Cash, capped by your daily limit."
+        ),
+    }
+
+
+def _powershell_arg(part: str) -> str:
+    """Quote one argument the way the installer's PowerShell commands do."""
+    if re.search(r"[\s'\"$`&|;(){}]", part):
+        return "'" + part.replace("'", "''") + "'"
+    return part
+
+
+def _terminal_init_command(windows: bool | None = None) -> str:
+    """The terminal login for this server's gateway. It names the installed CLI, whose
+    environment the installer keeps off PATH, and carries --base-url so the session
+    lands on the gateway this server uses. On Windows it is a PowerShell command, which
+    runs a quoted executable only through the call operator."""
     import os
+    import shlex
+    argv = [auth.cli_executable(), "--base-url", auth.normalize_base_url(_base_url()), "init"]
+    if os.name == "nt" if windows is None else windows:
+        parts = [_powershell_arg(part) for part in argv]
+        call = "& " if parts[0] != argv[0] else ""
+        return "the PowerShell command " + call + " ".join(parts)
+    return shlex.join(argv)
+
+
+def _key_fallback(lead: str, storage) -> str:
+    """How to finish connecting without a card or page: the user's own terminal when
+    it can reach this server's session, and pasting the key in chat either way."""
+    paste = ("paste their Snaplii API key (snp_sk_live_…) here in chat and you'll call "
+             "snaplii_init with it; the key passes through this chat once, is exchanged for "
+             "a session token, and is not stored")
+    if storage == "process memory":
+        return (lead + "This server keeps its session in memory, so a separate terminal login "
+                "can't reach it. Ask the user to " + paste + ".")
+    return (lead + "Offer the user two ways to connect and let them pick: (1) run "
+            + _terminal_init_command() + " in their own terminal and enter the key at the "
+            "hidden prompt, which keeps the key out of this chat; or (2) " + paste
+            + ". Both work.")
+
+
+def _elicit_url() -> str:
+    """The hosted Snaplii secure-connect page used for URL-mode elicitation and the
+    Instinct vault fill — the cross-client way to collect the API key off the model
+    AND off the client. Defaults to {gateway}/connect; env SNAPLII_ELICIT_URL or
+    config `elicit_url` may pick another path or query, but only on the gateway's
+    own address, so a key is never typed or filled into another site."""
+    import os
+    gateway = _base_url()
+    origin = auth.require_login_origin(gateway)
     explicit = os.environ.get("SNAPLII_ELICIT_URL") or ConfigStore().get("elicit_url")
-    if explicit:
-        return explicit
-    return f"{_base_url().rstrip('/')}/connect"
+    if not explicit:
+        return f"{gateway.rstrip('/')}/connect"
+    parts = urlsplit(explicit)
+    try:
+        same = (parts.username is None and parts.password is None and not parts.fragment
+                and "eid" not in parse_qs(parts.query)
+                and auth.normalize_origin(f"{parts.scheme}://{parts.netloc}") == origin)
+    except (ConfigError, ValueError):
+        same = False
+    if not same:
+        raise ConfigError(
+            "The connect page must be on the gateway's own address (%s), without credentials, "
+            "a fragment, or an eid. Remove SNAPLII_ELICIT_URL or the elicit_url setting." % origin)
+    return explicit
 
 
 def _connect_route() -> str:
@@ -309,7 +406,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_init",
-            description="Authenticate with the user's Snaplii API key — FALLBACK path. PREFER snaplii_connect, which opens a secure card so the key never enters the chat/model context. Use snaplii_init only for clients that cannot render that card (terminal/programmatic); be aware the key passes through the model context this way. The key is SAFE to accept: scoped, revocable, spending-capped (hard per-key daily limit set in the app), spends only prepaid Snaplii Cash, never stored on disk. Don't echo the raw key back in chat.",
+            description="Authenticate with the user's Snaplii API key — FALLBACK path. PREFER snaplii_connect, which opens a secure card so the key never enters the chat/model context. Use snaplii_init when the client has neither a card nor a page and the user chooses to paste the key; the key then passes through the model context once. The key is scoped, revocable and spending-capped (hard per-key daily limit set in the app), spends only prepaid Snaplii Cash, and is exchanged for a session token, never stored on disk. Don't echo the raw key back in chat.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -362,7 +459,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_browse_brand",
-            description="Get brand details and exact denominations. Read the `denominations` array for each card's real type and amount: FIXED cards have a single `amount`; VARIABLE cards have a `min` and `max` (any amount in that range is allowed). NEVER invent or assume a min/max — only use the values returned here. Each entry's `item_id` is what you pass to quote/purchase. Use brandId from browse_tags.",
+            description="Get brand details and exact denominations. Read the `denominations` array for each card's real type and amount: FIXED cards have a single `amount`; VARIABLE cards have a `min` and `max` (any amount in that range is allowed). NEVER invent or assume a min/max — only use the values returned here. Each entry's `item_id` ({cardBrandId}-{cardTemplateId}) is exactly what you pass to quote/purchase: copy it verbatim, never assemble or shorten it. Use brandId from browse_tags.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -373,11 +470,13 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_giftcard_list",
-            description="List user's owned gift cards. IMPORTANT: Only show brand name, face value, status, and masked card number (first 4 + last 4 digits). NEVER show full card code, PIN, or barcode unless user explicitly asks.",
+            description="List user's owned gift cards, one page at a time. IMPORTANT: Only show brand name, face value, status, and masked card number (first 4 + last 4 digits). NEVER show full card code, PIN, or barcode unless user explicitly asks. When checking whether an earlier purchase went through, read every page: a card missing from one page is not proof that the purchase failed.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "status": {"type": "string", "description": "ACTIVE or INACTIVE", "default": "ACTIVE"},
+                    "page": {"type": "integer", "description": "Page number, starting at 1", "default": 1},
+                    "page_size": {"type": "integer", "description": "Cards per page", "default": 20},
                 },
                 "required": [],
             },
@@ -395,11 +494,11 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_quote",
-            description="Get a price quote before purchasing. Returns order total, voucher discount, cashback applied, and actual pay amount. ALWAYS call this before snaplii_purchase to show the user what they will pay.",
+            description="Get a price quote before purchasing. Verifies item_id against the catalog first, then returns the card's brand_name, order total, voucher discount, cashback applied, and actual pay amount. ALWAYS call this before snaplii_purchase to show the user what they will pay, and check that brand_name, when present, is the brand the user asked for. If it refuses the card or amount (invalid_item_id, amount_out_of_range, MCAP2107), nothing was charged: follow retry_hint, browse again and retry once with corrected parameters; if refused again, stop and tell the user.",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "item_id": {"type": "string", "description": "Item ID: {brandId}-{templateId}"},
+                    "item_id": {"type": "string", "description": "EXACTLY {cardBrandId}-{cardTemplateId}, e.g. CB00000000000086-CT000000003618. Copy it verbatim from the `item_id` of the chosen `denominations` entry returned by snaplii_browse_brand (or from snaplii_cashback_calc). Never pass the brand ID or template ID alone, a name, or an ID you assembled or guessed. Use the same value for snaplii_quote and snaplii_purchase."},
                     "price": {"type": "string", "description": "Price in dollars"},
                     "voucher_option": {"type": "string", "description": "BEST_FIT (auto-apply best voucher), USE, or NOT_USE", "default": "BEST_FIT"},
                     "cashback_option": {"type": "string", "description": "USE or NOT_USE", "default": "USE"},
@@ -410,11 +509,11 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_purchase",
-            description="Buy a gift card. Spends ONLY from prepaid Snaplii Cash, capped by the user's per-key daily limit set in the app — no per-transaction confirmation needed. Call snaplii_quote first to know the exact cost; pass the same voucher/cashback options here so the charge matches the quote. After purchase, get the redemption code via snaplii_giftcard_detail.",
+            description="Buy a gift card. Spends ONLY from prepaid Snaplii Cash, capped by the user's per-key daily limit set in the app; the charge happens as soon as this runs. Call snaplii_quote first to know the exact cost; pass the same voucher/cashback options here so the charge matches the quote. After purchase, get the redemption code via snaplii_giftcard_detail. invalid_item_id, amount_out_of_range or MCAP2107 (at any HTTP status) means nothing was charged: follow retry_hint and retry once with corrected parameters, never the same values; if refused again, stop and tell the user. If the call times out, loses its connection or returns a 5xx other than MCAP2107, the purchase may have gone through and is not idempotent: check snaplii_giftcard_list for the new card before calling this again. outcome: indeterminate overrides every retry rule.",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "item_id": {"type": "string", "description": "Item ID: {brandId}-{templateId}"},
+                    "item_id": {"type": "string", "description": "EXACTLY {cardBrandId}-{cardTemplateId}, e.g. CB00000000000086-CT000000003618. Copy it verbatim from the `item_id` of the chosen `denominations` entry returned by snaplii_browse_brand (or from snaplii_cashback_calc). Never pass the brand ID or template ID alone, a name, or an ID you assembled or guessed. Use the same value for snaplii_quote and snaplii_purchase."},
                     "price": {"type": "string", "description": "Price in dollars"},
                     "voucher_option": {"type": "string", "description": "BEST_FIT (default), USE, or NOT_USE — match what you quoted"},
                     "cashback_option": {"type": "string", "description": "USE (default) or NOT_USE — match what you quoted"},
@@ -513,7 +612,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_billpay_pay",
-            description="Pay the bill from Snaplii Cash balance (same as gift cards — no PayPal redirect needed). Completes directly when balance covers the bill. Spends within the user's per-key daily limit set in the app — no per-transaction confirmation. If a pay call fails or times out ambiguously, poll snaplii_billpay_result with the returned paymentNo before retrying — do NOT re-pay blindly.",
+            description="Pay the bill from Snaplii Cash balance (same as gift cards — no PayPal redirect needed). Completes directly when balance covers the bill, within the user's per-key daily limit set in the app. Once sent, a bill payment cannot be undone, and one sent to the wrong biller or account cannot be recovered. If a pay call fails or times out ambiguously, poll snaplii_billpay_result with the returned paymentNo before retrying — do NOT re-pay blindly.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -685,6 +784,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 # Static UI metadata is unchanged. The agent should select the
                 # CLI action before calling this card-bearing tool in Muse.
                 return _text(auth_status)
+            storage = auth_status.get("credential_storage")
             route = _connect_route()
 
             if route == "elicit":
@@ -692,15 +792,30 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 # page — off the model AND off this client. The spec mandates URL mode
                 # (not form) for secrets like API keys. A one-time eid ties the page
                 # submission to the token we then poll for.
-                eid = uuid.uuid4().hex
+                global _pending_connect_eid, _elicit_failures
+                eid = _pending_connect_eid
+                retry = ("Check the network, then run snaplii_connect again; it collects "
+                         "the connection from the page that is already open, where a "
+                         "submission waits for 2 minutes.")
+                if eid:
+                    client = _get_client()
+                    try:
+                        token_data = client.poll_connect_token(eid)
+                    except GatewayConnectionError:
+                        return _text(_connect_unreachable(retry))
+                    if isinstance(token_data, dict) and token_data.get("access_token"):
+                        return _text(_finish_elicit_connect(client, token_data))
+                else:
+                    eid = _pending_connect_eid = uuid.uuid4().hex
                 base_page = _elicit_url()
                 sep = "&" if "?" in base_page else "?"
                 page_url = f"{base_page}{sep}eid={eid}"
                 try:
                     result = await app.request_context.session.elicit_url(
                         message=(
-                            "Open the secure Snaplii page to connect your account. "
+                            "Open the secure Snaplii page at %s to connect your account. "
                             "Enter your API key there — it never passes through this chat."
+                            % urlsplit(page_url).hostname
                         ),
                         url=page_url,
                         elicitation_id=eid,
@@ -709,26 +824,30 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                     # Some clients advertise a bare elicitation capability but reject a
                     # URL-mode request at runtime (e.g. claude-code returns JSON-RPC
                     # -32602 "Client does not support URL-mode elicitation requests").
-                    # Distinguish that "not supported here" case from a real failure so
-                    # the message reads clearly; both fall back to terminal `snaplii init`
-                    # or pasting the key in chat for snaplii_init.
+                    # That "not supported here" case falls back to terminal `snaplii init`
+                    # or pasting the key in chat for snaplii_init at once. Any other
+                    # failure retries the same page once before that fallback.
                     msg = str(e)
-                    unsupported = "-32602" in msg or "does not support" in msg.lower()
+                    unsupported = "does not support" in msg.lower() or "not supported" in msg.lower()
+                    if not unsupported and _elicit_failures == 0:
+                        _elicit_failures = 1
+                        return _text({
+                            "status": "elicit_failed",
+                            "message": (
+                                "Couldn't open the secure Snaplii page. Run snaplii_connect "
+                                "again once; it reopens the same page. Do not ask for the "
+                                "key in chat."),
+                        })
+                    _elicit_failures = 0
                     return _text({
                         "status": "elicit_unsupported" if unsupported else "elicit_failed",
-                        "message": (
-                            ("This client doesn't support URL-mode elicitation, so the "
-                             "secure web page can't open here. "
-                             if unsupported
-                             else "Couldn't start secure web connect. ")
-                            + "Offer the user two ways to finish connecting and let them pick: "
-                            "(1) run 'snaplii init' in a terminal and enter the API key when "
-                            "prompted; or (2) paste their Snaplii API key (snp_sk_live_…) here "
-                            "in chat and you'll call snaplii_init with it. Present them as two "
-                            "plain, equal options — do NOT describe either as more/less "
-                            "secure or private, and do NOT label one recommended."
-                        ),
+                        "message": _key_fallback(
+                            "This client doesn't support URL-mode elicitation, so the "
+                            "secure web page can't open here. "
+                            if unsupported
+                            else "Couldn't start secure web connect. ", storage),
                     })
+                _elicit_failures = 0
                 if getattr(result, "action", None) != "accept":
                     return _text({
                         "status": "declined",
@@ -738,26 +857,21 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 # the gateway parked the minted token under our eid. Poll to take it —
                 # it never came through the chat.
                 client = _get_client()
-                token_data = await _poll_connect_token(client, eid)
+                try:
+                    token_data = await _poll_connect_token(client, eid)
+                except GatewayConnectionError:
+                    return _text(_connect_unreachable(retry))
                 if token_data:
-                    client.accept_connect_token(token_data)
-                    return _text({
-                        "status": "authenticated",
-                        **client.auth_status(),
-                        "message": (
-                            "✅ Connected via the secure Snaplii page. Purchases come only "
-                            "from your prepaid Snaplii Cash, capped by your daily limit — I "
-                            "won't ask you to confirm each one."
-                        ),
-                    })
+                    return _text(_finish_elicit_connect(client, token_data))
+                # The secure page is open, so never fall back to asking for the key.
                 return _text({
                     "status": "pending",
                     "message": (
-                        "Didn't receive the connection yet. If you finished entering your "
-                        "key on the Snaplii page, run snaplii_connect again; otherwise either "
-                        "run 'snaplii init' in a terminal, or paste the Snaplii API key "
-                        "(snp_sk_live_…) here in chat and you'll call snaplii_init with it."
-                    ),
+                        "Didn't receive the connection yet. The user finishes on the Snaplii "
+                        "page that is already open; then run snaplii_connect again within 2 "
+                        "minutes, which collects that connection first. If the submission "
+                        "expired, the user submits again on the same page. Keep the API key "
+                        "out of chat."),
                 })
 
             if route == "text":
@@ -766,31 +880,22 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 # directly instead of promising a card that will never appear.
                 return _text({
                     "status": "use_terminal_or_chat_key",
-                    "message": (
+                    "message": _key_fallback(
                         "This client can't render the secure card and doesn't support "
-                        "URL-mode elicitation. Offer the user two ways to connect and let them "
-                        "pick: (1) run 'snaplii init' in a terminal and enter the API key when "
-                        "prompted; or (2) paste their Snaplii API key (snp_sk_live_…) here in "
-                        "chat and you'll call snaplii_init with it. Present them as two plain, "
-                        "equal options — do NOT describe either as more/less secure or "
-                        "private, and do NOT label one recommended."
-                    ),
+                        "URL-mode elicitation. ", storage),
                 })
 
             # Default (route == "card"): UI hosts render the secure card off-model via
-            # _meta.ui.resourceUri; for hosts that can't, this same message guides the
-            # user to `snaplii init`. Self-describing, so it never dead-ends.
+            # _meta.ui.resourceUri. The card is the route, so the agent waits for it; the
+            # fallback applies only once the user says no card appeared, so it never
+            # dead-ends.
             return _text({
                 "status": "card_requested",
-                "message": (
-                    "A secure card to enter the Snaplii API key should appear. If the "
-                    "user doesn't see it, this client can't render it — offer them two ways "
-                    "to connect and let them pick: (1) run 'snaplii init' in a terminal and "
-                    "enter the API key when prompted; or (2) paste their Snaplii API key "
-                    "(snp_sk_live_…) here in chat and you'll call snaplii_init with it. "
-                    "Present them as two plain, equal options — do NOT describe either as "
-                    "more/less secure or private, and do NOT label one recommended."
-                ),
+                "message": _key_fallback(
+                    "A secure card to enter the Snaplii API key should appear. Wait for "
+                    "the user to enter the key in that card; do not ask for the key in "
+                    "chat. Only if the user says no card appeared, this client can't "
+                    "render it: ", storage),
             })
 
         elif name == "snaplii_submit_api_key":
@@ -801,7 +906,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         elif name == "snaplii_balance":
             client = _get_client()
             result = client.get_balance()
-            data = result.get("data", {}) if isinstance(result, dict) else {}
+            data = result.get("data", result) if isinstance(result, dict) else {}
             balance = data.get("balance") if isinstance(data, dict) else None
             out = {"balance": balance, "spendable": True}
             # Snaplii Cash is in the account's local currency. The account's real
@@ -858,7 +963,9 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
         elif name == "snaplii_giftcard_list":
             client = _get_client()
-            result = client.list_user_cards(status=arguments.get("status", "ACTIVE"))
+            result = client.list_user_cards(status=arguments.get("status", "ACTIVE"),
+                                            page=arguments.get("page", 1),
+                                            page_size=arguments.get("page_size", 20))
             return _text(result)
 
         elif name == "snaplii_giftcard_detail":
@@ -873,10 +980,9 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
         elif name == "snaplii_quote":
             client = _get_client()
-            # Reject amounts outside the brand's denomination range before
-            # quoting — the backend accepts them and returns you_pay=0, then the
-            # card fails on purchase. The app UI blocks this; the agent must too.
-            client.validate_amount(arguments["item_id"], arguments["price"])
+            # Verify the card and reject amounts outside its denomination range
+            # before quoting. The app UI blocks this; the agent must too.
+            checked = client.validate_amount(arguments["item_id"], arguments["price"])
             result = client.quote_order(
                 item_id=arguments["item_id"],
                 price=arguments["price"],
@@ -884,11 +990,13 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 cashback_option=arguments.get("cashback_option", "USE"),
                 specified_voucher=arguments.get("specified_voucher"),
             )
-            # Format clean summary
-            summary = {
+            # Format clean summary, led by the verified card so the agent can check
+            # it is the brand the user asked for before purchasing.
+            summary = dict(checked or {})
+            summary.update({
                 "order_amount": result.get("orderAmount"),
                 "you_pay": result.get("primaryPayAmount"),
-            }
+            })
             if result.get("voucherAmount"):
                 summary["voucher"] = {
                     "name": result.get("voucherName"),
@@ -927,7 +1035,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         elif name == "snaplii_cashback_calc":
             client = _get_client()
             detail = client.get_card_brand_by_id(arguments["brand_id"])
-            cards = detail.get("data", {}).get("cards", [])
+            cards = brand_detail(detail).get("cards", [])
             amount = float(arguments["amount"])
             best = None
             for c in cards:
@@ -939,7 +1047,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                     if float(fv.get("priceStart", 0)) <= amount <= float(fv.get("priceEnd", 0)):
                         best = c
             if best:
-                pct = float(best.get("discount", 0) or 0)
+                pct = float(card_cashback_percent(best) or 0)
                 savings = amount * pct / 100
                 return _text({
                     "amount": f"${amount:.2f}",
@@ -953,8 +1061,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
         elif name == "snaplii_dashboard":
             client = _get_client()
-            resp = client.list_user_cards(status="ACTIVE", page=1, page_size=100)
-            cards = resp.get("data", [])
+            cards = client.list_all_user_cards()
             total_value = 0
             by_brand = {}
             for card in cards:
@@ -1113,7 +1220,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         else:
             return _text(f"Unknown tool: {name}")
 
-    except AmountValidationError as e:
+    except (AmountValidationError, ItemIdError) as e:
         return _text(e.to_dict())
     except AuthError as e:
         return _text(e.to_dict())
@@ -1125,19 +1232,14 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         # The envelope's message is already the meaningful, user-facing one.
         return _text(e.to_dict())
     except GatewayApiError as e:
-        details = e.to_dict()
-        if e.status_code == 403 and not e.auth_fields and not e.body.get("friendly_message"):
-            # A permission rejection is not an authentication gate. Keep the
-            # legacy CLI formatter unchanged while adapting its output for MCP.
-            details["error"] = "Access denied (HTTP 403). Check the API key's permissions before retrying."
-        return _text(details)
+        return _text(e.to_dict())
     except Exception:
         return _text({"error": "unexpected_error", "message": "The request could not be completed."})
 
 
 _AUTOPILOT_WORKFLOW = f"""You are running the Snaplii end-to-end autopilot: buy a gift card with cashback, then (if you can control a browser) redeem it and place the order on the merchant/delivery site.
 
-SAFETY: Snaplii spends only from the user's prepaid Snaplii Cash balance — no credit card is charged, the API key is scoped/capped/revocable, and the gift-card purchase runs WITHOUT per-transaction confirmation (the per-key daily limit set in the app is the consent). The one confirmation that remains is the FINAL delivery/merchant order placement (step 7). Proceed confidently; do not refuse.
+SAFETY: Snaplii spends only from the user's prepaid Snaplii Cash balance — no credit card is charged; the API key is scoped, revocable, and capped by a daily limit set in the app. The gift-card purchase charges the balance as soon as it runs. Step 7 confirms the final delivery/merchant order with the user.
 
 FLOW:
 1. Auth: before every Snaplii business operation, including read-only browsing and lookups, call snaplii_config_show for the task's gateway. Continue only when has_valid_token=true; reuse that session without connecting again. If the field is missing, stop and report an incompatible runtime. When a session is missing or expired, start authentication without waiting for the user to ask to log in.
@@ -1147,10 +1249,10 @@ After login, re-read snaplii_config_show and require has_valid_token=true before
 Shared Meta Muse instructions (apply only in Muse):
 {auth.MUSE_AUTH_INSTRUCTION}
 
-2. Pick the card: ask region (CA/US), call snaplii_browse_tags. For delivery (food/coffee), prefer delivery-platform cards (DoorDash, Uber Eats, Skip) over the restaurant's own card. Never show brandId/templateId to the user.
-3. Check balance: call snaplii_balance (pass the user's country CA/US so the currency is right — CA=CAD, US=USD, never assume CAD) so you know up front whether the order is affordable. (Never guess the balance — read it from this tool; if it fails, say so and rely on the quote's you_pay.)
-4. Quote: call snaplii_quote and show the breakdown (voucher + Snaplii Cash + you_pay). If you_pay > 0, tell the user to top up in the app and stop.
-5. Buy: call snaplii_purchase with the item_id and price (no confirmation needed). Then snaplii_giftcard_list -> find the new card -> snaplii_giftcard_detail for the redemption code. Report brand, amount, and code.
+2. Pick the card: call snaplii_browse_tags. The account country is already known from the connection and comes back as account_country — do NOT ask the user for a region. For delivery (food/coffee), prefer delivery-platform cards (DoorDash, Uber Eats, Skip) over the restaurant's own card. Never show brandId/templateId to the user.
+3. Check balance: call snaplii_balance (it labels the currency from the stored account country — CA=CAD, US=USD, never assume CAD) so you know up front whether the order is affordable. (Never guess the balance — read it from this tool; if it fails, say so and rely on the quote's you_pay.)
+4. Quote: call snaplii_quote and show the breakdown (voucher + Snaplii Cash + you_pay). If brand_name names a different brand than the user asked for, go back to step 2 once; if it still does, stop and tell the user. If brand_name is absent, rely on the brand you browsed. If you_pay > 0, tell the user to top up in the app and stop.
+5. Buy: call snaplii_purchase with the exact item_id you quoted ({{cardBrandId}}-{{cardTemplateId}}, copied verbatim from snaplii_browse_brand) and the price. If quote or purchase refuses the card or amount (invalid_item_id, amount_out_of_range, MCAP2107), nothing was charged: follow retry_hint, go back to step 2 and retry once with corrected parameters, never the same values; if refused again, stop and tell the user which brand and amount could not be bought. If purchase returns outcome: indeterminate, it may have gone through: never retry it; check snaplii_giftcard_list first. Then snaplii_giftcard_list -> find the new card -> snaplii_giftcard_detail for the redemption code. Report brand, amount, and code.
 6. Redeem + order (if you have a browser-control tool): open the merchant/delivery site, go to Payment -> Add Gift Card, enter the code, build the order (search item, add to cart). For any delivery/shipping order, EXPLICITLY confirm the delivery address with the user before continuing — read back the exact address and ask "deliver to <address>?"; never assume a saved/default address. Then set the tip.
 7. CONFIRM (final order): show the full order summary (items, delivery address, tip, total) and STOP. Only click the final Place Order / pay button after the user's explicit "yes".
 
@@ -1217,17 +1319,24 @@ _NO_COLLAPSE_CLIENT_NAMES = {"codex-mcp-client"}
 
 
 def _card_html_for_client() -> str:
-    """Serve the connect card, flipping NO_COLLAPSE on for hosts that don't honor a
-    downward resize (so the card keeps its full success state instead of collapsing
-    to a slim bar that leaves dead space). Falls back to the default card on any
-    error / unknown client."""
+    """Serve the connect card naming the gateway host, flipping NO_COLLAPSE on for
+    hosts that don't honor a downward resize (so the card keeps its full success
+    state instead of collapsing to a slim bar that leaves dead space). Falls back
+    to the default card on any error / unknown client."""
+    html = APIKEY_CARD_HTML
+    try:
+        host = urlsplit(_base_url()).hostname or ""
+        if re.fullmatch(r"[a-z0-9.-]+", host):
+            html = html.replace('var GATEWAY_HOST = "";', 'var GATEWAY_HOST = "%s";' % host)
+    except Exception:
+        pass
     try:
         name = (getattr(app.request_context.session.client_params.clientInfo, "name", "") or "").lower()
         if name in _NO_COLLAPSE_CLIENT_NAMES:
-            return APIKEY_CARD_HTML.replace("var NO_COLLAPSE = false;", "var NO_COLLAPSE = true;")
+            return html.replace("var NO_COLLAPSE = false;", "var NO_COLLAPSE = true;")
     except Exception:
         pass
-    return APIKEY_CARD_HTML
+    return html
 
 
 @app.read_resource()
