@@ -270,7 +270,7 @@ Complete [Auth](#auth) first. Continue only when the matching runtime reports
 
 Follow the base flow: `browse` (region is automatic from the account — no flag) → for delivery, prefer delivery-platform cards (DoorDash, Uber Eats, Skip) → `balance` (check spendable Snaplii Cash so you know up front whether it's affordable) → `quote` (auto-applies vouchers + Snaplii Cash) → show the breakdown.
 
-**`item_id` format matters.** `quote` and `purchase` take `item_id` exactly as `{cardBrandId}-{cardTemplateId}` (e.g. `CB00000000000086-CT000000003618`). Copy it verbatim from the chosen `denominations` entry of `browse brand`; never assemble, shorten, or guess it, and pass the same value to `quote` and `purchase`. Before purchasing, check the quote's `brand_name`: if it names a different brand than the user asked for, browse again once; if it still does, stop and tell the user. If it is absent, rely on the brand you browsed.
+**`item_id`:** use the chosen `denominations` entry's `item_id` from `browse brand`, as [Rules](#rules) describes, and pass the same value to `quote` and `purchase`. Before purchasing, check the quote's `brand_name`: if it names a different brand than the user asked for, browse again once; if it still does, stop and tell the user. If it is absent, rely on the brand you browsed.
 
 If `you_pay` > 0 (Snaplii Cash doesn't cover it), tell the user to top up in the app and stop — do not proceed.
 
@@ -294,13 +294,13 @@ Confirm the order went through (read the confirmation page). Report the order nu
 ## Failure handling
 - Cloudflare / bot challenge or login wall blocks the browser → don't fight it; tell the user, hand them the redemption code, and let them finish in the app.
 - Browser tool not available mid-flow → fall back to "here's your code + how to redeem".
-- `invalid_item_id`, `amount_out_of_range`, or a gateway `MCAP2107` (the gateway rejected the `item_id`, at any HTTP status) → nothing was charged. Rethink the parameters as the error's `retry_hint` says: browse the brand again, copy the chosen `item_id` verbatim and an allowed amount, then quote and purchase again. Never resend the same values. Retry once: if the corrected attempt is refused again, stop and tell the user which brand and amount could not be bought. A corrected attempt that succeeds needs no mention. `item_check_unavailable` → retry the same command once shortly, without changing anything; if it fails again, stop and report it.
+- `invalid_item_id`, `amount_out_of_range`, a gateway `MCAP2107`, or `item_check_unavailable` → nothing was charged. Follow the refused-card rule in [Rules](#rules).
 - `outcome: indeterminate` on `purchase` (a timeout, a lost connection, a `5xx` other than `MCAP2107`, or an unreadable reply) → the purchase may have gone through. Never retry it: check `giftcard list` (every page) for the new card first, and if you cannot tell, stop and report it.
 - Any other purchase failure → surface the real error (don't retry automatically).
 
 ## Rules
-- Pass `item_id` exactly as `{cardBrandId}-{cardTemplateId}`, copied verbatim from `browse brand`; never one ID alone, a name, or an assembled or guessed ID.
-- When `quote` or `purchase` refuses the card or amount (`invalid_item_id`, `amount_out_of_range`, `MCAP2107`), rethink the parameters from `browse brand` and retry once; never resend the same values. If the corrected attempt is refused again, stop and tell the user which brand and amount could not be bought. A corrected attempt that succeeds needs no mention.
+- Pass `item_id` exactly as `{cardBrandId}-{cardTemplateId}` (e.g. `CB00000000000086-CT000000003618`), copied verbatim from the chosen `denominations` entry of `browse brand`; never one ID alone, a name, or an assembled, shortened or guessed ID. A well-formed ID of another card buys that card.
+- When `quote` or `purchase` refuses the card or amount (`invalid_item_id`, `amount_out_of_range`, or a gateway `MCAP2107`: the gateway rejected the `item_id`, at any HTTP status), nothing was charged: rethink the parameters as the error's `retry_hint` says. Browse the brand again, copy the chosen `item_id` verbatim and an allowed amount, then quote and purchase again, once; never resend the same values. If the corrected attempt is refused again, stop and tell the user which brand and amount could not be bought. A corrected attempt that succeeds needs no mention. After `item_check_unavailable`, the catalog could not be read and nothing was sent: retry the same command once shortly, without changing anything; if it fails again, stop and report it. A purchase with `outcome: indeterminate` is never retried (see Failure handling).
 - Never expose internal IDs (brandId, templateId, cardNo) to the user.
 - Never place the final order without explicit current-turn confirmation.
 - Never claim to have completed an order or payment you did not actually complete.
