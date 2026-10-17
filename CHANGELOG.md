@@ -6,7 +6,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
-## [Unreleased]
+## [0.20.0] — 2026-10-17
 
 ### Added
 - **`scripts/install.py`, an installer for agents.** One standard-library script (Python 3.8+) installs `snaplii-cli` and `snaplii-mcp` into `~/.snaplii-env`, fetches CPython 3.12 with uv when needed, verifies the CLI and the MCP handshake against an isolated configuration, and prints a JSON report whose `next_steps` carry the exact skill-install and MCP-registration commands per host. Re-running it is the update path. Release steps: after each PyPI release run `SNAPLII_INSTALLER_LIVE=1 pytest tests/test_installer_live.py` (both variants) before announcing.
