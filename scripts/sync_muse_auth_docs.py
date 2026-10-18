@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sync the marked Auth block, or check source/staged skill distributions.
+"""Sync the generated Auth section, or check source/staged skill distributions.
 
 --root checks a staged tree using the same four relative distribution paths.
 --skill checks an actual standalone downloaded/extracted SKILL.md (repeatable).
@@ -23,22 +23,68 @@ TARGETS = (
     "skills/snaplii-autopilot.md",
     "clawhub-autopilot/SKILL.md",
 )
-BEGIN = "<!-- muse-auth:begin -->"
-END = "<!-- muse-auth:end -->"
+# The generated block is the skill's "## Auth" section: from that heading to the
+# next level-2 heading. No comment markers, so the whole section stays visible
+# in every rendered view of the skill.
+ATX_HEADING = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*$")
+FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+# A "---" line under paragraph text makes that text a level-2 heading too.
+SETEXT2 = re.compile(r"^ {0,3}-+[ \t]*$")
+# Lines that start a list item, quote or table instead of paragraph text.
+NOT_PARAGRAPH = re.compile(r"^ {0,3}(?:[-*+](?:[ \t]|$)|\d{1,9}[.)](?:[ \t]|$)|>|\|)")
+
+
+def scan(text: str):
+    """(offset, title) of every level-2 heading (ATX or setext) outside fenced
+    code, and the fence still open at the end of the text, if any."""
+    found, fence, offset = [], None, 0
+    previous = None  # (offset, text) of the paragraph just above this line, if any
+    for line in text.splitlines(keepends=True):
+        bare = line.rstrip("\r\n")
+        opener = FENCE.match(bare)
+        paragraph = None
+        if fence:
+            # A fence closes on the same character, at least as long, nothing after it.
+            if opener and opener.group(1)[0] == fence[0] and len(opener.group(1)) >= len(fence) \
+                    and not bare[opener.end():].strip():
+                fence = None
+        elif opener:
+            fence = opener.group(1)
+        else:
+            heading = ATX_HEADING.match(bare)
+            if heading and len(heading.group(1)) == 2:
+                title = re.sub(r"[ \t]+#+$", "", heading.group(2) or "").strip()
+                found.append((offset, title))
+            elif previous and SETEXT2.match(bare):
+                found.append((previous[0], previous[1].strip()))
+            elif bare.strip() and not heading and not NOT_PARAGRAPH.match(bare):
+                # Continuation lines extend the paragraph a setext underline would title.
+                paragraph = (previous[0], previous[1] + " " + bare.strip()) if previous else (offset, bare)
+        previous = paragraph
+        offset += len(line)
+    return found, fence
 
 
 def replacement(content: str, block: str) -> str:
-    if content.count(BEGIN) != 1 or content.count(END) != 1:
-        raise ValueError("expected exactly one Auth marker pair")
-    start, end = content.index(BEGIN), content.index(END)
-    if end < start:
-        raise ValueError("Auth markers are reversed")
+    generated, open_fence = scan(block)
+    if [title for _, title in generated] != ["Auth"] or generated[0][0] != 0 or open_fence:
+        raise ValueError("the generated block must be one '## Auth' section")
+    # The skills carry no HTML comments: nothing in them may be hidden from a reader.
+    if "<!--" in content:
+        raise ValueError("the skill must not contain HTML comments")
+    headings, _ = scan(content)
+    auth = [index for index, (_, title) in enumerate(headings) if title == "Auth"]
+    if len(auth) != 1:
+        raise ValueError("expected exactly one '## Auth' section")
+    if auth[0] + 1 == len(headings):
+        raise ValueError("the '## Auth' section must be followed by another '## ' section")
+    start, end = headings[auth[0]][0], headings[auth[0] + 1][0]
     # Check placement without interpreting or changing unrelated skill content.
     prefix = content[:start]
     if re.search(r"^## (?:Prerequisites|Requirements|Decision Flow|Full Flow)\b|"
                  r"^### (?:Step 1:|1\. )|^```|`(?:snaplii|pip install)\b", prefix, re.M):
         raise ValueError("Auth block must precede executable instructions")
-    return prefix + BEGIN + "\n" + block.rstrip() + "\n" + content[end:]
+    return prefix + block.rstrip() + "\n\n" + content[end:]
 
 
 def main(argv=None) -> int:

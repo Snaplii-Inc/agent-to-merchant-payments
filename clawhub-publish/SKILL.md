@@ -13,7 +13,6 @@ This skill spends **only** from the user's **prepaid Snaplii Cash balance** — 
 
 **What this skill does and doesn't do:** Snaplii buys a gift card and gives you its **redemption code**. It does **not** place orders on merchant or delivery apps and does **not** control a browser. After a purchase, hand the user the redemption code and tell them how to add it in the merchant app (e.g. Uber Eats / DoorDash → Payment → Add Gift Card). The user completes the order themselves.
 
-<!-- muse-auth:begin -->
 ## Auth
 
 ### When to connect
@@ -235,7 +234,6 @@ Report cache/configuration errors as such. Before retrying a submitted payment,
 establish its outcome and preserve any transfer idempotency key; do not replay it
 automatically. Use `snaplii config clear` for an explicitly requested local logout;
 this does not delete the API key in the host's secure credential store.
-<!-- muse-auth:end -->
 
 ## Prerequisites
 

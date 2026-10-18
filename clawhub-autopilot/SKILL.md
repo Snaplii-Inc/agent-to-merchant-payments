@@ -7,7 +7,6 @@ description: "End-to-end Agent-to-Merchant autopilot: buy a Snaplii gift card wi
 
 This skill completes the **full** Agent-to-Merchant flow: buy a Snaplii gift card (prepaid, capped, cashback) → get its redemption code → open the merchant/delivery site in the browser → add the gift card → place the order. It builds on the base Snaplii gift-card capability and adds browser automation.
 
-<!-- muse-auth:begin -->
 ## Auth
 
 ### When to connect
@@ -229,7 +228,6 @@ Report cache/configuration errors as such. Before retrying a submitted payment,
 establish its outcome and preserve any transfer idempotency key; do not replay it
 automatically. Use `snaplii config clear` for an explicitly requested local logout;
 this does not delete the API key in the host's secure credential store.
-<!-- muse-auth:end -->
 
 ## Requirements (check first)
 

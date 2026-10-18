@@ -17,8 +17,13 @@ SKILLS = (
     "skills/snaplii-autopilot.md",
     "clawhub-autopilot/SKILL.md",
 )
-BEGIN = "<!-- muse-auth:begin -->"
-END = "<!-- muse-auth:end -->"
+
+
+def split_auth(content):
+    """Return (prefix, the '## Auth' section, the rest) of a distributed skill."""
+    start = content.index("\n## Auth\n") + 1
+    end = content.index("\n## ", start) + 1
+    return content[:start], content[start:end], content[end:]
 
 
 def run_sync(*args):
@@ -82,11 +87,13 @@ def test_all_distributed_skills_have_the_current_auth_gate():
     assert result.returncode == 0, result.stdout + result.stderr
     for relative in SKILLS:
         content = (ROOT / relative).read_text()
-        assert content.count(BEGIN) == content.count(END) == 1
-        block = content.split(BEGIN)[1].split(END)[0].strip()
-        assert block == auth.render_auth_skill_block().strip()
+        # The section is plain Markdown: nothing a reviewer could read as hidden.
+        assert "<!--" not in content
+        assert content.count("\n## Auth\n") == 1
+        _, section, rest = split_auth(content)
+        assert section.strip() == auth.render_auth_skill_block().strip()
         first_step = "## Prerequisites" if "cli" in relative or "clawhub-publish" in relative else "## Requirements"
-        assert content.index(END) < content.index(first_step)
+        assert rest.startswith(first_step)
         if first_step == "## Prerequisites":
             step = content.split("### Step 1:")[1].split("### Step 2:")[0]
             assert "has_valid_token=true" in step
@@ -97,7 +104,7 @@ def test_all_distributed_skills_have_the_current_auth_gate():
 @pytest.mark.parametrize("relative", SKILLS)
 def test_cli_login_guidance_gives_the_command_and_never_collects_the_key(relative):
     # Wrapping differs between distributions only by line breaks.
-    text = " ".join((ROOT / relative).read_text().split(BEGIN)[1].split(END)[0].split())
+    text = " ".join(split_auth((ROOT / relative).read_text())[1].split())
     assert ("When CLI authentication is needed, your first message asking the user to act "
             "gives that exact command, with the "
             "installed CLI's path and the task's gateway options; do not ask for the key in "
@@ -143,9 +150,8 @@ def test_sync_changes_only_generated_blocks_and_is_idempotent(skill_artifacts):
         path = skill_artifacts / relative
         before = path.read_text() + "\nUnrelated distribution-specific text.\n"
         originals[relative] = before
-        prefix, rest = before.split(BEGIN)
-        _, suffix = rest.split(END)
-        path.write_text(prefix + BEGIN + "\nstale auth instructions\n" + END + suffix)
+        prefix, _, suffix = split_auth(before)
+        path.write_text(prefix + "## Auth\n\nstale auth instructions\n\n" + suffix)
     assert run_sync("--root", skill_artifacts).returncode == 0
     for relative, original in originals.items():
         assert (skill_artifacts / relative).read_text() == original
@@ -153,20 +159,95 @@ def test_sync_changes_only_generated_blocks_and_is_idempotent(skill_artifacts):
     assert run_sync("--check", "--root", skill_artifacts).returncode == 0
 
 
-@pytest.mark.parametrize("malformation", ["missing", "duplicate", "reversed", "late"])
+def load_sync_module():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("sync_muse_auth_docs", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_a_fenced_heading_inside_auth_is_replaced_with_the_section(skill_artifacts):
+    path = skill_artifacts / SKILLS[0]
+    original = path.read_text()
+    prefix, _, suffix = split_auth(original)
+    # A "## " line inside a code fence is example text, not the end of the section.
+    stale = "## Auth\n\nstale\n\n```text\n## Example\nstale example\n```\n\n"
+    path.write_text(prefix + stale + suffix)
+    assert run_sync("--check", "--root", skill_artifacts).returncode != 0
+    assert run_sync("--root", skill_artifacts).returncode == 0
+    assert path.read_text() == original
+    assert run_sync("--check", "--root", skill_artifacts).returncode == 0
+
+
+@pytest.mark.parametrize("next_heading", [
+    "  ## Prerequisites",            # up to three spaces still make a heading
+    "## Prerequisites ##",           # closing hashes
+    "Prerequisites\n-------------",  # setext level-2 heading
+    "**Prerequisites**\n---",          # setext heading with emphasis
+])
+def test_any_markdown_level2_heading_ends_the_auth_section(next_heading):
+    sync = load_sync_module()
+    block = auth.render_auth_skill_block()
+    content = ("# Skill\n\nIntro.\n\n## Auth\n\nstale\n\n" + next_heading +
+               "\n\nKeep this.\n\n## Later\n\nAnd this.\n")
+    updated = sync.replacement(content, block)
+    assert updated.endswith(next_heading + "\n\nKeep this.\n\n## Later\n\nAnd this.\n")
+    assert "stale" not in updated
+
+
+def test_auth_heading_is_found_and_counted_regardless_of_trailing_spaces():
+    sync = load_sync_module()
+    block = auth.render_auth_skill_block()
+    content = "# Skill\n\n## Auth  \n\nstale\n\n## Prerequisites\n\nKeep.\n"
+    assert "stale" not in sync.replacement(content, block)
+    duplicate = content + "\n## Auth \n\nconflicting\n\n## Later\n"
+    with pytest.raises(ValueError, match="exactly one"):
+        sync.replacement(duplicate, block)
+
+
+@pytest.mark.parametrize("generated", [
+    "## Auth\n\nnew\n\n## Extra\n\nwould split the section\n",
+    "## Auth\n\nnew\n\n**Extra**\n---\n",
+    "## Auth\n\n```text\nnever closed\n",
+    "## Auth\n\n~~~\nnever closed\n",
+])
+def test_a_generated_block_that_is_not_one_closed_section_is_refused(generated):
+    sync = load_sync_module()
+    content = "# Skill\n\n## Auth\n\nold\n\n## Prerequisites\n\nKeep.\n"
+    with pytest.raises(ValueError, match="one '## Auth' section"):
+        sync.replacement(content, generated)
+
+
+def test_check_refuses_an_auth_section_hidden_in_a_comment(skill_artifacts):
+    path = skill_artifacts / SKILLS[0]
+    prefix, section, suffix = split_auth(path.read_text())
+    hidden = prefix + "<!--\n" + section + suffix.replace("\n## ", "\n-->\n## ", 1)
+    path.write_text(hidden)
+    result = run_sync("--check", "--root", skill_artifacts)
+    assert result.returncode != 0
+    assert "HTML comments" in result.stderr
+    standalone = run_sync("--check", "--skill", path)
+    assert standalone.returncode != 0
+    assert path.read_text() == hidden
+
+
+@pytest.mark.parametrize("malformation", ["missing", "duplicate", "unterminated", "late"])
 def test_malformed_blocks_abort_all_writes(skill_artifacts, malformation):
     path = skill_artifacts / SKILLS[-1]
     before = path.read_text()
+    prefix, section, suffix = split_auth(before)
     if malformation == "missing":
-        before = before.replace(BEGIN, "")
+        before = before.replace("\n## Auth\n", "\n## Authentication\n")
     elif malformation == "duplicate":
-        before += "\n" + BEGIN + "\n" + END
-    elif malformation == "reversed":
-        before = before.replace(BEGIN, "TEMP_MARKER").replace(END, BEGIN).replace("TEMP_MARKER", END)
+        before += "\n## Auth\n\nextra\n"
+    elif malformation == "unterminated":
+        # Nothing after the section marks where the generated text ends.
+        before = prefix + section
     else:
-        prefix, rest = before.split(BEGIN)
-        block, suffix = rest.split(END)
-        before = prefix + suffix + BEGIN + block + END
+        # The section moved below the first executable instructions.
+        last = suffix.rindex("\n## ") + 1
+        before = prefix + suffix[:last] + section + suffix[last:]
     path.write_text(before)
     # Also make an earlier target stale: malformed later targets must prevent
     # partial writes even when ordinary sync could repair this earlier one.
