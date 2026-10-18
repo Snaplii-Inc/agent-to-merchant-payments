@@ -1,5 +1,6 @@
 """The README installs the skill, the CLI and the MCP server from one release tag."""
 
+import json
 import re
 import tomllib
 from pathlib import Path
@@ -50,3 +51,15 @@ def test_the_skill_installs_its_cli_from_the_same_release():
         assert set(re.findall(r"\bv\d+\.\d+\.\d+(?:rc\d+)?\b", skill)) == {TAG}, relative
         assert CLONE in skill, relative
         assert "python3 snaplii-src/scripts/install.py --source ./snaplii-src" in skill, relative
+
+
+def test_both_plugins_start_the_mcp_server_of_this_release():
+    # uvx keeps reusing a cached server unless the version is pinned.
+    for relative in ("clawhub-plugin/.mcp.json", "cursor-plugin/mcp.json"):
+        server = json.loads((ROOT / relative).read_text())["mcpServers"]["snaplii"]
+        assert server["command"] == "uvx", relative
+        assert server["args"] == ["snaplii-mcp@" + VERSION], relative
+    for relative in ("clawhub-plugin/README.md", "cursor-plugin/README.md"):
+        readme = (ROOT / relative).read_text()
+        pins = set(re.findall(r"snaplii-mcp@([0-9][^\s`]*)", readme))
+        assert pins == {VERSION}, relative

@@ -21,7 +21,7 @@ Spending is **only** from the user's **prepaid Snaplii Cash balance** — no cre
 
 1. **Download the Snaplii App** ([iOS](https://apps.apple.com/app/snaplii/id1596924498) / [Android](https://play.google.com/store/apps/details?id=com.snaplii.app)) — register and load your Snaplii Cash balance.
 2. **Create an API Key** — in the app, go to **More → Payment Methods → AI Payment Management → + New API Key**. Set a name, scope (`PAY_READ` or `PAY_WRITE`), and spending limit. Copy the key — it is shown only once.
-3. **Have `uv` on your PATH.** The plugin starts the server with `uvx snaplii-mcp` (see `.mcp.json`), which fetches the [`snaplii-mcp`](https://pypi.org/project/snaplii-mcp/) package on first run; there is nothing else to install. [Install uv](https://docs.astral.sh/uv/getting-started/installation/).
+3. **Have `uv` on your PATH.** The plugin starts the server with `uvx snaplii-mcp@0.20.1` (see `.mcp.json`), which fetches that release of the [`snaplii-mcp`](https://pypi.org/project/snaplii-mcp/) package on first run; there is nothing else to install. Each plugin release pins the server version it was tested with. [Install uv](https://docs.astral.sh/uv/getting-started/installation/).
 
    **Not using this plugin?** Install the skill, CLI and MCP server from a release as the [project README](https://github.com/Snaplii-Inc/agent-to-merchant-payments#for-ai-agents-start-here) describes; its installer prints the exact registration for your client.
 
@@ -33,7 +33,7 @@ Spending is **only** from the user's **prepaid Snaplii Cash balance** — no cre
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
-| `snaplii_connect` | — | Connect the account with the key entered off-model: a secure card on hosts that render one, otherwise a hosted connect page. Call it only while `has_valid_token` is false. |
+| `snaplii_connect` | — | Connect the account with the key entered off-model: a secure card on hosts that render MCP Apps, or a hosted connect page on hosts that declare URL elicitation. On other hosts its `message` says how the user signs in from their own terminal or, if they choose, pastes the key for `snaplii_init`. Call it only while `has_valid_token` is false. |
 | `snaplii_init` | `api_key` (required), `agent_id` (optional) | Fallback only: the key passes through the chat and the model once. Use it only when the user explicitly chooses to paste the key; otherwise call `snaplii_connect`. The key is used only to obtain a token and is **never stored on disk**. |
 | `snaplii_config_show` | — | Show current config and auth status. Returns `has_valid_token` boolean. |
 | `snaplii_balance` | `country` (CA or US, optional) | Get the user's real, current spendable Snaplii Cash balance. Use it before a quote/purchase to know whether the order is covered. Returns `{balance, currency}`. Snaplii Cash is in the account's local currency — pass `country` so it's labeled (CA=CAD, US=USD); never assume CAD. |
@@ -50,7 +50,7 @@ Spending is **only** from the user's **prepaid Snaplii Cash balance** — no cre
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
-| `snaplii_giftcard_list` | `status` (ACTIVE or INACTIVE) | List owned gift cards. Show only: brand name, face value, status, and masked card number (first 4 + last 4 digits). |
+| `snaplii_giftcard_list` | `status` (ACTIVE or INACTIVE), `page`, `page_size` (optional) | List owned gift cards. Show only: brand name, face value, status, and masked card number (first 4 + last 4 digits). |
 | `snaplii_giftcard_detail` | `card_no` (required) | Get full card details including redemption code and PIN. **Only use when user explicitly asks** — sensitive data. |
 | `snaplii_dashboard` | — | Summary of all owned cards: total count, total face value, breakdown by brand. |
 
@@ -59,7 +59,7 @@ Spending is **only** from the user's **prepaid Snaplii Cash balance** — no cre
 | Tool | Parameters | Description |
 |------|-----------|-------------|
 | `snaplii_quote` | `item_id` (required), `price` (required), `voucher_option` (BEST_FIT/USE/NOT_USE), `cashback_option` (USE/NOT_USE), `specified_voucher` (optional) | **Always call before purchase.** Returns price breakdown: order total, voucher discount, Snaplii Cash applied, and actual pay amount. Warns if balance insufficient. |
-| `snaplii_purchase` | `item_id` (required), `price` (required) | Purchase a gift card. `item_id` = `{brandId}-{templateId}` from `browse_brand`. Charges Snaplii Cash as soon as it runs, within the per-key daily limit. |
+| `snaplii_purchase` | `item_id` (required), `price` (required), `voucher_option`, `cashback_option`, `specified_voucher` (optional) | Purchase a gift card; pass the same options you quoted. `item_id` = `{brandId}-{templateId}` from `browse_brand`. Charges Snaplii Cash as soon as it runs, within the per-key daily limit. |
 
 > **Note on payment:** purchases always draw from the prepaid Snaplii Cash balance via `SNAPLII_CREDIT` — there is no payment-method parameter, and you should not try to set one. It's a routing identifier, not a credit card charge: don't tell the user "paying with credit" — simply say "placing the order".
 
@@ -104,7 +104,7 @@ API keys are created and revoked only in the Snaplii app — there are no MCP to
 
 Call `snaplii_config_show`. If `has_valid_token` is true, continue. Otherwise follow its `next_action`, normally `snaplii_connect`, so the user enters the key off-model. Never ask for the API key in the chat; use `snaplii_init` only when the user explicitly chooses to paste it.
 
-If the response includes an `update_available` field, tell the user a newer version is out and to run `pip install -U snaplii-mcp` (or update the ClawHub plugin) and restart — a running MCP server can't update itself.
+If the response includes an `update_available` field, tell the user a newer Snaplii server is out. This plugin pins the server version, so the user gets it by updating the plugin once a release that pins it is published, then restarting — a running MCP server can't update itself.
 
 ### Step 2: Browse
 
