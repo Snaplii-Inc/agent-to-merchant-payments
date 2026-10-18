@@ -463,6 +463,9 @@ agent-to-merchant-payments/
 ├── clawhub-publish/    # snaplii-cli skill as a SKILL.md folder (ClawHub: snaplii-a2m-payment)
 ├── clawhub-autopilot/  # snaplii-autopilot skill as a SKILL.md folder (ClawHub: snaplii-autopilot)
 ├── clawhub-plugin/     # ClawHub MCP bundle plugin (snaplii-a2m-mcp)
+├── cursor-plugin/      # Cursor Marketplace plugin: MCP server + Cursor versions of both skills (.cursor-plugin/ lists it)
+├── claude-plugin/      # Claude Code plugin: MCP server + Claude versions of both skills (.claude-plugin/ lists it)
+├── copilot-connector/  # Copilot Studio / Power Platform connector: definition, properties, script.csx, readme
 ├── claude-desktop/     # Older project instructions for Claude Desktop; the MCP server's own instructions take precedence
 ├── scripts/            # The installer (install.py), Claude Desktop setup, skill Auth-block sync, candidate bundles
 └── tests/              # pytest suite for the CLI, the MCP server, and the skill documents
