@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Build openapidefinition.json, the Copilot Studio connector definition, from openapi.yaml.
+"""Build the Copilot Studio connector definition from openapi.yaml.
 
 Copilot Studio connectors need OpenAPI 2.0 (Swagger). The connector exposes only the read-only
-and quote operations; the token exchange is not an operation, script.csx calls it with the key
-stored in the connection.
+and quote operations; the token exchange is not an operation, copilot-connector/script.csx calls
+it with the key stored in the connection. The same definition is written to
+openapidefinition.json and to copilot-connector/apiDefinition.swagger.json, the file name the
+certification package uses.
 
---check fails when openapidefinition.json is out of date with openapi.yaml.
+--check fails when either file is out of date with openapi.yaml.
 """
 from __future__ import annotations
 
@@ -19,7 +21,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "openapi.yaml"
-TARGET = ROOT / "openapidefinition.json"
+TARGETS = (ROOT / "openapidefinition.json", ROOT / "copilot-connector" / "apiDefinition.swagger.json")
 
 PATHS = ("/v2/card-brands", "/v2/card-brands/{card_brand_id}", "/v2/balance", "/v2/quote")
 
@@ -121,8 +123,8 @@ def build(spec: dict) -> dict:
             op["responses"] = {
                 "200": {"description": "Gateway response. Check rspMsgCd even when the HTTP status is 200.",
                         "schema": convert.schema(o["responses"]["200"]["content"]["application/json"]["schema"])},
-                "default": {"description": error["description"],
-                            "schema": convert.schema(error["content"]["application/json"]["schema"])},
+                # Certification rule DefaultResponseHasSchema: no schema on "default".
+                "default": {"description": error["description"]},
             }
             paths[path][method] = op
     defs = convert.definitions
@@ -163,11 +165,15 @@ def build(spec: dict) -> dict:
                 p["x-ms-summary"] = PARAMETER_TITLES[p["name"]]
     detail = {p["name"]: p for p in paths["/v2/card-brands/{card_brand_id}"]["get"]["parameters"]}
     detail["showDetail"]["x-ms-visibility"] = "internal"
+    # An internal parameter with a default is sent only when it is required.
+    detail["showDetail"]["required"] = True
+    detail["card_brand_id"]["x-ms-url-encoding"] = "single"
     channel = paths["/v2/card-brands"]["get"]["parameters"][0]
     channel["description"] = "Catalog channel. Always HOME_PAGE: the brands shown on the Snaplii app home page."
     channel["enum"] = ["HOME_PAGE"]
     channel["default"] = "HOME_PAGE"
     channel["x-ms-visibility"] = "internal"
+    channel["required"] = True
     paths["/v2/quote"]["post"]["parameters"][0]["description"] = "The gift card order to quote."
     for name in ("voucherOption", "cashbackOption", "specifiedVoucher"):
         payment[name]["x-ms-visibility"] = "advanced"
@@ -183,6 +189,8 @@ def build(spec: dict) -> dict:
             "description": ("Browse Snaplii gift card brands, check your Snaplii Cash balance, and get a "
                             "price quote before buying. Spending comes only from your prepaid Snaplii Cash."),
             "version": spec["info"]["version"],
+            "contact": {"name": "Snaplii Inc.", "url": "https://www.snaplii.com/help-center/",
+                        "email": "customerservice@snaplii.com"},
         },
         "host": spec["servers"][0]["url"].replace("https://", ""),
         "basePath": "/",
@@ -195,6 +203,11 @@ def build(spec: dict) -> dict:
             "api_key": {"type": "apiKey", "in": "header", "name": "X-Snaplii-Api-Key"}
         },
         "security": [{"api_key": []}],
+        "x-ms-connector-metadata": [
+            {"propertyName": "Website", "propertyValue": "https://www.snaplii.com/a2m/"},
+            {"propertyName": "Privacy policy", "propertyValue": "https://www.snaplii.com/privacy-policy/"},
+            {"propertyName": "Categories", "propertyValue": "Finance;Commerce"},
+        ],
     }
 
 
@@ -207,15 +220,17 @@ def main(argv=None) -> int:
     parser.add_argument("--check", action="store_true", help="Read-only drift check")
     args = parser.parse_args(argv)
     content = render(yaml.safe_load(SOURCE.read_text(encoding="utf-8")))
-    current = TARGET.read_text(encoding="utf-8") if TARGET.exists() else None
+    stale = [t for t in TARGETS if not t.exists() or t.read_text(encoding="utf-8") != content]
     if args.check:
-        if current != content:
-            print(f"{TARGET.name} is out of date; run scripts/{Path(__file__).name}", file=sys.stderr)
-            return 1
-        print(f"{TARGET.name} is up to date.")
-        return 0
-    TARGET.write_text(content, encoding="utf-8")
-    print(f"Wrote {TARGET.name}.")
+        for target in stale:
+            print(f"{target.relative_to(ROOT)} is out of date; run scripts/{Path(__file__).name}",
+                  file=sys.stderr)
+        if not stale:
+            print("The connector definition is up to date.")
+        return 1 if stale else 0
+    for target in TARGETS:
+        target.write_text(content, encoding="utf-8")
+        print(f"Wrote {target.relative_to(ROOT)}.")
     return 0
 
 
