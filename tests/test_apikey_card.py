@@ -203,7 +203,7 @@ def test_route_card_wins_over_elicitation():
 
 
 def test_route_elicit_unless_form_only():
-    # Explicit URL mode → elicit (codex/cursor). A url-capable cap elicits even when
+    # Explicit URL mode → elicit (a client declaring elicitation.url). It elicits even when
     # form is also present. Form-ONLY (form present, url absent) → text: the spec
     # forbids collecting a secret via form, so there's no usable off-model path.
     assert server._route_for_caps(_caps(elicitation=SimpleNamespace(url={}, form={}))) == "elicit"
@@ -211,12 +211,12 @@ def test_route_elicit_unless_form_only():
     assert server._route_for_caps(_caps(elicitation=SimpleNamespace(url=None, form={}))) == "text"
 
 
-def test_route_bare_elicitation_elicits_nothing_goes_text():
-    # claude-code advertises a bare ElicitationCapability(form=None, url=None). The
-    # form/url sub-fields are non-standard; per the docs claude-code supports URL mode,
-    # and the spec picks mode per-request — so a bare cap routes to elicit and the
-    # request-time handler falls back to terminal only if the client returns -32602.
-    assert server._route_for_caps(_caps(elicitation=SimpleNamespace(url=None, form=None))) == "elicit"
+def test_route_bare_elicitation_is_form_only_goes_text():
+    # MCP 2025-11-25: a bare elicitation capability {} is equivalent to {"form": {}}, and
+    # a server must not send a mode the client did not declare. Clients that send a bare
+    # cap (default Codex builds, older Cursor) get the terminal path, not a URL-mode
+    # request they would reject with -32602.
+    assert server._route_for_caps(_caps(elicitation=SimpleNamespace(url=None, form=None))) == "text"
     # Nothing advertised at all → terminal (no card host, no elicitation cap).
     assert server._route_for_caps(_caps()) == "text"
 
@@ -501,7 +501,7 @@ def test_route_codex_with_ui_cap_uses_card():
 
 
 def test_route_non_allowlisted_url_client_still_elicits():
-    # A url-mode client NOT on the allowlist (e.g. cursor) keeps elicit.
+    # A url-mode client whatever its clientInfo.name keeps elicit.
     caps = _caps(elicitation=SimpleNamespace(url={}, form={}))
     assert server._route_for_caps(caps, SimpleNamespace(name="cursor")) == "elicit"
 

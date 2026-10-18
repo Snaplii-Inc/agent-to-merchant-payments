@@ -1,0 +1,38 @@
+{
+  "name": "snaplii-a2m-payment",
+  "version": "0.20.1",
+  "description": "Shop and save with Snaplii, a separate, pre-funded account with user-controlled permissions and spending limits. AI agents buy gift cards across 500+ brands in Canada and the US with vouchers and up to 10% cashback, check the Snaplii Cash balance, pay bills (Canada only) and send P2P transfers, without seeing the user's card or bank credentials.",
+  "author": {
+    "name": "Snaplii Inc.",
+    "email": "info@snaplii.com"
+  },
+  "homepage": "https://www.snaplii.com/a2m/",
+  "repository": "https://github.com/Snaplii-Inc/agent-to-merchant-payments",
+  "license": "Apache-2.0",
+  "keywords": [
+    "payments",
+    "shopping",
+    "gift card",
+    "cashback",
+    "discount",
+    "save money",
+    "e-commerce",
+    "deals",
+    "bill pay",
+    "a2m"
+  ],
+  "variables": {
+    "type": "object",
+    "properties": {
+      "SNAPLII_API_KEY": {
+        "type": "string",
+        "title": "Snaplii API key",
+        "description": "Optional. The key from the Snaplii app (More → Payment Methods → AI Payment Management → + New API Key). When set, the agent connects with it directly. Leave empty to type the key into the secure card when the agent connects.",
+        "format": "password",
+        "writeOnly": true
+      }
+    }
+  },
+  "skills": "./skills/",
+  "mcpServers": "./mcp.json"
+}

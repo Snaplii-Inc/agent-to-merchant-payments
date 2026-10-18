@@ -191,7 +191,7 @@ APIKEY_CARD_HTML = r"""<!DOCTYPE html>
 
 <script>
 (function () {
-  var PROTOCOL = "2025-11-25";
+  var PROTOCOL = "2026-01-26";
   var SUBMIT_TOOL = "__SUBMIT_TOOL__";
   // A login can take up to the gateway client's 30 s timeout; waiting less would
   // report a failure (and invite a second entry) while the login still succeeds.

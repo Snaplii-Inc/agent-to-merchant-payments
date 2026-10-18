@@ -262,3 +262,46 @@ def test_mcp_login_refuses_a_non_key_before_any_request(setup_auth, httpx_mock, 
     assert (result["auth_state"], result["reason_code"]) == ("invalid_key", "api_key_format_invalid")
     assert value not in json.dumps(result)
     assert httpx_mock.get_requests() == []
+
+
+_HOST_KEY = "snp_sk_live_synthetickey00000000000000000000"
+
+
+def test_connect_logs_in_with_the_host_supplied_key(setup_auth, httpx_mock, monkeypatch):
+    monkeypatch.setenv("SNAPLII_API_KEY", _HOST_KEY)
+    httpx_mock.add_response(method="POST", url=auth.DEFAULT_ORIGIN + "/v2/auth/token",
+                            json={"access_token": "synthetic-token"})
+    result = call("snaplii_connect")
+    assert result["status"] == "authenticated"
+    assert result["key_source"] == "host_variable"
+    assert result["has_valid_token"] is True
+    assert "synthetic" not in json.dumps(result)
+    assert "synthetic" not in json.dumps(call("snaplii_config_show"))
+    # The session is cached, so the next call does not log in again.
+    assert call("snaplii_connect")["status"] == "already_connected"
+
+
+@pytest.mark.parametrize("value", ["", "   ", "${SNAPLII_API_KEY}", "${SNAPLII_API_KEY:-}"])
+def test_connect_ignores_an_empty_or_unexpanded_host_variable(setup_auth, monkeypatch, value):
+    monkeypatch.setenv("SNAPLII_API_KEY", value)
+    monkeypatch.setattr(server, "_connect_route", lambda: "text")
+    assert call("snaplii_connect")["status"] == "use_terminal_or_chat_key"
+
+
+def test_connect_reports_a_rejected_host_key_instead_of_a_card(setup_auth, httpx_mock, monkeypatch):
+    monkeypatch.setenv("SNAPLII_API_KEY", _HOST_KEY)
+    httpx_mock.add_response(method="POST", url=auth.DEFAULT_ORIGIN + "/v2/auth/token",
+                            status_code=401, json={"message": "invalid key"})
+    result = call("snaplii_connect")
+    assert result["error"] == "auth_failed"
+    assert result["key_source"] == "host_variable"
+    assert "SNAPLII_API_KEY" in result["message"]
+    assert "synthetic" not in json.dumps(result)
+
+
+def test_connect_refuses_a_malformed_host_key_before_any_request(setup_auth, monkeypatch):
+    monkeypatch.setenv("SNAPLII_API_KEY", "not-a-key")
+    result = call("snaplii_connect")
+    assert result["error"] == "auth_failed"
+    assert result["key_source"] == "host_variable"
+    assert "not-a-key" not in json.dumps(result)

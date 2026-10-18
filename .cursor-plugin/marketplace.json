@@ -1,0 +1,14 @@
+{
+  "name": "snaplii",
+  "owner": {
+    "name": "Snaplii Inc.",
+    "email": "info@snaplii.com"
+  },
+  "plugins": [
+    {
+      "name": "snaplii-a2m-payment",
+      "source": "cursor-plugin",
+      "description": "Agent-to-Merchant payments: AI agents buy gift cards, pay bills and send transfers from the user's prepaid Snaplii Cash."
+    }
+  ]
+}
