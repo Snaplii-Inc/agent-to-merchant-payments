@@ -1,0 +1,21 @@
+{
+  "name": "snaplii-a2m-mcp",
+  "version": "1.14.0",
+  "type": "module",
+  "description": "Agent-to-Merchant payments — MCP tools for gift card browsing, purchasing with auto-applied vouchers, cashback balance, bill pay, and P2P transfers across 500+ brands.",
+  "license": "Apache-2.0",
+  "homepage": "https://www.snaplii.com/a2m/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Snaplii-Inc/agent-to-merchant-payments.git",
+    "directory": "clawhub-plugin"
+  },
+  "openclaw": {
+    "compat": {
+      "pluginApi": ">=2026.10.4"
+    },
+    "build": {
+      "openclawVersion": "2026.10.4"
+    }
+  }
+}

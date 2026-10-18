@@ -1,0 +1,476 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Snaplii",
+    "description": "Browse Snaplii gift card brands, check your Snaplii Cash balance, and get a price quote before buying. Spending comes only from your prepaid Snaplii Cash.",
+    "version": "0.20.2",
+    "contact": {
+      "name": "Snaplii Inc.",
+      "url": "https://www.snaplii.com/help-center/",
+      "email": "customerservice@snaplii.com"
+    }
+  },
+  "host": "aipayment.snaplii.com",
+  "basePath": "/",
+  "schemes": [
+    "https"
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v2/card-brands": {
+      "get": {
+        "operationId": "listCardBrands",
+        "summary": "List gift card categories and brands",
+        "description": "Catalog is scoped to the authenticated account country. No locationProv parameter is sent.",
+        "tags": [
+          "Catalog"
+        ],
+        "produces": [
+          "application/json",
+          "text/plain"
+        ],
+        "parameters": [
+          {
+            "name": "channel",
+            "in": "query",
+            "type": "string",
+            "description": "Catalog channel. Always HOME_PAGE: the brands shown on the Snaplii app home page.",
+            "default": "HOME_PAGE",
+            "x-ms-visibility": "internal",
+            "x-ms-summary": "Catalog channel",
+            "enum": [
+              "HOME_PAGE"
+            ],
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Gateway response. Check rspMsgCd even when the HTTP status is 200.",
+            "schema": {
+              "$ref": "#/definitions/CatalogResponse"
+            }
+          },
+          "default": {
+            "description": "Error response. Business error codes can also arrive in a 2xx response, so check rspMsgCd; some errors are plain text."
+          }
+        },
+        "x-ms-visibility": "important"
+      }
+    },
+    "/v2/card-brands/{card_brand_id}": {
+      "get": {
+        "operationId": "getCardBrand",
+        "summary": "Get gift card brand details and denominations",
+        "description": "Returns the brand's cards and their denominations. FIXED requires the exact priceStart; VARIABLE requires an amount between priceStart and priceEnd.",
+        "tags": [
+          "Catalog"
+        ],
+        "produces": [
+          "application/json",
+          "text/plain"
+        ],
+        "parameters": [
+          {
+            "name": "card_brand_id",
+            "in": "path",
+            "type": "string",
+            "required": true,
+            "description": "Card brand identifier.",
+            "x-ms-visibility": "important",
+            "x-ms-summary": "Card brand ID",
+            "x-ms-url-encoding": "single"
+          },
+          {
+            "name": "showDetail",
+            "in": "query",
+            "type": "boolean",
+            "description": "Send true to receive the card templates and their denominations.",
+            "default": true,
+            "x-ms-visibility": "internal",
+            "x-ms-summary": "Show card details",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Gateway response. Check rspMsgCd even when the HTTP status is 200.",
+            "schema": {
+              "$ref": "#/definitions/CardBrandResponse"
+            }
+          },
+          "default": {
+            "description": "Error response. Business error codes can also arrive in a 2xx response, so check rspMsgCd; some errors are plain text."
+          }
+        },
+        "x-ms-visibility": "important"
+      }
+    },
+    "/v2/balance": {
+      "get": {
+        "operationId": "getBalance",
+        "summary": "Get Snaplii Cash balance",
+        "description": "The balance is in the account currency (CA=CAD, US=USD), the country returned with the access token.",
+        "tags": [
+          "Balance"
+        ],
+        "produces": [
+          "application/json",
+          "text/plain"
+        ],
+        "responses": {
+          "200": {
+            "description": "Gateway response. Check rspMsgCd even when the HTTP status is 200.",
+            "schema": {
+              "$ref": "#/definitions/BalanceResponse"
+            }
+          },
+          "default": {
+            "description": "Error response. Business error codes can also arrive in a 2xx response, so check rspMsgCd; some errors are plain text."
+          }
+        },
+        "x-ms-visibility": "important"
+      }
+    },
+    "/v2/quote": {
+      "post": {
+        "operationId": "quoteOrder",
+        "summary": "Quote a gift card purchase",
+        "description": "Quote a gift card purchase. Before quoting, read the brand details and confirm the card ID and amount match one of its denominations. A positive primaryPayAmount means Snaplii Cash does not fully cover the order. Nothing is charged by a quote.",
+        "tags": [
+          "Checkout"
+        ],
+        "produces": [
+          "application/json",
+          "text/plain"
+        ],
+        "consumes": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/QuoteRequest"
+            },
+            "x-ms-visibility": "important",
+            "x-ms-summary": "Quote request",
+            "description": "The gift card order to quote."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Gateway response. Check rspMsgCd even when the HTTP status is 200.",
+            "schema": {
+              "$ref": "#/definitions/QuoteResponse"
+            }
+          },
+          "default": {
+            "description": "Error response. Business error codes can also arrive in a 2xx response, so check rspMsgCd; some errors are plain text."
+          }
+        },
+        "x-ms-visibility": "important"
+      }
+    }
+  },
+  "definitions": {
+    "GatewayObject": {
+      "type": "object",
+      "description": "A gateway object.",
+      "additionalProperties": true
+    },
+    "CatalogResponse": {
+      "description": "Categories with their brands, as an array.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/GatewayObject"
+      }
+    },
+    "AmountValue": {
+      "type": "string",
+      "description": "An amount or rate, as a string or a number.",
+      "x-nullable": true,
+      "example": "12.50"
+    },
+    "FaceValueRules": {
+      "type": "object",
+      "description": "FIXED uses priceStart as the exact denomination. VARIABLE uses priceStart and priceEnd as inclusive bounds.",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "FIXED",
+            "VARIABLE"
+          ]
+        },
+        "priceStart": {
+          "$ref": "#/definitions/AmountValue"
+        },
+        "priceEnd": {
+          "$ref": "#/definitions/AmountValue"
+        }
+      },
+      "additionalProperties": true
+    },
+    "CardTemplate": {
+      "type": "object",
+      "description": "A card template; discount values are cashback percentages.",
+      "properties": {
+        "cardTemplateId": {
+          "type": "string"
+        },
+        "faceValueRules": {
+          "$ref": "#/definitions/FaceValueRules"
+        },
+        "discount": {
+          "$ref": "#/definitions/AmountValue"
+        },
+        "regularDiscount": {
+          "$ref": "#/definitions/AmountValue"
+        }
+      },
+      "additionalProperties": true
+    },
+    "CardBrand": {
+      "type": "object",
+      "properties": {
+        "cardBrandId": {
+          "type": "string"
+        },
+        "cards": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/CardTemplate"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "CardBrandResponse": {
+      "description": "The brand, returned directly or under data.",
+      "type": "object",
+      "properties": {
+        "cardBrandId": {
+          "type": "string"
+        },
+        "cards": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/CardTemplate"
+          }
+        },
+        "data": {
+          "$ref": "#/definitions/CardBrand"
+        }
+      },
+      "additionalProperties": true
+    },
+    "BalanceResponse": {
+      "description": "The balance, returned directly or under data, in the account currency.",
+      "type": "object",
+      "properties": {
+        "balance": {
+          "$ref": "#/definitions/AmountValue"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "balance": {
+              "$ref": "#/definitions/AmountValue"
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "Amount": {
+      "type": "string",
+      "description": "Decimal amount sent as a JSON string in the account currency.",
+      "example": "50.00"
+    },
+    "OrderItem": {
+      "type": "object",
+      "required": [
+        "itemId",
+        "price"
+      ],
+      "properties": {
+        "itemId": {
+          "type": "string",
+          "description": "The gift card ID, exactly {cardBrandId}-{cardTemplateId}: the brand's cardBrandId, one hyphen, and the chosen card's cardTemplateId, both copied verbatim from the brand details. Never send one ID alone, a card from another brand, or a guessed ID."
+        },
+        "price": {
+          "$ref": "#/definitions/Amount",
+          "description": "Decimal amount as a string. A FIXED card accepts exactly its priceStart; a VARIABLE card accepts priceStart to priceEnd."
+        }
+      },
+      "additionalProperties": true
+    },
+    "OrderContext": {
+      "type": "object",
+      "required": [
+        "giftOrder"
+      ],
+      "properties": {
+        "giftOrder": {
+          "type": "string",
+          "enum": [
+            "false"
+          ],
+          "description": "The string false, not a JSON boolean.",
+          "default": "false",
+          "x-ms-visibility": "internal"
+        }
+      },
+      "additionalProperties": true
+    },
+    "OrderInfo": {
+      "type": "object",
+      "required": [
+        "orderType",
+        "item",
+        "orderContext",
+        "businessChannel"
+      ],
+      "properties": {
+        "orderType": {
+          "type": "string",
+          "enum": [
+            "GIFT_CARD"
+          ],
+          "default": "GIFT_CARD",
+          "x-ms-visibility": "internal"
+        },
+        "item": {
+          "$ref": "#/definitions/OrderItem"
+        },
+        "orderContext": {
+          "$ref": "#/definitions/OrderContext"
+        },
+        "businessChannel": {
+          "type": "string",
+          "enum": [
+            "APP"
+          ],
+          "default": "APP",
+          "x-ms-visibility": "internal"
+        }
+      },
+      "additionalProperties": true
+    },
+    "PaymentContext": {
+      "type": "object",
+      "required": [
+        "specifiedPrimaryPaymentMethod",
+        "voucherOption",
+        "cashbackOption"
+      ],
+      "properties": {
+        "specifiedPrimaryPaymentMethod": {
+          "type": "string",
+          "default": "SNAPLII_CREDIT",
+          "description": "Snaplii Cash.",
+          "example": "SNAPLII_CREDIT",
+          "x-ms-visibility": "internal"
+        },
+        "voucherOption": {
+          "type": "string",
+          "enum": [
+            "BEST_FIT",
+            "USE",
+            "NOT_USE"
+          ],
+          "default": "BEST_FIT",
+          "x-ms-visibility": "advanced"
+        },
+        "cashbackOption": {
+          "type": "string",
+          "enum": [
+            "USE",
+            "NOT_USE"
+          ],
+          "default": "USE",
+          "x-ms-visibility": "advanced"
+        },
+        "specifiedVoucher": {
+          "type": "string",
+          "description": "Specific voucher ID. Set voucherOption to USE when selecting a voucher.",
+          "x-ms-visibility": "advanced"
+        }
+      },
+      "additionalProperties": true
+    },
+    "QuoteRequest": {
+      "type": "object",
+      "required": [
+        "orderInfo",
+        "paymentContext"
+      ],
+      "properties": {
+        "orderInfo": {
+          "$ref": "#/definitions/OrderInfo"
+        },
+        "paymentContext": {
+          "$ref": "#/definitions/PaymentContext"
+        }
+      },
+      "additionalProperties": true
+    },
+    "QuoteResponse": {
+      "type": "object",
+      "properties": {
+        "orderAmount": {
+          "$ref": "#/definitions/AmountValue"
+        },
+        "primaryPayAmount": {
+          "$ref": "#/definitions/AmountValue"
+        },
+        "voucherAmount": {
+          "$ref": "#/definitions/AmountValue"
+        },
+        "cashbackUseAmount": {
+          "$ref": "#/definitions/AmountValue"
+        },
+        "voucherName": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true,
+      "description": "Quote amounts. primaryPayAmount is the remainder after applied funds/discounts; zero does not mean the order is free."
+    }
+  },
+  "securityDefinitions": {
+    "api_key": {
+      "type": "apiKey",
+      "in": "header",
+      "name": "X-Snaplii-Api-Key"
+    }
+  },
+  "security": [
+    {
+      "api_key": []
+    }
+  ],
+  "x-ms-connector-metadata": [
+    {
+      "propertyName": "Website",
+      "propertyValue": "https://www.snaplii.com/a2m/"
+    },
+    {
+      "propertyName": "Privacy policy",
+      "propertyValue": "https://www.snaplii.com/privacy-policy/"
+    },
+    {
+      "propertyName": "Categories",
+      "propertyValue": "Finance;Commerce"
+    }
+  ]
+}

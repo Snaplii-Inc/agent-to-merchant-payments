@@ -1,0 +1,25 @@
+{
+  "properties": {
+    "connectionParameters": {
+      "api_key": {
+        "type": "securestring",
+        "uiDefinition": {
+          "displayName": "Snaplii API key",
+          "description": "The API key you created in the Snaplii app under More, Payment Methods, AI Payment Management.",
+          "tooltip": "Provide your Snaplii API key.",
+          "constraints": {
+            "tabIndex": 2,
+            "clearText": false,
+            "required": "true"
+          }
+        }
+      }
+    },
+    "iconBrandColor": "#2A3753",
+    "scriptOperations": [],
+    "capabilities": [],
+    "policyTemplateInstances": [],
+    "publisher": "Snaplii Inc.",
+    "stackOwner": "Snaplii Inc."
+  }
+}

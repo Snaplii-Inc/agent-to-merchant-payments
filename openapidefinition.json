@@ -3,7 +3,12 @@
   "info": {
     "title": "Snaplii",
     "description": "Browse Snaplii gift card brands, check your Snaplii Cash balance, and get a price quote before buying. Spending comes only from your prepaid Snaplii Cash.",
-    "version": "0.20.1"
+    "version": "0.20.2",
+    "contact": {
+      "name": "Snaplii Inc.",
+      "url": "https://www.snaplii.com/help-center/",
+      "email": "customerservice@snaplii.com"
+    }
   },
   "host": "aipayment.snaplii.com",
   "basePath": "/",
@@ -40,7 +45,8 @@
             "x-ms-summary": "Catalog channel",
             "enum": [
               "HOME_PAGE"
-            ]
+            ],
+            "required": true
           }
         ],
         "responses": {
@@ -51,10 +57,7 @@
             }
           },
           "default": {
-            "description": "Error response. Business error codes can also arrive in a 2xx response, so check rspMsgCd; some errors are plain text.",
-            "schema": {
-              "$ref": "#/definitions/GatewayError"
-            }
+            "description": "Error response. Business error codes can also arrive in a 2xx response, so check rspMsgCd; some errors are plain text."
           }
         },
         "x-ms-visibility": "important"
@@ -80,7 +83,8 @@
             "required": true,
             "description": "Card brand identifier.",
             "x-ms-visibility": "important",
-            "x-ms-summary": "Card brand ID"
+            "x-ms-summary": "Card brand ID",
+            "x-ms-url-encoding": "single"
           },
           {
             "name": "showDetail",
@@ -89,7 +93,8 @@
             "description": "Send true to receive the card templates and their denominations.",
             "default": true,
             "x-ms-visibility": "internal",
-            "x-ms-summary": "Show card details"
+            "x-ms-summary": "Show card details",
+            "required": true
           }
         ],
         "responses": {
@@ -100,10 +105,7 @@
             }
           },
           "default": {
-            "description": "Error response. Business error codes can also arrive in a 2xx response, so check rspMsgCd; some errors are plain text.",
-            "schema": {
-              "$ref": "#/definitions/GatewayError"
-            }
+            "description": "Error response. Business error codes can also arrive in a 2xx response, so check rspMsgCd; some errors are plain text."
           }
         },
         "x-ms-visibility": "important"
@@ -129,10 +131,7 @@
             }
           },
           "default": {
-            "description": "Error response. Business error codes can also arrive in a 2xx response, so check rspMsgCd; some errors are plain text.",
-            "schema": {
-              "$ref": "#/definitions/GatewayError"
-            }
+            "description": "Error response. Business error codes can also arrive in a 2xx response, so check rspMsgCd; some errors are plain text."
           }
         },
         "x-ms-visibility": "important"
@@ -174,10 +173,7 @@
             }
           },
           "default": {
-            "description": "Error response. Business error codes can also arrive in a 2xx response, so check rspMsgCd; some errors are plain text.",
-            "schema": {
-              "$ref": "#/definitions/GatewayError"
-            }
+            "description": "Error response. Business error codes can also arrive in a 2xx response, so check rspMsgCd; some errors are plain text."
           }
         },
         "x-ms-visibility": "important"
@@ -196,27 +192,6 @@
       "items": {
         "$ref": "#/definitions/GatewayObject"
       }
-    },
-    "GatewayError": {
-      "type": "object",
-      "description": "Error body; some failures carry only message, and some return plain text.",
-      "properties": {
-        "rspMsgCd": {
-          "type": "string",
-          "description": "Nonempty business codes not ending in 00000 are failures."
-        },
-        "rspMsgInf": {
-          "type": "string"
-        },
-        "rspMsgInfo": {
-          "type": "string"
-        },
-        "message": {
-          "type": "string",
-          "x-nullable": true
-        }
-      },
-      "additionalProperties": true
     },
     "AmountValue": {
       "type": "string",
@@ -482,6 +457,20 @@
   "security": [
     {
       "api_key": []
+    }
+  ],
+  "x-ms-connector-metadata": [
+    {
+      "propertyName": "Website",
+      "propertyValue": "https://www.snaplii.com/a2m/"
+    },
+    {
+      "propertyName": "Privacy policy",
+      "propertyValue": "https://www.snaplii.com/privacy-policy/"
+    },
+    {
+      "propertyName": "Categories",
+      "propertyValue": "Finance;Commerce"
     }
   ]
 }

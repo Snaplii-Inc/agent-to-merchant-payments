@@ -1,5 +1,6 @@
 """The README installs the skill, the CLI and the MCP server from one release tag."""
 
+import json
 import re
 import tomllib
 from pathlib import Path
@@ -50,3 +51,28 @@ def test_the_skill_installs_its_cli_from_the_same_release():
         assert set(re.findall(r"\bv\d+\.\d+\.\d+(?:rc\d+)?\b", skill)) == {TAG}, relative
         assert CLONE in skill, relative
         assert "python3 snaplii-src/scripts/install.py --source ./snaplii-src" in skill, relative
+
+
+def test_every_plugin_starts_the_mcp_server_of_this_release():
+    # uvx keeps reusing a cached server unless the version is pinned.
+    # The Claude plugin directory spells an exact uvx pin with "==".
+    pinned = {"clawhub-plugin": "@", "cursor-plugin": "@", "claude-plugin": "=="}
+    for plugin, sep in pinned.items():
+        config = "mcp.json" if plugin == "cursor-plugin" else ".mcp.json"
+        server = json.loads((ROOT / plugin / config).read_text())["mcpServers"]["snaplii"]
+        assert server["command"] == "uvx", plugin
+        assert server["args"] == ["snaplii-mcp" + sep + VERSION], plugin
+        readme = (ROOT / plugin / "README.md").read_text()
+        pins = set(re.findall(r"snaplii-mcp(?:@|==)([0-9][^\s`]*)", readme))
+        assert pins == {VERSION}, plugin
+        assert ("snaplii-mcp" + sep + VERSION) in readme, plugin
+
+
+def test_plugins_that_follow_the_package_version_match_it():
+    # The Cursor and Claude plugins carry the package version and pin its CLI tag.
+    for relative in ("cursor-plugin/.cursor-plugin/plugin.json", "claude-plugin/.claude-plugin/plugin.json"):
+        assert json.loads((ROOT / relative).read_text())["version"] == VERSION, relative
+    for relative in ("cursor-plugin/skills/snaplii-cli/SKILL.md", "claude-plugin/skills/snaplii-cli/SKILL.md"):
+        skill = (ROOT / relative).read_text()
+        assert set(re.findall(r"\bv\d+\.\d+\.\d+(?:rc\d+)?\b", skill)) == {TAG}, relative
+        assert CLONE in skill, relative

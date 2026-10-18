@@ -1,6 +1,6 @@
 ---
 name: snaplii-cli
-description: "Snaplii for Cursor: buy discounted gift cards across 500+ brands with vouchers and up to 10% cashback, check the Snaplii Cash balance, pay bills (Canada) and send money to a phone number, through the snaplii_* MCP tools or the snaplii CLI, spending only the user's prepaid Snaplii Cash within the spending limit they set. Load whenever the user mentions Snaplii or Snaplii Cash, wants to buy, quote or manage gift cards, wants a discount, deal, coupon or cashback on a purchase, asks about their wallet or balance, or wants to pay a bill or send money. Not for payment-integration coding (Stripe, Shopify, PayPal SDKs), crypto wallets, or placing an order on a website (that is snaplii-autopilot)."
+description: "Snaplii for Cursor: buy discounted gift cards across 500+ brands with vouchers and up to 10% cashback, check the Snaplii Cash balance, pay bills (Canada) and send money to a phone number, through the snaplii_* MCP tools or the snaplii CLI, spending only the user's prepaid Snaplii Cash within the spending limit they set. Load whenever the user mentions Snaplii or Snaplii Cash, wants to buy, quote or manage gift cards, wants a discount, deal, coupon or cashback on a purchase or to save money while shopping, asks about their wallet or balance, or wants to pay a bill or send money. Not for payment-integration coding (Stripe, Shopify, PayPal SDKs), crypto wallets, or placing an order on a website (that is snaplii-autopilot)."
 ---
 
 # Snaplii: gift cards, balance, bill pay, transfers
@@ -212,7 +212,7 @@ Use the CLI only when the Snaplii MCP server is disabled in Cursor's MCP setting
 **Install.** This plugin provides the MCP server and skills, not the CLI. If the CLI is not at `~/.snaplii-env/bin/snaplii` (Windows: `%USERPROFILE%\.snaplii-env\Scripts\snaplii.exe`), install it from the release this plugin belongs to:
 
 ```bash
-git clone --depth 1 --branch v0.20.1 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
+git clone --depth 1 --branch v0.20.2 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
 python3 snaplii-src/scripts/install.py --source ./snaplii-src --host cursor --cli-only
 ```
 

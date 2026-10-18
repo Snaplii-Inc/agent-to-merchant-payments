@@ -6,6 +6,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
+## [0.20.2] — 2026-10-18
+
+### Added
+- **Every MCP tool carries a title and MCP tool annotations.** Hosts can show a readable name (for example "Buy a gift card") and tell reading tools from writing ones. The 17 lookup and quote tools are `readOnlyHint: true`. The tools that move money or undo a pending money movement (`snaplii_purchase`, `snaplii_billpay_pay`, `snaplii_transfer_create`, `snaplii_transfer_finish`, `snaplii_transfer_cancel`) are `destructiveHint: true`; sign-in and saving a bill draft are `destructiveHint: false`. Every tool is `openWorldHint: true`: it reaches the Snaplii service, and a first call may also check PyPI for an update. How a host uses these hints, such as asking for approval, is up to the host.
+
+### Changed
+- The MCP server's `serverInfo` reports the `snaplii-mcp` version and the product website. It used to report the version of the MCP SDK it is built on.
+- The `snaplii_submit_api_key` description no longer says that every host hides it from the model and rejects model calls. Only hosts that support app-only tools hide it, so the description now tells the model not to call it and to use `snaplii_connect` instead.
+
 ## [0.20.1] — 2026-10-18
 
 ### Added

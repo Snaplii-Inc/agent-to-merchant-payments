@@ -2,7 +2,7 @@
   "mcpServers": {
     "snaplii": {
       "command": "uvx",
-      "args": ["snaplii-mcp"]
+      "args": ["snaplii-mcp@0.20.2"]
     }
   }
 }

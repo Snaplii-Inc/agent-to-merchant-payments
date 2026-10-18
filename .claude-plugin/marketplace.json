@@ -1,0 +1,15 @@
+{
+  "name": "snaplii",
+  "description": "Snaplii plugins for Claude: Agent-to-Merchant payments with prepaid Snaplii Cash.",
+  "owner": {
+    "name": "Snaplii Inc.",
+    "email": "info@snaplii.com"
+  },
+  "plugins": [
+    {
+      "name": "snaplii-a2m-payment",
+      "source": "./claude-plugin",
+      "description": "Buy discounted gift cards with cashback, check the Snaplii Cash balance, pay bills and send money, spending only prepaid Snaplii Cash within the user's limit."
+    }
+  ]
+}

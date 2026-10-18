@@ -13,7 +13,6 @@ This skill spends **only** from the user's **prepaid Snaplii Cash balance** — 
 
 **What this skill does and doesn't do:** Snaplii buys a gift card and gives you its **redemption code**. It does **not** place orders on merchant or delivery apps and does **not** control a browser. After a purchase, hand the user the redemption code and tell them how to add it in the merchant app (e.g. Uber Eats / DoorDash → Payment → Add Gift Card). The user completes the order themselves.
 
-<!-- muse-auth:begin -->
 ## Auth
 
 ### When to connect
@@ -235,7 +234,6 @@ Report cache/configuration errors as such. Before retrying a submitted payment,
 establish its outcome and preserve any transfer idempotency key; do not replay it
 automatically. Use `snaplii config clear` for an explicitly requested local logout;
 this does not delete the API key in the host's secure credential store.
-<!-- muse-auth:end -->
 
 ## Prerequisites
 
@@ -244,7 +242,7 @@ this does not delete the API key in the host's secure credential store.
 3. **Install the CLI** — this skill folder does not contain the installer. If the CLI is not at `~/.snaplii-env/bin/snaplii` (Windows: `%USERPROFILE%\.snaplii-env\Scripts\snaplii.exe`), install it and the MCP server from the release this skill belongs to:
 
    ```bash
-   git clone --depth 1 --branch v0.20.1 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
+   git clone --depth 1 --branch v0.20.2 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
    python3 snaplii-src/scripts/install.py --source ./snaplii-src
    ```
 

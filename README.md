@@ -36,7 +36,7 @@ Install the skills, the CLI and the MCP server from one release tag, so all thre
 - Where the table says leave it out, drop both `--host` and its value. Add `--cli-only` to the third command if your agent will not use MCP. Muse gets the CLI only by itself; Instinct needs MCP and refuses `--cli-only`.
 
 ```bash
-git clone --depth 1 --branch v0.20.1 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
+git clone --depth 1 --branch v0.20.2 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
 npx --yes skills add ./snaplii-src -g -a claude-code -y
 python3 snaplii-src/scripts/install.py --host claude-code --source ./snaplii-src
 ```
@@ -168,7 +168,7 @@ Installing needs no key. To connect the CLI or your AI agent, generate a secure 
 Clone a release and run its installer (see [Install the execution layer](#install-the-execution-layer) for the Windows and no-Python variants):
 
 ```bash
-git clone --depth 1 --branch v0.20.1 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
+git clone --depth 1 --branch v0.20.2 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
 python3 snaplii-src/scripts/install.py --source ./snaplii-src
 ```
 
@@ -463,6 +463,9 @@ agent-to-merchant-payments/
 ├── clawhub-publish/    # snaplii-cli skill as a SKILL.md folder (ClawHub: snaplii-a2m-payment)
 ├── clawhub-autopilot/  # snaplii-autopilot skill as a SKILL.md folder (ClawHub: snaplii-autopilot)
 ├── clawhub-plugin/     # ClawHub MCP bundle plugin (snaplii-a2m-mcp)
+├── cursor-plugin/      # Cursor Marketplace plugin: MCP server + Cursor versions of both skills (.cursor-plugin/ lists it)
+├── claude-plugin/      # Claude Code plugin: MCP server + Claude versions of both skills (.claude-plugin/ lists it)
+├── copilot-connector/  # Copilot Studio / Power Platform connector: definition, properties, script.csx, readme
 ├── claude-desktop/     # Older project instructions for Claude Desktop; the MCP server's own instructions take precedence
 ├── scripts/            # The installer (install.py), Claude Desktop setup, skill Auth-block sync, candidate bundles
 └── tests/              # pytest suite for the CLI, the MCP server, and the skill documents
@@ -598,4 +601,4 @@ Snaplii is model-agnostic. Whether you build with Claude, ChatGPT, Gemini, Llama
 
 This project is licensed under the **Apache License 2.0**.
 
-See the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) for details.
+See [LICENSE](LICENSE) for the full text.
