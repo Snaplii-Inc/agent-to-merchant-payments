@@ -88,6 +88,16 @@ def _base_url() -> str:
     return os.environ.get("SNAPLII_BASE_URL") or ConfigStore().get("base_url", _DEFAULT_BASE_URL)
 
 
+def _env_api_key() -> str | None:
+    """A key the host handed this process in SNAPLII_API_KEY (a Cursor plugin
+    variable, for example). An unexpanded `${...}` placeholder counts as unset."""
+    import os
+    value = os.environ.get("SNAPLII_API_KEY", "").strip()
+    if not value or value.startswith("${"):
+        return None
+    return value
+
+
 def _store() -> ConfigStore:
     store = ConfigStore()
     store.runtime = "mcp"  # a long-lived process may keep a memory-only session
@@ -314,7 +324,7 @@ def _connect_route() -> str:
     hardcoded client list — see the confirmation-channel design doc §6):
 
       "card"   — host renders MCP Apps `ui://` cards (Claude desktop, ChatGPT, VS Code …)
-      "elicit" — host supports URL-mode elicitation (Codex, Cursor …)
+      "elicit" — host declares URL-mode elicitation (capabilities.elicitation.url)
       "text"   — neither; fall back to terminal `snaplii init` OR pasting the key in
                  chat for snaplii_init (e.g. Claude Code)
 
@@ -344,20 +354,18 @@ def _route_for_caps(caps, client_info=None) -> str:
     for bag in (getattr(caps, "extensions", None), getattr(caps, "experimental", None)):
         if isinstance(bag, dict) and any("ui" in str(k).lower() for k in bag):
             return "card"
-    # URL-mode elicitation hosts: secret entered off-model
-    # on a hosted page. The MCP spec advertises elicitation as a bare cap — the form-vs-
-    # URL choice is per-REQUEST, not a capability sub-field — so most clients (incl.
-    # claude-code, which the docs say supports URL mode) send form=None/url=None. Route
-    # any elicitation cap to "elicit" EXCEPT form-only (form present, url absent): the
-    # spec forbids collecting a secret via form, so a form-only client has no usable
-    # off-model path here → terminal. For bare or url-capable caps, attempt URL mode and
-    # let the request-time handler catch JSON-RPC -32602 and fall back to terminal if a
-    # client truly can't do URL mode.
+    # URL-mode elicitation hosts: secret entered off-model on a hosted page. Since MCP
+    # 2025-11-25 a client declares the modes it supports under the elicitation
+    # capability: {"url": {}} means URL mode, and a bare {} is, by the spec's own
+    # words, equivalent to {"form": {}}. The spec forbids collecting a secret via form
+    # and forbids sending a mode the client did not declare, so only a url-declaring
+    # client is routed here; form-only and bare caps have no usable off-model path →
+    # terminal. (Default Codex builds and Cursor declare no url; VS Code declares
+    # form+url but takes the card above.) The request-time handler still catches a
+    # JSON-RPC -32602 from a client that declared url and rejects it anyway.
     elic = getattr(caps, "elicitation", None)
-    if elic is not None:
-        form_only = getattr(elic, "form", None) is not None and getattr(elic, "url", None) is None
-        if not form_only:
-            return "elicit"
+    if elic is not None and getattr(elic, "url", None) is not None:
+        return "elicit"
     return "text"
 
 
@@ -418,7 +426,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_connect",
-            description="Securely connect the user's Snaplii account via a secure card where the user types their API key directly (never through the chat or model). ⛔ DO NOT CALL IF ALREADY CONNECTED: invoking this renders a connect card on card hosts (ChatGPT / Claude desktop / Codex) EVEN WHEN already authenticated. FIRST check snaplii_config_show — if has_valid_token=true the user is already connected: just tell them so and proceed (browse/balance/purchase/bills), do NOT call snaplii_connect. Only call when NOT yet authenticated. PREFER THIS over snaplii_init (the key never enters chat). If the client can't render the card, follow the fallback instructions in the result. (As a backstop, when already connected this returns status 'already_connected' without reconnecting.)",
+            description="Securely connect the user's Snaplii account via a secure card where the user types their API key directly (never through the chat or model). If the host supplies the key in the SNAPLII_API_KEY plugin variable, this logs in with it directly and no card appears. ⛔ DO NOT CALL IF ALREADY CONNECTED: invoking this renders a connect card on card hosts (ChatGPT / Claude desktop / Codex) EVEN WHEN already authenticated. FIRST check snaplii_config_show — if has_valid_token=true the user is already connected: just tell them so and proceed (browse/balance/purchase/bills), do NOT call snaplii_connect. Only call when NOT yet authenticated. PREFER THIS over snaplii_init (the key never enters chat). If the client can't render the card, follow the fallback instructions in the result. (As a backstop, when already connected this returns status 'already_connected' without reconnecting.)",
             inputSchema={"type": "object", "properties": {}, "required": []},
             _meta={"ui": {"resourceUri": APIKEY_RES_URI, "visibility": ["model", "app"]}},
         ),
@@ -448,7 +456,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_browse_tags",
-            description="Browse all gift card categories with brand summaries (name, cashback rate, brandId). IMPORTANT: the account's country/region is already known from the connection (cached at login) and is returned as `account_country` in the result — do NOT ask the user for it. Filter results to that region — some brands are marked with country flags (🇺🇸 = US only, 🇨🇦 = Canada only, 🇺🇸🇨🇦 = both). Only show brands available in the user's region. When users describe a scenario (e.g. travel, dining), YOU should analyze the data, filter by region, compare cashback rates, and recommend the best options.",
+            description="Browse all gift card categories with brand summaries (name, cashback rate, brandId). IMPORTANT: the account's country/region is already known from the connection (cached at login) and is returned as `account_country` in the result — do NOT ask the user for it. The catalog is already filtered to that region by the gateway, so every brand returned is available to the user; do not rely on flag emoji in brand names, which may be missing or wrong. When users describe a scenario (e.g. travel, dining), YOU should analyze the data, compare cashback rates, and recommend the best options.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -777,6 +785,19 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                     ),
                 })
 
+            host_key = _env_api_key()
+            if host_key:
+                # The host handed this process the key (a Cursor plugin variable, for
+                # example), so the user already entered it in the host's own settings:
+                # log in with it instead of asking again through a card or terminal.
+                result = _authenticate(host_key)
+                if result.get("status") == "authenticated":
+                    return _text({**result, "key_source": "host_variable"})
+                return _text({**result, "key_source": "host_variable",
+                              "message": result["message"] + " This key came from the "
+                              "SNAPLII_API_KEY variable in the host's plugin settings: "
+                              "correct it there, or clear it to connect another way."})
+
             if auth_status["host"] == "instinct":
                 return _text(await _instinct_connect(arguments))
 
@@ -821,9 +842,9 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                         elicitation_id=eid,
                     )
                 except Exception as e:
-                    # Some clients advertise a bare elicitation capability but reject a
-                    # URL-mode request at runtime (e.g. claude-code returns JSON-RPC
-                    # -32602 "Client does not support URL-mode elicitation requests").
+                    # A client that declared elicitation.url may still reject a URL-mode
+                    # request at runtime (JSON-RPC -32602 "Client does not support
+                    # URL-mode elicitation requests").
                     # That "not supported here" case falls back to terminal `snaplii init`
                     # or pasting the key in chat for snaplii_init at once. Any other
                     # failure retries the same page once before that fallback.

@@ -6,6 +6,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
+## [Unreleased]
+
+### Added
+- **`snaplii_connect` accepts a host-supplied key.** When the host starts the MCP server with `SNAPLII_API_KEY` set (a Cursor plugin variable, for example), `snaplii_connect` logs in with it and returns `authenticated` with `key_source=host_variable`, so no card or terminal prompt appears. An empty value or an unexpanded `${...}` placeholder is ignored. A rejected key is reported with a hint to fix it in the host's plugin settings; the key itself is never echoed.
+
+### Changed
+- **`snaplii_connect` sends a URL-mode elicitation only to clients that declare it.** Under MCP 2025-11-25 a client lists the elicitation modes it supports, and a bare `elicitation` capability means form mode only. The MCP server now routes to the hosted connect page only when the client declares `elicitation.url`; clients that declare form mode only, or a bare capability, get the terminal `snaplii init` instruction instead of a request they would reject. Hosts that render the secure card are unaffected.
+- The secure connect card identifies itself to the host with MCP Apps protocol version `2026-01-26`, the published extension version.
+- The `snaplii_browse_tags` tool description no longer asks the agent to filter brands by flag emoji in their names. The gateway already filters the catalog to the account's country, and the skills say not to rely on those flags; the two texts now agree.
+
 ## [0.20.0] — 2026-10-17
 
 ### Added
