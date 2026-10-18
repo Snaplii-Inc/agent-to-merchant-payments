@@ -9,6 +9,7 @@
   "homepage": "https://www.snaplii.com/a2m/",
   "repository": "https://github.com/Snaplii-Inc/agent-to-merchant-payments",
   "license": "Apache-2.0",
+  "logo": "assets/logo.png",
   "keywords": [
     "Snaplii",
     "A2M",
