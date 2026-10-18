@@ -6,7 +6,7 @@ Agent-to-Merchant (A2M) payments by Snaplii Inc. A payment layer for AI agents: 
 
 | Component | Description |
 |---|---|
-| MCP server `snaplii` | Tools for browsing gift cards, quotes, purchases, balance, bill pay and transfers, started with `uvx snaplii-mcp==0.20.1` |
+| MCP server `snaplii` | Tools for browsing gift cards, quotes, purchases, balance, bill pay and transfers, started with `uvx snaplii-mcp==0.20.2` |
 | Skill `snaplii-cli` | Gift cards, balance, bill pay and P2P transfers |
 | Skill `snaplii-autopilot` | Buy a gift card, redeem it on the merchant site and place the order, when a browser tool such as Claude in Chrome is available |
 
@@ -26,7 +26,7 @@ The account country is fixed at login, so the catalog, currency and bill pay fol
 
 1. Download the Snaplii app for [iOS](https://apps.apple.com/app/snaplii/id1596924498) or [Android](https://play.google.com/store/apps/details?id=com.snaplii.app), register an account and load your Snaplii Cash balance.
 2. In the app, go to **More → Payment Methods → AI Payment Management → + New API Key**. Set a name, choose the scope (`PAY_READ`, `PAY_WRITE`, `P2P` or `ALL`) and set a hard spending limit. Copy the key: it is shown only once.
-3. Install the plugin in Claude Code. The MCP server starts with `uvx snaplii-mcp==0.20.1`, so [uv](https://docs.astral.sh/uv/getting-started/installation/) must be on your PATH.
+3. Install the plugin in Claude Code. The MCP server starts with `uvx snaplii-mcp==0.20.2`, so [uv](https://docs.astral.sh/uv/getting-started/installation/) must be on your PATH.
 
    ```
    /plugin install snaplii-a2m-payment --marketplace Snaplii-Inc/agent-to-merchant-payments
@@ -51,7 +51,7 @@ To let Claude place orders on merchant sites with the `snaplii-autopilot` skill,
 
 ## What this plugin runs, sends and fetches
 
-- **Runs** `uvx snaplii-mcp==0.20.1`, which downloads the open-source `snaplii-mcp` and `snaplii-cli` packages from PyPI and starts the MCP server on your machine.
+- **Runs** `uvx snaplii-mcp==0.20.2`, which downloads the open-source `snaplii-mcp` and `snaplii-cli` packages from PyPI and starts the MCP server on your machine.
 - **Sends** your requests (catalog, balance, quotes, purchases, bill payments, transfers) and the API key you enter only to the Snaplii API at `aipayment.snaplii.com` over HTTPS.
 - **Fetches** the latest release version from PyPI to tell you when an update is available; this request carries no account data.
 - **Stores** only the session token on your device, never the API key. A key you set as a plugin option stays in Claude Code's credential storage.

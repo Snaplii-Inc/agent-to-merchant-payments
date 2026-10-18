@@ -1,6 +1,6 @@
 {
   "name": "snaplii-a2m-payment",
-  "version": "0.20.1",
+  "version": "0.20.2",
   "description": "Shop and save with Snaplii, a separate, pre-funded account with user-controlled permissions and spending limits. AI agents buy gift cards across 500+ brands in Canada and the US with vouchers and up to 10% cashback, check the Snaplii Cash balance, pay bills (Canada only) and send P2P transfers, without seeing the user's card or bank credentials.",
   "author": {
     "name": "Snaplii Inc.",

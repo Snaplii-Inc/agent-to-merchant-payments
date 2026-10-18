@@ -3,7 +3,7 @@
     "snaplii": {
       "command": "uvx",
       "args": [
-        "snaplii-mcp@0.20.1"
+        "snaplii-mcp@0.20.2"
       ],
       "env": {
         "SNAPLII_API_KEY": "${SNAPLII_API_KEY:-}"

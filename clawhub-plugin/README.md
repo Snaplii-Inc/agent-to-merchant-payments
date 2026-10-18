@@ -21,7 +21,7 @@ Spending is **only** from the user's **prepaid Snaplii Cash balance** — no cre
 
 1. **Download the Snaplii App** ([iOS](https://apps.apple.com/app/snaplii/id1596924498) / [Android](https://play.google.com/store/apps/details?id=com.snaplii.app)) — register and load your Snaplii Cash balance.
 2. **Create an API Key** — in the app, go to **More → Payment Methods → AI Payment Management → + New API Key**. Set a name, scope (`PAY_READ` or `PAY_WRITE`), and spending limit. Copy the key — it is shown only once.
-3. **Have `uv` on your PATH.** The plugin starts the server with `uvx snaplii-mcp@0.20.1` (see `.mcp.json`), which fetches that release of the [`snaplii-mcp`](https://pypi.org/project/snaplii-mcp/) package on first run; there is nothing else to install. Each plugin release pins the server version it was tested with. [Install uv](https://docs.astral.sh/uv/getting-started/installation/).
+3. **Have `uv` on your PATH.** The plugin starts the server with `uvx snaplii-mcp@0.20.2` (see `.mcp.json`), which fetches that release of the [`snaplii-mcp`](https://pypi.org/project/snaplii-mcp/) package on first run; there is nothing else to install. Each plugin release pins the server version it was tested with. [Install uv](https://docs.astral.sh/uv/getting-started/installation/).
 
    **Not using this plugin?** Install the skill, CLI and MCP server from a release as the [project README](https://github.com/Snaplii-Inc/agent-to-merchant-payments#for-ai-agents-start-here) describes; its installer prints the exact registration for your client.
 
