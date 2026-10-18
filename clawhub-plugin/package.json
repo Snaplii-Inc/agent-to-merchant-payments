@@ -1,6 +1,6 @@
 {
   "name": "snaplii-a2m-mcp",
-  "version": "1.14.0",
+  "version": "1.14.1",
   "type": "module",
   "description": "Agent-to-Merchant payments — MCP tools for gift card browsing, purchasing with auto-applied vouchers, cashback balance, bill pay, and P2P transfers across 500+ brands.",
   "license": "Apache-2.0",

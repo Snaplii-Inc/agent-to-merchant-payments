@@ -1,6 +1,6 @@
 {
   "name": "snaplii-a2m-mcp",
   "displayName": "Snaplii AI Agent Cashback Payment MCP",
-  "version": "1.14.0",
+  "version": "1.14.1",
   "description": "Agent-to-Merchant payments — AI agents complete gift card transactions without checkout across 500+ brands via Snaplii."
 }
