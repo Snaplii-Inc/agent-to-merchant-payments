@@ -1,0 +1,36 @@
+{
+  "name": "snaplii-a2m-payment",
+  "version": "0.20.1",
+  "description": "Shop and save with Snaplii, a separate, pre-funded account with user-controlled permissions and spending limits. Claude buys gift cards across 500+ brands in Canada and the US with vouchers and up to 10% cashback, checks the Snaplii Cash balance, pays bills (Canada only) and sends P2P transfers, without seeing the user's card or bank credentials.",
+  "author": {
+    "name": "Snaplii Inc.",
+    "email": "info@snaplii.com",
+    "url": "https://www.snaplii.com/"
+  },
+  "homepage": "https://www.snaplii.com/a2m/",
+  "repository": "https://github.com/Snaplii-Inc/agent-to-merchant-payments",
+  "license": "Apache-2.0",
+  "keywords": [
+    "snaplii",
+    "payments",
+    "gift-cards",
+    "cashback",
+    "agentic-commerce",
+    "bill-pay"
+  ],
+  "icon": "./assets/logo.png",
+  "documentationUrl": "https://github.com/Snaplii-Inc/agent-to-merchant-payments/tree/main/claude-plugin#readme",
+  "supportUrl": "https://www.snaplii.com/help-center/",
+  "privacyPolicyUrl": "https://www.snaplii.com/privacy-policy/",
+  "termsOfServiceUrl": "https://www.snaplii.com/terms-and-conditions/",
+  "userConfig": {
+    "snaplii_api_key": {
+      "type": "string",
+      "title": "Snaplii API key",
+      "description": "Optional. The key from the Snaplii app (More > Payment Methods > AI Payment Management > + New API Key). When set, Claude connects with it directly. Leave empty to enter the key on a secure Snaplii page when Claude connects.",
+      "sensitive": true,
+      "required": false,
+      "default": ""
+    }
+  }
+}
