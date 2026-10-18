@@ -212,7 +212,7 @@ Use the CLI only when the Snaplii MCP server is disabled in Cursor's MCP setting
 **Install.** This plugin provides the MCP server and skills, not the CLI. If the CLI is not at `~/.snaplii-env/bin/snaplii` (Windows: `%USERPROFILE%\.snaplii-env\Scripts\snaplii.exe`), install it from the release this plugin belongs to:
 
 ```bash
-git clone --depth 1 --branch v0.20.0 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
+git clone --depth 1 --branch v0.20.1 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
 python3 snaplii-src/scripts/install.py --source ./snaplii-src --host cursor --cli-only
 ```
 

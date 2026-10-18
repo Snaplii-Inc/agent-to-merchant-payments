@@ -6,7 +6,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
-## [Unreleased]
+## [0.20.1] — 2026-10-18
 
 ### Added
 - **`snaplii_connect` accepts a host-supplied key.** When the host starts the MCP server with `SNAPLII_API_KEY` set (a Cursor plugin variable, for example), `snaplii_connect` logs in with it and returns `authenticated` with `key_source=host_variable`, so no card or terminal prompt appears. An empty value or an unexpanded `${...}` placeholder is ignored. A rejected key is reported with a hint to fix it in the host's plugin settings; the key itself is never echoed.

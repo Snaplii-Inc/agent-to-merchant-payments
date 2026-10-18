@@ -3,7 +3,7 @@
   "info": {
     "title": "Snaplii",
     "description": "Browse Snaplii gift card brands, check your Snaplii Cash balance, and get a price quote before buying. Spending comes only from your prepaid Snaplii Cash.",
-    "version": "0.20.0"
+    "version": "0.20.1"
   },
   "host": "aipayment.snaplii.com",
   "basePath": "/",

@@ -237,7 +237,7 @@ This skill needs BOTH:
 1. **Snaplii tools** — either the `snaplii` CLI (Bash; at `~/.snaplii-env/bin/snaplii`, Windows `%USERPROFILE%\.snaplii-env\Scripts\snaplii.exe`, off PATH, so call it by that path) or `snaplii_*` MCP tools. This skill folder does not contain the installer. If you have neither, install the CLI and the MCP server from the release this skill belongs to:
 
    ```bash
-   git clone --depth 1 --branch v0.20.0 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
+   git clone --depth 1 --branch v0.20.1 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
    python3 snaplii-src/scripts/install.py --source ./snaplii-src
    ```
 

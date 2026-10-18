@@ -6,7 +6,7 @@ Agent-to-Merchant (A2M) payments by Snaplii Inc. A payment layer for AI agents: 
 
 | Component | Description |
 |---|---|
-| MCP server `snaplii` | Tools for browsing gift cards, quotes, purchases, balance, bill pay and transfers, started with `uvx snaplii-mcp@0.20.0` |
+| MCP server `snaplii` | Tools for browsing gift cards, quotes, purchases, balance, bill pay and transfers, started with `uvx snaplii-mcp@0.20.1` |
 | Skill `snaplii-cli` | Gift cards, balance, bill pay and P2P transfers |
 | Skill `snaplii-autopilot` | Buy a gift card, redeem it on the merchant site and place the order, when a browser tool is available |
 
@@ -26,7 +26,7 @@ The account country is fixed at login, so the catalog, currency and bill pay fol
 
 1. Download the Snaplii app for [iOS](https://apps.apple.com/app/snaplii/id1596924498) or [Android](https://play.google.com/store/apps/details?id=com.snaplii.app), register an account and load your Snaplii Cash balance.
 2. In the app, go to **More → Payment Methods → AI Payment Management → + New API Key**. Set a name, choose the scope (`PAY_READ`, `PAY_WRITE`, `P2P` or `ALL`) and set a hard spending limit. Copy the key: it is shown only once.
-3. Install this plugin from the Cursor Marketplace. The MCP server starts with `uvx snaplii-mcp@0.20.0`, so [uv](https://docs.astral.sh/uv/getting-started/installation/) must be on your PATH.
+3. Install this plugin from the Cursor Marketplace. The MCP server starts with `uvx snaplii-mcp@0.20.1`, so [uv](https://docs.astral.sh/uv/getting-started/installation/) must be on your PATH.
 4. Connect in one of two ways. Either set the **Snaplii API key** in the plugin's variables (the Configure Plugin Variables form after install, or **Configure** on the plugin later); the agent then connects with it directly. Or leave it empty and ask the agent to connect Snaplii: it calls `snaplii_connect`, which returns a secure card that Cursor renders inside the chat (Cursor supports MCP Apps); you enter the key in that card, never in the chat. If no card appears, follow the `next_action` that `snaplii_config_show` reports: run `snaplii init` in your own terminal ([install the CLI](https://github.com/Snaplii-Inc/agent-to-merchant-payments#quick-start)), or paste the key for `snaplii_init`, which passes it through the model once.
 
 The MCP server uses the API key once to obtain a session token and does not store it; a key set as a plugin variable is kept by Cursor. Change the spending limit or revoke the key in the app at any time.
