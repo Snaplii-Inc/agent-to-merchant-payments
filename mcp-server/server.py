@@ -9,6 +9,7 @@ import re
 import sys
 import threading
 import uuid
+from importlib.metadata import PackageNotFoundError, version as _dist_version
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -62,7 +63,16 @@ def _server_instructions() -> str:
     return _SERVER_INSTRUCTIONS
 
 
-app = Server("snaplii", instructions=_server_instructions())
+def _package_version() -> str | None:
+    """serverInfo.version: this package's version, not the MCP SDK's default."""
+    try:
+        return _dist_version("snaplii-mcp")
+    except PackageNotFoundError:
+        return None
+
+
+app = Server("snaplii", version=_package_version(), instructions=_server_instructions(),
+             website_url="https://www.snaplii.com/a2m/")
 
 _DEFAULT_BASE_URL = "https://aipayment.snaplii.com"
 
@@ -404,6 +414,51 @@ def _instinct_tools(tools: list[types.Tool]) -> list[types.Tool]:
     return adapted
 
 
+# Tool hints for hosts (MCP ToolAnnotations): a display title, whether the tool only
+# reads, and for the others whether it can do something irreversible. Spending tools
+# are destructive: money that leaves the Snaplii Cash balance does not come back by
+# itself. Every tool is open-world: it calls the Snaplii service, and any first call may
+# also check PyPI for a newer release.
+def _hints(title: str, *, read_only: bool = False, destructive: bool = False,
+           idempotent: bool = False) -> types.ToolAnnotations:
+    if read_only:
+        return types.ToolAnnotations(title=title, readOnlyHint=True, openWorldHint=True)
+    return types.ToolAnnotations(
+        title=title, readOnlyHint=False, destructiveHint=destructive,
+        idempotentHint=idempotent, openWorldHint=True,
+    )
+
+
+TOOL_ANNOTATIONS: dict[str, types.ToolAnnotations] = {
+    "snaplii_config_show": _hints("Show Snaplii connection status", read_only=True),
+    "snaplii_init": _hints("Sign in with an API key"),
+    "snaplii_connect": _hints("Connect Snaplii account", idempotent=True),
+    "snaplii_submit_api_key": _hints("Submit API key from the connect card"),
+    "snaplii_balance": _hints("Get Snaplii Cash balance", read_only=True),
+    "snaplii_browse_tags": _hints("Browse gift card categories", read_only=True),
+    "snaplii_browse_brand": _hints("Get gift card brand details", read_only=True),
+    "snaplii_giftcard_list": _hints("List my gift cards", read_only=True),
+    "snaplii_giftcard_detail": _hints("Get gift card details", read_only=True),
+    "snaplii_quote": _hints("Quote a gift card purchase", read_only=True),
+    "snaplii_purchase": _hints("Buy a gift card", destructive=True),
+    "snaplii_cashback_calc": _hints("Find the best cashback card", read_only=True),
+    "snaplii_dashboard": _hints("Show spending dashboard", read_only=True),
+    "snaplii_billpay_payees": _hints("List bill payees", read_only=True),
+    "snaplii_billpay_detail": _hints("Get bill payee details", read_only=True),
+    "snaplii_billpay_history": _hints("List bill payment history", read_only=True),
+    "snaplii_billpay_save": _hints("Save bill payment details"),
+    "snaplii_billpay_vouchers": _hints("List bill payment vouchers", read_only=True),
+    "snaplii_billpay_quote": _hints("Quote a bill payment", read_only=True),
+    "snaplii_billpay_pay": _hints("Pay a bill", destructive=True),
+    "snaplii_billpay_result": _hints("Get bill payment result", read_only=True),
+    "snaplii_transfer_create": _hints("Send Snaplii Cash to a phone number", destructive=True),
+    "snaplii_transfer_cancel": _hints("Cancel a pending transfer", destructive=True, idempotent=True),
+    "snaplii_transfer_finish": _hints("Send a pending transfer now", destructive=True, idempotent=True),
+    "snaplii_transfer_status": _hints("Get transfer status", read_only=True),
+    "snaplii_transfer_list": _hints("List transfers", read_only=True),
+}
+
+
 @app.list_tools()
 async def list_tools() -> list[types.Tool]:
     tools = [
@@ -432,7 +487,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_submit_api_key",
-            description="Internal: receives the API key from the secure connect card and authenticates. Called by the card on submit — NOT by the model (the host hides this tool from the model and rejects model calls).",
+            description="Internal: receives the API key from the secure connect card and authenticates. Only the card calls this, on submit. Do not call it yourself: to connect, call snaplii_connect. Hosts that support app-only tools hide it from the model; others may still list it.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -701,6 +756,11 @@ async def list_tools() -> list[types.Tool]:
                 },
             },
         ),
+    ]
+    tools = [
+        tool.model_copy(update={"title": TOOL_ANNOTATIONS[tool.name].title,
+                                "annotations": TOOL_ANNOTATIONS[tool.name]})
+        for tool in tools
     ]
     return _instinct_tools(tools) if auth.detect_instinct() else tools
 
