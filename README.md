@@ -598,4 +598,4 @@ Snaplii is model-agnostic. Whether you build with Claude, ChatGPT, Gemini, Llama
 
 This project is licensed under the **Apache License 2.0**.
 
-See the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) for details.
+See [LICENSE](LICENSE) for the full text.

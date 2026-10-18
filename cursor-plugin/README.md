@@ -48,4 +48,4 @@ The MCP server uses the API key once to obtain a session token and does not stor
 
 ## License
 
-Apache License 2.0, as stated in the [project README](https://github.com/Snaplii-Inc/agent-to-merchant-payments#license).
+Apache License 2.0; see [LICENSE](https://github.com/Snaplii-Inc/agent-to-merchant-payments/blob/main/LICENSE).
