@@ -163,6 +163,21 @@ void NoSecrets(string body, FakeContext ctx, string what)
     Check(bare.templateId == "CT2" && bare.price == "25.00", "staging card pick: brand without a data wrapper");
 }
 
+// 13. Staging success needs the operation's own field; HTTP 200 with a business error fails.
+{
+    HttpResponseMessage ok200() => new HttpResponseMessage(HttpStatusCode.OK);
+    var businessError = "{\"rspMsgCd\":\"MCA2011\",\"rspMsg\":\"denied\"}";
+    Check(!Staging.Ok("quoteOrder", ok200(), businessError) && !Staging.Ok("getBalance", ok200(), businessError)
+          && !Staging.Ok("getCardBrand", ok200(), businessError) && !Staging.Ok("listCardBrands", ok200(), businessError),
+          "staging: HTTP 200 with a business error is not success");
+    Check(Staging.Ok("quoteOrder", ok200(), "{\"orderAmount\":\"10.00\",\"primaryPayAmount\":\"0.00\"}")
+          && Staging.Ok("getBalance", ok200(), "{\"data\":{\"balance\":\"808.61\"}}")
+          && Staging.Ok("listCardBrands", ok200(), "[{\"cardBrands\":[{\"cardBrandId\":\"CB1\"}]}]"),
+          "staging: real success shapes pass");
+    Check(!Staging.Ok("getBalance", new HttpResponseMessage(HttpStatusCode.Unauthorized), "{\"balance\":\"1\"}"),
+          "staging: HTTP error is not success");
+}
+
 Console.WriteLine(failures == 0 ? "ALL PASSED" : failures + " FAILED");
 return failures == 0 ? 0 : 1;
 
@@ -219,27 +234,44 @@ static class Staging
         }
         int bad = 0;
         var (r1, b1) = await Call(HttpMethod.Get, "/v2/card-brands?channel=HOME_PAGE");
-        var cats = JToken.Parse(b1) as JArray; bad += r1.IsSuccessStatusCode && cats != null ? 0 : 1;
+        var cats = JToken.Parse(b1) as JArray; bad += Ok("listCardBrands", r1, b1) ? 0 : 1;
         string brandId = cats?.SelectTokens("$..cardBrands[*].cardBrandId").Select(t => (string)t).FirstOrDefault();
         Console.WriteLine($"   categories {cats?.Count}, first brand {(brandId == null ? "none" : "found")}");
         var (r2, b2) = await Call(HttpMethod.Get, "/v2/card-brands/" + Uri.EscapeDataString(brandId ?? "none") + "?showDetail=true");
-        bad += r2.IsSuccessStatusCode ? 0 : 1;
+        bad += Ok("getCardBrand", r2, b2) ? 0 : 1;
         var (templateId, price) = PickCard(JToken.Parse(b2));
         Console.WriteLine($"   template {(templateId == null ? "none" : "found")}, priceStart {price}");
         var (r3, b3) = await Call(HttpMethod.Get, "/v2/balance");
-        bad += r3.IsSuccessStatusCode ? 0 : 1;
+        bad += Ok("getBalance", r3, b3) ? 0 : 1;
         Console.WriteLine($"   balance parses as JSON: {JToken.Parse(b3) is JObject}");
         if (brandId != null && templateId != null && price != null)
         {
             var quote = new JObject { ["orderInfo"] = new JObject { ["orderType"] = "GIFT_CARD", ["businessChannel"] = "APP", ["item"] = new JObject { ["itemId"] = brandId + "-" + templateId, ["price"] = price }, ["orderContext"] = new JObject { ["giftOrder"] = "false" } }, ["paymentContext"] = new JObject { ["specifiedPrimaryPaymentMethod"] = "SNAPLII_CREDIT", ["voucherOption"] = "BEST_FIT", ["cashbackOption"] = "USE" } };
             var (r4, b4) = await Call(HttpMethod.Post, "/v2/quote", quote.ToString());
-            bad += r4.IsSuccessStatusCode ? 0 : 1;
+            bad += Ok("quoteOrder", r4, b4) ? 0 : 1;
             var q = JToken.Parse(b4);
             Console.WriteLine($"   quote orderAmount {q.SelectToken("$..orderAmount")}, primaryPayAmount {q.SelectToken("$..primaryPayAmount")} (a quote charges nothing)");
         }
         else { bad++; Console.WriteLine("   quote skipped: no card found"); }
         Console.WriteLine(bad == 0 ? "STAGING: ALL 4 OPERATIONS OK" : $"STAGING: {bad} PROBLEM(S)");
         return bad == 0 ? 0 : 1;
+    }
+
+    // A gateway business error can arrive with HTTP 200, so success also needs the
+    // field each operation exists to return.
+    public static bool Ok(string operation, HttpResponseMessage response, string body)
+    {
+        if (!response.IsSuccessStatusCode) return false;
+        JToken json;
+        try { json = JToken.Parse(body); } catch (Exception) { return false; }
+        switch (operation)
+        {
+            case "listCardBrands": return json is JArray list && list.SelectTokens("$..cardBrandId").Any();
+            case "getCardBrand": return PickCard(json).templateId != null;
+            case "getBalance": return json.SelectToken("$..balance") is JValue v && v.Value != null;
+            case "quoteOrder": return json.SelectToken("$..orderAmount") is JValue a && a.Value != null;
+            default: return false;
+        }
     }
 
     // Brand details: the brand (bare or under "data") lists cards; each card has its
