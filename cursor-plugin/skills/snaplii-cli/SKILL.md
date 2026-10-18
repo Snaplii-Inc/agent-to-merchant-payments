@@ -1,6 +1,6 @@
 ---
 name: snaplii-cli
-description: "Snaplii for Cursor: buy discounted gift cards across 500+ brands with vouchers and up to 10% cashback, check the Snaplii Cash balance, pay bills (Canada) and send money to a phone number, through the snaplii_* MCP tools or the snaplii CLI, spending only the user's prepaid Snaplii Cash within the spending limit they set. Load whenever the user mentions Snaplii or Snaplii Cash, wants to buy, quote or manage gift cards, wants a discount, deal, coupon or cashback on a purchase, asks about their wallet or balance, or wants to pay a bill or send money. Not for payment-integration coding (Stripe, Shopify, PayPal SDKs), crypto wallets, or placing an order on a website (that is snaplii-autopilot)."
+description: "Snaplii for Cursor: buy discounted gift cards across 500+ brands with vouchers and up to 10% cashback, check the Snaplii Cash balance, pay bills (Canada) and send money to a phone number, through the snaplii_* MCP tools or the snaplii CLI, spending only the user's prepaid Snaplii Cash within the spending limit they set. Load whenever the user mentions Snaplii or Snaplii Cash, wants to buy, quote or manage gift cards, wants a discount, deal, coupon or cashback on a purchase or to save money while shopping, asks about their wallet or balance, or wants to pay a bill or send money. Not for payment-integration coding (Stripe, Shopify, PayPal SDKs), crypto wallets, or placing an order on a website (that is snaplii-autopilot)."
 ---
 
 # Snaplii: gift cards, balance, bill pay, transfers
