@@ -94,13 +94,13 @@ The third command builds the CLI and the MCP server into `~/.snaplii-env` and pr
 
 ## What you can do with Snaplii
 
-| Capability | What happens | Canada (CAD) | United States (USD) | Key scope |
-|---|---|---|---|---|
-| Buy gift cards | Browse 500+ brands, quote the exact price with vouchers and up to 10% cashback, buy, then read the redemption code | Yes | Yes | `PAY_WRITE` |
+| Capability | What happens                                                                                                                                          | Canada (CAD) | United States (USD) | Key scope |
+|---|-------------------------------------------------------------------------------------------------------------------------------------------------------|---|---|---|
+| Buy gift cards | Browse gift cards accepted at over 500,000 locations, quote the exact price with vouchers and up to 10% cashback, buy, then read the redemption code | Yes | Yes | `PAY_WRITE` |
 | Pay a merchant with the card | Redeem the code on the merchant or delivery site and place the order; needs a browser-automation tool and the `snaplii-autopilot` skill or MCP prompt | Yes | Yes | `PAY_WRITE` |
-| Check balance and cards | Spendable Snaplii Cash, owned cards, cashback estimates | Yes | Yes | `PAY_READ` |
-| Pay bills | Supported utility, telecom and other billers, paid from Snaplii Cash; once sent, a bill payment cannot be undone | Yes | No | `PAY_WRITE` |
-| Send money (P2P) | Send Snaplii Cash to another Snaplii user's phone number; cancellable for about 5 minutes, then it sends itself | Yes | Yes | `P2P` or `ALL` |
+| Check balance and cards | Spendable Snaplii Cash, owned cards, cashback estimates                                                                                               | Yes | Yes | `PAY_READ` |
+| Pay bills | Supported utility, telecom and other billers, paid from Snaplii Cash; once sent, a bill payment cannot be undone                                      | Yes | No | `PAY_WRITE` |
+| Send money (P2P) | Send Snaplii Cash to another Snaplii user's phone number; cancellable for about 5 minutes, then it sends itself                                       | Yes | Yes | `P2P` or `ALL` |
 
 The account country is fixed at login, so the catalog, currency and bill pay follow it; do not ask the user for a region.
 
