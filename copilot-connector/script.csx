@@ -17,6 +17,9 @@ public class Script : ScriptBase
 {
     private const string ApiKeyHeader = "X-Snaplii-Api-Key";
     private const string AgentId = "copilot-studio";
+    // The gateway's edge refuses requests without a User-Agent, and the platform sends none.
+    private const string UserAgent = "snaplii-connector (copilot-studio)";
+    private const string CatalogPath = "/v2/card-brands";
 
     public override async Task<HttpResponseMessage> ExecuteAsync()
     {
@@ -39,8 +42,9 @@ public class Script : ScriptBase
             {
                 ["agent_id"] = AgentId,
                 ["api_key"] = apiKey,
-            }.ToString(Formatting.None)),
+            }.ToString(Newtonsoft.Json.Formatting.None)),
         };
+        tokenRequest.Headers.UserAgent.ParseAdd(UserAgent);
         var tokenResponse = await this.Context.SendAsync(tokenRequest, this.CancellationToken).ConfigureAwait(false);
         var tokenBody = await ReadBody(tokenResponse).ConfigureAwait(false);
         var tokenJson = ParseJson(tokenBody) as JObject;
@@ -53,6 +57,10 @@ public class Script : ScriptBase
         }
 
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        if (!request.Headers.UserAgent.Any())
+        {
+            request.Headers.UserAgent.ParseAdd(UserAgent);
+        }
         var response = await this.Context.SendAsync(request, this.CancellationToken).ConfigureAwait(false);
         var body = await ReadBody(response).ConfigureAwait(false);
         if (body.Length == 0)
@@ -61,7 +69,7 @@ public class Script : ScriptBase
         }
         // Some gateway replies are JSON labeled text/plain, and some errors are plain text.
         // Label JSON as JSON, and wrap plain text so every reply parses as JSON.
-        var normalized = AsJson(response.StatusCode, body);
+        var normalized = AsJson(response.StatusCode, body, request.RequestUri.AbsolutePath == CatalogPath);
         foreach (var header in response.Headers)
         {
             normalized.Headers.TryAddWithoutValidation(header.Key, header.Value);
@@ -93,7 +101,7 @@ public class Script : ScriptBase
         {
             body["rspMsgCd"] = code;
         }
-        return new HttpResponseMessage(status) { Content = CreateJsonContent(body.ToString(Formatting.None)) };
+        return new HttpResponseMessage(status) { Content = CreateJsonContent(body.ToString(Newtonsoft.Json.Formatting.None)) };
     }
 
     private static async Task<string> ReadBody(HttpResponseMessage response)
@@ -117,17 +125,23 @@ public class Script : ScriptBase
         }
     }
 
-    private static HttpResponseMessage AsJson(HttpStatusCode status, string body)
+    // The platform validates a response with an array at the root as an object, so the
+    // catalog's category array is returned under "categories".
+    private static HttpResponseMessage AsJson(HttpStatusCode status, string body, bool isCatalog)
     {
         var json = ParseJson(body) ?? new JObject { ["message"] = body.Trim() };
-        return new HttpResponseMessage(status) { Content = CreateJsonContent(json.ToString(Formatting.None)) };
+        if (isCatalog && json is JArray)
+        {
+            json = new JObject { ["categories"] = json };
+        }
+        return new HttpResponseMessage(status) { Content = CreateJsonContent(json.ToString(Newtonsoft.Json.Formatting.None)) };
     }
 
     private static HttpResponseMessage Message(HttpStatusCode status, string message)
     {
         return new HttpResponseMessage(status)
         {
-            Content = CreateJsonContent(new JObject { ["message"] = message }.ToString(Formatting.None)),
+            Content = CreateJsonContent(new JObject { ["message"] = message }.ToString(Newtonsoft.Json.Formatting.None)),
         };
     }
 }

@@ -43,6 +43,11 @@ def test_definition_follows_the_certification_rules():
         # DefaultResponseHasSchema: only expected responses carry a schema.
         assert "schema" not in op["responses"]["default"], op["operationId"]
         assert "schema" in op["responses"]["200"], op["operationId"]
+        # The platform's response validation fails on an array at the root.
+        schema = op["responses"]["200"]["schema"]
+        if "$ref" in schema:
+            schema = DEFINITION["definitions"][schema["$ref"].rsplit("/", 1)[1]]
+        assert schema["type"] == "object", op["operationId"]
         for p in op.get("parameters", []):
             assert p.get("x-ms-summary") and p.get("description"), (op["operationId"], p["name"])
             if p.get("x-ms-visibility") == "internal" and "default" in p:
