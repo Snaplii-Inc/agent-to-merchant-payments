@@ -187,11 +187,18 @@
       "additionalProperties": true
     },
     "CatalogResponse": {
-      "description": "Categories with their brands, as an array.",
-      "type": "array",
-      "items": {
-        "$ref": "#/definitions/GatewayObject"
-      }
+      "description": "The categories shown on the Snaplii app home page.",
+      "type": "object",
+      "properties": {
+        "categories": {
+          "description": "Categories with their brands.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/GatewayObject"
+          }
+        }
+      },
+      "additionalProperties": true
     },
     "AmountValue": {
       "type": "string",

@@ -62,7 +62,16 @@ void NoSecrets(string body, FakeContext ctx, string what)
     var opReq = ctx.Sent[1];
     Check(opReq.Headers.Authorization?.ToString() == "Bearer " + Token, "success: operation carries the Bearer token");
     Check(!opReq.Headers.Contains("X-Snaplii-Api-Key"), "success: the key header is removed before forwarding");
+    Check(tokenReq.Headers.UserAgent.Any() && opReq.Headers.UserAgent.Any(), "success: both requests carry a User-Agent");
     NoSecrets(body, ctx, "success");
+}
+
+// 1b. A User-Agent already on the request is kept.
+{
+    var req = Op(HttpMethod.Get, "/v2/balance");
+    req.Headers.UserAgent.ParseAdd("host-agent/1.0");
+    var (_, _, ctx) = await Run(req, Gateway(r => Reply(HttpStatusCode.OK, "{\"balance\":\"1\"}", "application/json")));
+    Check(ctx.Sent[1].Headers.UserAgent.ToString() == "host-agent/1.0", "existing User-Agent: kept");
 }
 
 // 2. Quote: POST body and query string are forwarded unchanged.
@@ -143,7 +152,7 @@ void NoSecrets(string body, FakeContext ctx, string what)
     Check(resp.StatusCode == HttpStatusCode.NoContent && body == "", "empty body: passed through");
 }
 
-// 11. Array JSON (the brand list) stays an array; response headers survive.
+// 11. The category array comes back under "categories"; response headers survive.
 {
     var (resp, body, ctx) = await Run(Op(HttpMethod.Get, "/v2/card-brands?channel=HOME_PAGE"), Gateway(r =>
     {
@@ -151,7 +160,14 @@ void NoSecrets(string body, FakeContext ctx, string what)
         m.Headers.TryAddWithoutValidation("X-Request-Id", "rid-1");
         return m;
     }));
-    Check(JToken.Parse(body) is JArray && resp.Headers.GetValues("X-Request-Id").Single() == "rid-1", "array body kept, headers kept");
+    Check(JObject.Parse(body)["categories"] is JArray cats && (string)cats[0]["name"] == "Coffee" && resp.Headers.GetValues("X-Request-Id").Single() == "rid-1", "category array under categories, headers kept");
+}
+
+// 11b. A business error on the catalog is an object and is not wrapped.
+{
+    var (resp, body, ctx) = await Run(Op(HttpMethod.Get, "/v2/card-brands?channel=HOME_PAGE"),
+        Gateway(r => Reply(HttpStatusCode.OK, "{\"rspMsgCd\":\"MCA00001\"}", "application/json")));
+    Check((string)JObject.Parse(body)["rspMsgCd"] == "MCA00001" && JObject.Parse(body)["categories"] == null, "catalog error object: not wrapped");
 }
 
 // 12. The staging run picks a card the way the client reads brand details.
@@ -172,7 +188,7 @@ void NoSecrets(string body, FakeContext ctx, string what)
           "staging: HTTP 200 with a business error is not success");
     Check(Staging.Ok("quoteOrder", ok200(), "{\"orderAmount\":\"10.00\",\"primaryPayAmount\":\"0.00\"}")
           && Staging.Ok("getBalance", ok200(), "{\"data\":{\"balance\":\"808.61\"}}")
-          && Staging.Ok("listCardBrands", ok200(), "[{\"cardBrands\":[{\"cardBrandId\":\"CB1\"}]}]"),
+          && Staging.Ok("listCardBrands", ok200(), "{\"categories\":[{\"cardBrands\":[{\"cardBrandId\":\"CB1\"}]}]}"),
           "staging: real success shapes pass");
     Check(!Staging.Ok("getBalance", new HttpResponseMessage(HttpStatusCode.Unauthorized), "{\"balance\":\"1\"}"),
           "staging: HTTP error is not success");
@@ -234,7 +250,7 @@ static class Staging
         }
         int bad = 0;
         var (r1, b1) = await Call(HttpMethod.Get, "/v2/card-brands?channel=HOME_PAGE");
-        var cats = JToken.Parse(b1) as JArray; bad += Ok("listCardBrands", r1, b1) ? 0 : 1;
+        var cats = JToken.Parse(b1)["categories"] as JArray; bad += Ok("listCardBrands", r1, b1) ? 0 : 1;
         string brandId = cats?.SelectTokens("$..cardBrands[*].cardBrandId").Select(t => (string)t).FirstOrDefault();
         Console.WriteLine($"   categories {cats?.Count}, first brand {(brandId == null ? "none" : "found")}");
         var (r2, b2) = await Call(HttpMethod.Get, "/v2/card-brands/" + Uri.EscapeDataString(brandId ?? "none") + "?showDetail=true");
@@ -266,7 +282,7 @@ static class Staging
         try { json = JToken.Parse(body); } catch (Exception) { return false; }
         switch (operation)
         {
-            case "listCardBrands": return json is JArray list && list.SelectTokens("$..cardBrandId").Any();
+            case "listCardBrands": return (json as JObject)?["categories"] is JArray list && list.SelectTokens("$..cardBrandId").Any();
             case "getCardBrand": return PickCard(json).templateId != null;
             case "getBalance": return json.SelectToken("$..balance") is JValue v && v.Value != null;
             case "quoteOrder": return json.SelectToken("$..orderAmount") is JValue a && a.Value != null;

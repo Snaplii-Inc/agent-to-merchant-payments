@@ -178,9 +178,14 @@ def build(spec: dict) -> dict:
     for name in ("voucherOption", "cashbackOption", "specifiedVoucher"):
         payment[name]["x-ms-visibility"] = "advanced"
 
-    # The gateway returns the category list as an array.
-    defs["CatalogResponse"] = {"description": "Categories with their brands, as an array.",
-                               "type": "array", "items": {"$ref": "#/definitions/GatewayObject"}}
+    # The gateway returns the category list as an array; the script returns it under "categories"
+    # because the platform validates a response with an array at the root as an object.
+    defs["CatalogResponse"] = {"description": "The categories shown on the Snaplii app home page.",
+                               "type": "object",
+                               "properties": {"categories": {"description": "Categories with their brands.",
+                                                             "type": "array",
+                                                             "items": {"$ref": "#/definitions/GatewayObject"}}},
+                               "additionalProperties": True}
 
     return {
         "swagger": "2.0",
