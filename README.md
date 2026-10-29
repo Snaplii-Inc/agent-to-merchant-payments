@@ -96,7 +96,7 @@ The third command builds the CLI and the MCP server into `~/.snaplii-env` and pr
 
 | Capability | What happens                                                                                                                                          | Canada (CAD) | United States (USD) | Key scope |
 |---|-------------------------------------------------------------------------------------------------------------------------------------------------------|---|---|---|
-| Buy gift cards | Browse gift cards accepted at over 500,000 locations, quote the exact price with vouchers and up to 10% cashback, buy, then read the redemption code | Yes | Yes | `PAY_WRITE` |
+| Buy gift cards | Browse gift cards accepted at over 500,000 locations, quote the exact price with vouchers and up to 15% cashback, buy, then read the redemption code | Yes | Yes | `PAY_WRITE` |
 | Pay a merchant with the card | Redeem the code on the merchant or delivery site and place the order; needs a browser-automation tool and the `snaplii-autopilot` skill or MCP prompt | Yes | Yes | `PAY_WRITE` |
 | Check balance and cards | Spendable Snaplii Cash, owned cards, cashback estimates                                                                                               | Yes | Yes | `PAY_READ` |
 | Pay bills | Supported utility, telecom and other billers, paid from Snaplii Cash; once sent, a bill payment cannot be undone                                      | Yes | No | `PAY_WRITE` |
@@ -579,7 +579,7 @@ But payment remains a critical gap. Giving an agent direct access to a user's cr
 
 ### Three reasons to pay through Snaplii
 
-1. **Get more value from every payment.** At supported merchants, Snaplii can provide 5–10% additional discounts when users pay through Snaplii. An agent can find the right product, choose the right payment method, and complete the purchase at a better price. The payment layer becomes part of the shopping decision.
+1. **Get more value from every payment.** At supported merchants, Snaplii can provide 5–15% additional discounts when users pay through Snaplii. An agent can find the right product, choose the right payment method, and complete the purchase at a better price. The payment layer becomes part of the shopping decision.
 2. **Pay across multiple currencies.** Snaplii, the product, supports payment experiences across CAD, USD, RMB, USDT/USDC, and more. This integration currently exposes Canadian (CAD) and US (USD) accounts; see the capability table above for what an agent can execute today.
 3. **Keep your credit card away from the agent.** Don't give your AI agent your credit card. Give it a payment account with controlled authorization. The agent never sees or stores the user's card credentials; it only uses the payment capabilities Snaplii makes available. Combined with tokenized payment infrastructure and scoped authorization, this puts a security boundary between the user's financial credentials and the agent's actions.
 
