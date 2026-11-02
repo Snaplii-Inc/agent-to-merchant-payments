@@ -1,7 +1,6 @@
 """scripts/export_remote_tools.py exports the remote MCP tools agent-gateway serves from server.py."""
 import asyncio
 import importlib.util
-import os
 from pathlib import Path
 
 import server
@@ -116,6 +115,26 @@ def test_transfer_texts_do_not_poll_inside_the_cancel_window():
     assert "every few seconds" in _local()["snaplii_transfer_status"].description
 
 
+def test_transfer_create_only_rules_out_polling_inside_the_cancel_window():
+    # After snaplii_transfer_finish, or a cancel that returned CANCELLING, checking before auto_finish_at is right.
+    text = _remote_tools()["snaplii_transfer_create"]["description_remote"]
+    assert "before auto_finish_at" not in text
+    assert ("Do not poll a PENDING transfer inside its cancel window (see snaplii_transfer_status for when "
+            "to check).") in text
+
+
+def test_how_payment_works_applies_its_transfer_facts_only_when_the_transfer_tools_are_listed():
+    # Every grant reads the instructions; ACQUIRY and PURCHASE grants have no transfer tools.
+    qualifier = "Only when the snaplii_transfer_* tools are listed (the key allows transfers): "
+    payment = next(p for p in _remote()["instructions"].split("\n\n") if p.startswith("HOW PAYMENT WORKS:"))
+    before, sep, after = payment.partition(qualifier)
+    assert sep, payment
+    assert "transfer" not in before.lower()
+    assert "24-hour" in after and "5 minutes" in after
+    local = next(p for p in server._SERVER_INSTRUCTIONS.split("\n\n") if p.startswith("HOW PAYMENT WORKS:"))
+    assert qualifier not in local
+
+
 def test_p2p_paragraph_applies_only_when_the_transfer_tools_are_listed():
     paragraphs = _remote()["instructions"].split("\n\n")
     [p2p] = [p for p in paragraphs if p.startswith("P2P TRANSFERS")]
@@ -130,14 +149,6 @@ def test_remote_text_keeps_the_facts_the_agent_judges_by():
     instructions = _remote()["instructions"].lower()
     for needle in ("prepaid", "daily limit", "revocable", "cannot be undone", "5 minutes"):
         assert needle in instructions, needle
-
-
-def test_output_does_not_depend_on_the_instinct_environment(monkeypatch):
-    plain = export.render()
-    monkeypatch.setenv("INSTINCT_AGENT_ID", "agent-1")
-    assert export.render() == plain
-    # The export leaves the environment as it found it.
-    assert os.environ["INSTINCT_AGENT_ID"] == "agent-1"
 
 
 def test_main_writes_the_file_and_check_reports_drift(tmp_path, capsys):

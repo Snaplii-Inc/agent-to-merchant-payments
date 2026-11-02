@@ -9,7 +9,7 @@ description: "Agent-to-Merchant (A2M) payments — AI agents complete transactio
 
 ## How payment works
 
-This skill spends **only** from the user's **prepaid Snaplii Cash balance** — no credit card is ever charged. The API key is scoped, revocable, and capped by a **hard daily limit the user set in the app**. A gift-card purchase charges the balance as soon as it runs. A bill payment, once sent, cannot be undone. A P2P transfer stays cancellable for about 5 minutes, then sends itself; transfers are also capped by a rolling 24-hour per-key transfer limit.
+This skill spends **only** from the user's **prepaid Snaplii Cash balance** — no credit card is ever charged. The API key is scoped and revocable. The **hard daily limit the user set in the app** only covers gift cards; bill payments are not subject to it. A gift-card purchase charges the balance as soon as it runs. A bill payment, once sent, cannot be undone. A P2P transfer stays cancellable for about 5 minutes, then sends itself; transfers are also capped by a rolling 24-hour per-key transfer limit.
 
 **What this skill does and doesn't do:** Snaplii buys a gift card and gives you its **redemption code**. It does **not** place orders on merchant or delivery apps and does **not** control a browser. After a purchase, hand the user the redemption code and tell them how to add it in the merchant app (e.g. Uber Eats / DoorDash → Payment → Add Gift Card). The user completes the order themselves.
 

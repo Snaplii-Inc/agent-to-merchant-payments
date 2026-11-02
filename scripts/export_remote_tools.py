@@ -21,7 +21,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 from pathlib import Path
 import sys
 
@@ -51,11 +50,11 @@ _POLL_LIMIT = "stop after two minutes without a final status and tell the user t
 DESCRIPTION_EDITS = {
     "snaplii_transfer_create": [(
         "Only call snaplii_transfer_finish when the user explicitly asks to send now.",
-        "Only call snaplii_transfer_finish when the user explicitly asks to send now. Do not poll "
-        "snaplii_transfer_status before auto_finish_at. If this call returns no result at all (timeout, dropped "
-        "connection), first call snaplii_transfer_list without `status` (newest first) and look for a transfer "
-        "just created with the same recipient last 4 digits and amount, including ones already FINISHED, "
-        "before deciding whether to create it again.",
+        "Only call snaplii_transfer_finish when the user explicitly asks to send now. Do not poll a PENDING "
+        "transfer inside its cancel window (see snaplii_transfer_status for when to check). If this call returns "
+        "no result at all (timeout, dropped connection), first call snaplii_transfer_list without `status` "
+        "(newest first) and look for a transfer just created with the same recipient last 4 digits and amount, "
+        "including ones already FINISHED, before deciding whether to create it again.",
     )],
     "snaplii_transfer_cancel": [(
         "then poll snaplii_transfer_status.",
@@ -78,9 +77,10 @@ DESCRIPTION_EDITS = {
 # Paragraphs of the local instructions that the remote server leaves out, by their heading.
 DROPPED_PARAGRAPHS = ("UPDATES:", "CONNECT:")
 INSTRUCTION_EDITS = [
-    ("the API key is scoped, revocable, and capped by a hard daily limit the user set in the app.",
-     "the API key behind this connection is scoped and revocable, and its hard daily limit the user set in the app "
-     "caps gift-card purchases and, as a separate tally, transfers; bill payments are not subject to it."),
+    # Every grant reads this paragraph; only ALL grants have the transfer tools.
+    ("Transfers have a separate rolling 24-hour per-key transfer limit;",
+     "Only when the snaplii_transfer_* tools are listed (the key allows transfers): transfers have a separate "
+     "rolling 24-hour per-key transfer limit;"),
     ("P2P TRANSFERS: send Snaplii Cash to another person's phone number (the API key's scope must include P2P "
      "or ALL).",
      "P2P TRANSFERS (applies only when the snaplii_transfer_* tools are listed): send Snaplii Cash to another "
@@ -112,17 +112,8 @@ def remote_instructions() -> str:
     return _edit("\n\n".join(kept), INSTRUCTION_EDITS, "instructions")
 
 
-def _local_tools():
-    # An INSTINCT_ variable rewrites the local tool list; the export never depends on the machine it runs on.
-    saved = {name: os.environ.pop(name) for name in list(os.environ) if name.startswith("INSTINCT_")}
-    try:
-        return asyncio.run(server.list_tools())
-    finally:
-        os.environ.update(saved)
-
-
 def build() -> dict:
-    local = _local_tools()
+    local = asyncio.run(server.list_tools())
     unclassified = {t.name for t in local} - set(REQUIRED_KEY_SCOPE) - LOCAL_ONLY
     missing = set(REQUIRED_KEY_SCOPE) - {t.name for t in local}
     if unclassified or missing:

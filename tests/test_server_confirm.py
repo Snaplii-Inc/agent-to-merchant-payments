@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import server
+from snaplii.cards import APIKEY_CARD_HTML
 from snaplii.commands import billpay, purchase
 
 
@@ -156,6 +157,69 @@ def test_agent_text_states_the_facts_the_agent_judges_by():
         text = surfaces[name].lower()
         for needle in needles:
             assert needle in text, (name, needle)
+
+
+# Q49: the key's daily limit covers gift cards only; bill payments are not subject to it.
+BILL_NOT_CAPPED = "bill payments are not subject to it"
+# Wording that put every payment, bills included, under the key's daily limit.
+BILL_CAPPED = ("scoped, revocable, and capped by", "spending-capped", "capped by your daily limit",
+               "capped by the daily limit", "command runs, within the per-key daily limit", "chat. spending stays within the daily limit",
+               "daily spend is capped", "the daily limit is the boundary.", "is capped by the per-key limit",
+               "balance, capped by a hard per-key daily limit")
+
+
+class _ConnectClient:
+    def login(self, agent_id, api_key):
+        pass
+
+    def poll_connect_token(self, eid):
+        return {"access_token": "parked"}
+
+    def accept_connect_token(self, token_data):
+        return token_data
+
+    def auth_status(self):
+        return {}
+
+
+def _limit_surfaces(monkeypatch):
+    client = _ConnectClient()
+    monkeypatch.setattr(server, "_get_client", lambda: client)
+    monkeypatch.setattr(server, "_pending_connect_eid", None)
+    monkeypatch.setattr(server, "_elicit_failures", 0)
+    tools = {t.name: t.description for t in asyncio.run(server.list_tools())}
+    surfaces = {
+        "server instructions": server._SERVER_INSTRUCTIONS,
+        "autopilot prompt": server._AUTOPILOT_WORKFLOW,
+        "init tool": tools["snaplii_init"],
+        "billpay_pay tool": tools["snaplii_billpay_pay"],
+        "connect notice": server._authenticate("snp_sk_live_K")["notice"],
+        "secure page connect": server._finish_elicit_connect(client, {})["message"],
+        "instinct connect": asyncio.run(server._instinct_connect({"eid": "a" * 32}))["message"],
+        "connect card": APIKEY_CARD_HTML,
+        "cli billpay pay help": billpay.pay_cmd.help,
+    }
+    for relative in ("README.md", "snaplii-cli/README.md", "claude-desktop/PROJECT_INSTRUCTIONS.md",
+                     "clawhub-plugin/README.md", "skills/snaplii-cli.md", "skills/snaplii-autopilot.md",
+                     "clawhub-publish/SKILL.md", "clawhub-autopilot/SKILL.md",
+                     "claude-plugin/skills/snaplii-cli/SKILL.md", "claude-plugin/skills/snaplii-autopilot/SKILL.md",
+                     "cursor-plugin/skills/snaplii-cli/SKILL.md", "cursor-plugin/skills/snaplii-autopilot/SKILL.md"):
+        surfaces[relative] = (ROOT / relative).read_text()
+    return surfaces
+
+
+def _plain(text):
+    return " ".join(text.replace("**", "").replace("<b>", "").replace("</b>", "").lower().split())
+
+
+def test_no_local_text_puts_bill_payments_under_the_key_daily_limit(monkeypatch):
+    for name, text in _limit_surfaces(monkeypatch).items():
+        plain = _plain(text)
+        assert BILL_NOT_CAPPED in plain, name
+        for phrase in BILL_CAPPED:
+            assert phrase not in plain, (name, phrase)
+    # Transfers have a limit of their own.
+    assert "separate rolling 24-hour per-key transfer limit" in server._SERVER_INSTRUCTIONS
 
 
 def test_autopilot_keeps_its_final_order_gate():

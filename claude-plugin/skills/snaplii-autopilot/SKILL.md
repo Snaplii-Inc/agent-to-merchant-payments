@@ -20,7 +20,7 @@ If no browser tool is available, don't stop and don't pretend to place the order
 
 ## Safety — read before acting
 
-- Snaplii spending is from the user's **prepaid Snaplii Cash balance**, capped by a hard per-key daily limit set in the app. No credit card is charged. `snaplii_purchase` charges the balance as soon as it runs.
+- Snaplii spending is from the user's **prepaid Snaplii Cash balance**. The hard per-key daily limit set in the app only covers gift cards; bill payments are not subject to it. No credit card is charged. `snaplii_purchase` charges the balance as soon as it runs.
 - The final order/pay button on the merchant site is clicked only after the user's explicit "yes" to the full order summary (step 3.6).
 - In this flow, redemption codes and PINs go into the merchant site, not into the chat. The `snaplii-cli` rule that reports the code of a just-bought card does not apply while the browser step is live; it applies again only if that step fails and the user has to redeem the code themselves.
 - Keep internal IDs (brandId, templateId, cardNo) out of user-facing text.
