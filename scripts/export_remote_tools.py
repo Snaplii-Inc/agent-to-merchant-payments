@@ -10,8 +10,11 @@ server (snaplii_config_show, snaplii_connect, update notices, the autopilot prom
 note) and set the remote polling cadence for transfers. Each edit must match server.py exactly
 once, so a local change to an edited sentence stops the export until the edit is updated.
 
-Python keeps its own list; when server.py's tools change, rerun this and commit the output to
-agent-gateway src/main/resources/mcp/tools.json. --check fails when --out is out of date.
+server.py does not read the output. When its tools change, rerun this and commit the output to
+agent-gateway src/main/resources/mcp/tools.json. --check fails when --out is out of date. Run from
+the repo root (server.py needs the mcp package):
+
+    uv run --python 3.12 --with "./snaplii-cli[dev]" --with ./mcp-server python scripts/export_remote_tools.py
 """
 from __future__ import annotations
 
@@ -76,8 +79,8 @@ DESCRIPTION_EDITS = {
 DROPPED_PARAGRAPHS = ("UPDATES:", "CONNECT:")
 INSTRUCTION_EDITS = [
     ("the API key is scoped, revocable, and capped by a hard daily limit the user set in the app.",
-     "the API key behind this connection is scoped and revocable; the hard daily limit the user set in the app "
-     "only covers gift-card purchases, and bill payments are not subject to it."),
+     "the API key behind this connection is scoped and revocable, and its hard daily limit the user set in the app "
+     "caps gift-card purchases and, as a separate tally, transfers; bill payments are not subject to it."),
     ("P2P TRANSFERS: send Snaplii Cash to another person's phone number (the API key's scope must include P2P "
      "or ALL).",
      "P2P TRANSFERS (applies only when the snaplii_transfer_* tools are listed): send Snaplii Cash to another "
