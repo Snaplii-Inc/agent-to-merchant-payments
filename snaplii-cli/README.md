@@ -95,7 +95,7 @@ snaplii transfer list
 
 ## Safety model
 
-Spending draws only from the prepaid Snaplii Cash balance and is capped by the per-key limit set in the app. Keys are scoped and can be revoked at any time from the app.
+Spending draws only from the prepaid Snaplii Cash balance. The per-key daily limit set in the app only covers gift cards; bill payments are not subject to it, and transfers have a separate rolling 24-hour per-key limit. Keys are scoped and can be revoked at any time from the app.
 
 ## More
 

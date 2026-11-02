@@ -1,6 +1,6 @@
 # Snaplii A2M Payment for Cursor
 
-Agent-to-Merchant (A2M) payments by Snaplii Inc. A payment layer for AI agents: pay in the real world without handing the agent a credit card. The agent buys gift cards across 500+ brands with vouchers and up to 10% cashback, checks the Snaplii Cash balance, pays bills and sends P2P transfers. It spends only the prepaid Snaplii Cash the user set aside, within a per-key spending limit the user chose, and never sees the user's card or bank credentials.
+Agent-to-Merchant (A2M) payments by Snaplii Inc. A payment layer for AI agents: pay in the real world without handing the agent a credit card. The agent buys gift cards across 500+ brands with vouchers and up to 10% cashback, checks the Snaplii Cash balance, pays bills and sends P2P transfers. It spends only the prepaid Snaplii Cash the user set aside and never sees the user's card or bank credentials. Gift-card purchases stay within a per-key daily limit the user chose; bill payments are not subject to it, and transfers have a separate rolling 24-hour per-key limit.
 
 ## What's included
 

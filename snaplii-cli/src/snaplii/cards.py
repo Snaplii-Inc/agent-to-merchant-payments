@@ -176,7 +176,7 @@ APIKEY_CARD_HTML = r"""<!DOCTYPE html>
              stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
       </div>
       <div class="stitle">Connected</div>
-      <div class="ssub">You're connected — just continue in chat. Spending stays within the daily limit <b>you</b> set in the app, so I won't ask you to confirm each purchase.</div>
+      <div class="ssub">You're connected — just continue in chat. Gift-card spending stays within the daily limit <b>you</b> set in the app (bill payments are not subject to it; transfers have a separate rolling 24-hour limit), so I won't ask you to confirm each purchase.</div>
     </div>
 
     <div class="foot">
@@ -184,8 +184,8 @@ APIKEY_CARD_HTML = r"""<!DOCTYPE html>
            stroke-linecap="round" stroke-linejoin="round">
         <rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>
       </svg>
-      <span>Used once to get a short-lived token, never stored. Daily spend is
-        capped by the limit you set when creating the key.</span>
+      <span>Used once to get a short-lived token, never stored. Daily gift-card
+        spend is capped by the limit you set when creating the key.</span>
     </div>
   </div>
 

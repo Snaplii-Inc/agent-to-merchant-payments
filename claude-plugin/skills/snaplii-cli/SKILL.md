@@ -1,13 +1,13 @@
 ---
 name: snaplii-cli
-description: "Snaplii for Claude: buy discounted gift cards across 500+ brands with vouchers and up to 10% cashback, check the Snaplii Cash balance, pay bills (Canada) and send money to a phone number, through the snaplii_* MCP tools or the snaplii CLI, spending only the user's prepaid Snaplii Cash within the spending limit they set. Load whenever the user mentions Snaplii or Snaplii Cash, wants to buy, quote or manage gift cards, wants a discount, deal, coupon or cashback on a purchase or to save money while shopping, asks about their wallet or balance, or wants to pay a bill or send money. Not for payment-integration coding (Stripe, Shopify, PayPal SDKs), crypto wallets, or placing an order on a website (that is snaplii-autopilot)."
+description: "Snaplii for Claude: buy discounted gift cards across 500+ brands with vouchers and up to 10% cashback, check the Snaplii Cash balance, pay bills (Canada) and send money to a phone number, through the snaplii_* MCP tools or the snaplii CLI, spending only the user's prepaid Snaplii Cash (gift cards within the daily limit they set). Load whenever the user mentions Snaplii or Snaplii Cash, wants to buy, quote or manage gift cards, wants a discount, deal, coupon or cashback on a purchase or to save money while shopping, asks about their wallet or balance, or wants to pay a bill or send money. Not for payment-integration coding (Stripe, Shopify, PayPal SDKs), crypto wallets, or placing an order on a website (that is snaplii-autopilot)."
 ---
 
 # Snaplii: gift cards, balance, bill pay, transfers
 
 ## How payment works
 
-This skill spends **only** from the user's **prepaid Snaplii Cash balance**; no credit card is ever charged. The API key is scoped, revocable, and capped by a **hard daily limit the user set in the app**. A gift-card purchase charges the balance as soon as it runs. A bill payment, once sent, cannot be undone. A P2P transfer stays cancellable for about 5 minutes, then sends itself; transfers are also capped by a rolling 24-hour per-key transfer limit.
+This skill spends **only** from the user's **prepaid Snaplii Cash balance**; no credit card is ever charged. The API key is scoped and revocable. The **hard daily limit the user set in the app** only covers gift cards; bill payments are not subject to it. A gift-card purchase charges the balance as soon as it runs. A bill payment, once sent, cannot be undone. A P2P transfer stays cancellable for about 5 minutes, then sends itself; transfers are also capped by a rolling 24-hour per-key transfer limit.
 
 **Scope.** Snaplii buys a gift card and gives you its **redemption code**. On its own this skill does not place orders on merchant or delivery apps: after a purchase, hand the user the code and tell them how to add it in the merchant app (e.g. Uber Eats / DoorDash → Payment → Add Gift Card). When the user asks you to place the order itself, the `snaplii-autopilot` skill adds the browser step.
 

@@ -6,7 +6,7 @@
 
 ## Safe by design
 
-Spending is **only** from the user's **prepaid Snaplii Cash balance** — no credit card is charged, and the API key is scoped, revocable, and capped by a hard daily limit set in the app. A gift-card purchase charges the balance as soon as it runs. A bill payment, once sent, cannot be undone. A transfer stays cancellable for a ~5-minute window, then sends itself.
+Spending is **only** from the user's **prepaid Snaplii Cash balance** — no credit card is charged, and the API key is scoped and revocable. The hard daily limit set in the app only covers gift cards; bill payments are not subject to it, and transfers have a separate rolling 24-hour per-key limit. A gift-card purchase charges the balance as soon as it runs. A bill payment, once sent, cannot be undone. A transfer stays cancellable for a ~5-minute window, then sends itself.
 
 ## Two ways to use it
 
