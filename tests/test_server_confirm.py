@@ -1,5 +1,5 @@
 """Purchase / bill-pay charge directly with no confirmation token; the per-key daily
-limit set in the app is enforced server-side by the gateway."""
+limit set in the app covers gift cards only and is enforced server-side by the gateway."""
 
 import asyncio
 import json
@@ -163,9 +163,9 @@ def test_agent_text_states_the_facts_the_agent_judges_by():
 BILL_NOT_CAPPED = "bill payments are not subject to it"
 # Wording that put every payment, bills included, under the key's daily limit.
 BILL_CAPPED = ("scoped, revocable, and capped by", "spending-capped", "capped by your daily limit",
-               "capped by the daily limit", "command runs, within the per-key daily limit", "chat. spending stays within the daily limit",
-               "daily spend is capped", "the daily limit is the boundary.", "is capped by the per-key limit",
-               "balance, capped by a hard per-key daily limit")
+               "capped by the daily limit", "command runs, within the per-key daily limit",
+               "chat. spending stays within the daily limit", "daily spend is capped", "the daily limit is the boundary.",
+               "is capped by the per-key limit", "balance, capped by a hard per-key daily limit")
 
 
 class _ConnectClient:
