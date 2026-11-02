@@ -154,9 +154,9 @@ def pay_cmd(ctx, pay_code, price, voucher_id):
     The charge happens as soon as the command runs. The per-key daily limit
     set in the app only covers gift cards; bill payments are not subject to it.
     Once sent, a bill payment cannot be undone. If this fails or times out
-    ambiguously, check status with
-    `snaplii billpay result --payment-no <paymentNo>` before retrying — don't
-    re-pay blindly.
+    ambiguously, don't pay again: if a paymentNo came back, check it with
+    `snaplii billpay result --payment-no <paymentNo>`; if none did, check the
+    bill in the Snaplii app.
     """
     client: GatewayClient = ctx.obj["client"]
     resp = client.billpay_create_and_pay(

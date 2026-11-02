@@ -680,7 +680,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_billpay_pay",
-            description="Pay the bill from Snaplii Cash balance (same as gift cards — no PayPal redirect needed). Completes directly when balance covers the bill. The per-key daily limit set in the app only covers gift cards; bill payments are not subject to it. Once sent, a bill payment cannot be undone, and one sent to the wrong biller or account cannot be recovered. If a pay call fails or times out ambiguously, poll snaplii_billpay_result with the returned paymentNo before retrying — do NOT re-pay blindly.",
+            description="Pay the bill from Snaplii Cash balance. Completes directly, with no PayPal redirect, when the balance covers the bill. The per-key daily limit set in the app only covers gift cards; bill payments are not subject to it. Once sent, a bill payment cannot be undone, and one sent to the wrong biller or account cannot be recovered. If a pay call fails or times out ambiguously, do NOT pay again: if the answer carries a paymentNo, check it with snaplii_billpay_result; if it does not, ask the user to check the bill in the Snaplii app and stop. snaplii_billpay_history cannot tell whether a payment went through.",
             inputSchema={
                 "type": "object",
                 "properties": {
