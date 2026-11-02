@@ -9,7 +9,7 @@
     {
       "name": "snaplii-a2m-payment",
       "source": "./claude-plugin",
-      "description": "Buy discounted gift cards with cashback, check the Snaplii Cash balance, pay bills and send money, spending only prepaid Snaplii Cash within the user's limit."
+      "description": "Buy discounted gift cards with cashback, check the Snaplii Cash balance, pay bills and send money, spending only prepaid Snaplii Cash, with gift cards inside the per-key daily limit the user set."
     }
   ]
 }
