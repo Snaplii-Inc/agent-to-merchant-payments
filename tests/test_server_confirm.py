@@ -165,7 +165,8 @@ BILL_NOT_CAPPED = "bill payments are not subject to it"
 BILL_CAPPED = ("scoped, revocable, and capped by", "spending-capped", "capped by your daily limit",
                "capped by the daily limit", "command runs, within the per-key daily limit",
                "chat. spending stays within the daily limit", "daily spend is capped", "the daily limit is the boundary.",
-               "is capped by the per-key limit", "balance, capped by a hard per-key daily limit")
+               "is capped by the per-key limit", "balance, capped by a hard per-key daily limit",
+               "within the spending limit they set", "within a per-key spending limit")
 
 
 class _ConnectClient:
@@ -203,7 +204,8 @@ def _limit_surfaces(monkeypatch):
                      "clawhub-plugin/README.md", "skills/snaplii-cli.md", "skills/snaplii-autopilot.md",
                      "clawhub-publish/SKILL.md", "clawhub-autopilot/SKILL.md",
                      "claude-plugin/skills/snaplii-cli/SKILL.md", "claude-plugin/skills/snaplii-autopilot/SKILL.md",
-                     "cursor-plugin/skills/snaplii-cli/SKILL.md", "cursor-plugin/skills/snaplii-autopilot/SKILL.md"):
+                     "cursor-plugin/skills/snaplii-cli/SKILL.md", "cursor-plugin/skills/snaplii-autopilot/SKILL.md",
+                     "claude-plugin/README.md", "cursor-plugin/README.md"):
         surfaces[relative] = (ROOT / relative).read_text()
     return surfaces
 

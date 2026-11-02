@@ -2,7 +2,7 @@
 
 > A payment layer for AI agents: pay in the real world without handing the agent a credit card.
 
-Snaplii gives an AI agent a prepaid, scoped, revocable payment account. The agent spends only the **Snaplii Cash** the user set aside, within a per-key spending limit the user chose, and never sees the user's card or bank credentials. It ships as an **Agent Skill**, an **MCP server**, and a **Python CLI**, so it works with any agent that can read a `SKILL.md`, call MCP tools, or run a command.
+Snaplii gives an AI agent a prepaid, scoped, revocable payment account. The agent spends only the **Snaplii Cash** the user set aside, keeps gift-card purchases within a per-key daily limit the user chose (bill payments are not subject to it), and never sees the user's card or bank credentials. It ships as an **Agent Skill**, an **MCP server**, and a **Python CLI**, so it works with any agent that can read a `SKILL.md`, call MCP tools, or run a command.
 
 ---
 
