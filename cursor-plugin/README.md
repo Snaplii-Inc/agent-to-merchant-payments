@@ -1,6 +1,6 @@
 # Snaplii A2M Payment for Cursor
 
-Agent-to-Merchant (A2M) payments by Snaplii Inc. A payment layer for AI agents: pay in the real world without handing the agent a credit card. The agent buys gift cards across 500+ brands with vouchers and up to 10% cashback, checks the Snaplii Cash balance, pays bills and sends P2P transfers. It spends only the prepaid Snaplii Cash the user set aside and never sees the user's card or bank credentials. Gift-card purchases stay within a per-key daily limit the user chose; bill payments are not subject to it, and transfers have a separate rolling 24-hour per-key limit.
+Agent-to-Merchant (A2M) payments by Snaplii Inc. A payment layer for AI agents: pay in the real world without handing the agent a credit card. The agent buys gift cards accepted at over 500,000 locations with vouchers and up to 15% cashback, checks the Snaplii Cash balance, pays bills and sends P2P transfers. It spends only the prepaid Snaplii Cash the user set aside and never sees the user's card or bank credentials. Gift-card purchases stay within a per-key daily limit the user chose; bill payments are not subject to it, and transfers have a separate rolling 24-hour per-key limit.
 
 ## What's included
 
@@ -14,7 +14,7 @@ Agent-to-Merchant (A2M) payments by Snaplii Inc. A payment layer for AI agents: 
 
 | Capability | What happens | Canada (CAD) | United States (USD) | Key scope |
 |---|---|---|---|---|
-| Buy gift cards | Browse 500+ brands, quote the exact price with vouchers and up to 10% cashback, buy, then read the redemption code | Yes | Yes | `PAY_WRITE` |
+| Buy gift cards | Browse gift cards accepted at over 500,000 locations, quote the exact price with vouchers and up to 15% cashback, buy, then read the redemption code | Yes | Yes | `PAY_WRITE` |
 | Pay a merchant with the card | Redeem the code on the merchant or delivery site and place the order; needs a browser-automation tool and the `snaplii-autopilot` skill | Yes | Yes | `PAY_WRITE` |
 | Check balance and cards | Spendable Snaplii Cash, owned cards, cashback estimates | Yes | Yes | `PAY_READ` |
 | Pay bills | Supported utility, telecom and other billers, paid from Snaplii Cash; once sent, a bill payment cannot be undone | Yes | No | `PAY_WRITE` |
