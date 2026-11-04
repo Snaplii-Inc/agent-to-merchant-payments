@@ -21,6 +21,7 @@ If no browser tool is available, for example when an organization has turned bro
 ## Safety — read before acting
 
 - Snaplii spending is from the user's **prepaid Snaplii Cash balance**. The hard per-key daily limit set in the app only covers gift cards; bill payments are not subject to it. No credit card is charged. `snaplii_purchase` charges the balance as soon as it runs.
+- `snaplii_purchase` runs only after the user's explicit "yes" to the quote breakdown (step 2). Show the breakdown together with the fact that the card is bought and charged first and the merchant order comes after it, so if the order is not placed the card stays in their Snaplii account for later, before asking.
 - The final order/pay button on the merchant site is clicked only after the user's explicit "yes" to the full order summary (step 3.6).
 - In this flow, redemption codes and PINs go into the merchant site, not into the chat. The `snaplii-cli` rule that reports the code of a just-bought card does not apply while the browser step is live; it applies again only if that step fails and the user has to redeem the code themselves.
 - Keep internal IDs (brandId, templateId, cardNo) out of user-facing text.
@@ -41,7 +42,7 @@ The `snaplii-cli` skill's Step 4 has the full purchase rules (voucher and cashba
 
 ### 2. Buy
 
-Show the quote breakdown, then `snaplii_purchase(item_id, price)` with the same `item_id`, `price` and any voucher/cashback options you quoted. The purchase result does not carry the code; fetch it:
+Show the quote breakdown (brand, card amount, vouchers, Snaplii Cash used, `you_pay`) and wait for the user's explicit "yes" to buy the card. Then call `snaplii_purchase(item_id, price)` with the same `item_id`, `price` and any voucher/cashback options you quoted. The purchase result does not carry the code; fetch it:
 
 - `snaplii_giftcard_list` → find the new card. If it is not there yet, wait about 10 seconds and list again (page through with `page` if the user owns many cards).
 - `snaplii_giftcard_detail(card_no)` → the code. Fields sit under `data`; use `cardCode` if present, otherwise `pin` (DoorDash, for example, uses `pin`).
@@ -64,6 +65,6 @@ Confirm the order went through by reading the confirmation page; report the orde
 - Cloudflare / bot challenge or login wall blocks the browser → don't fight it; tell the user, hand them the redemption code, and let them finish in the app.
 - Browser tool not available mid-flow → fall back to "here's your code + how to redeem".
 - The user declines at the order summary → place nothing. The gift card is already bought and sits in their Snaplii account (and on the platform's payment methods once added); say so, and that nothing further is charged.
-- `invalid_item_id`, `amount_out_of_range`, a gateway `MCAP2107`, or `item_check_unavailable` on quote or purchase → nothing was charged. For the first three, rethink the parameters as the `retry_hint` says (browse the brand again, copy the `item_id` verbatim, use an allowed amount) and retry once; after `item_check_unavailable`, retry the same call once unchanged. If refused again, stop and tell the user which brand and amount could not be bought.
+- `invalid_item_id`, `amount_out_of_range`, a gateway `MCAP2107`, or `item_check_unavailable` on quote or purchase → nothing was charged. For the first three, rethink the parameters as the `retry_hint` says (browse the brand again, copy the `item_id` verbatim, use an allowed amount) and retry once; if the new quote's brand, card amount or `you_pay` differs from the one the user said yes to, show it and wait for their "yes" to the new quote before buying. After `item_check_unavailable`, retry the same call once unchanged. If refused again, stop and tell the user which brand and amount could not be bought.
 - `outcome: indeterminate` on `snaplii_purchase` (a timeout, a lost connection, a `5xx` other than `MCAP2107`, or an unreadable reply) → the purchase may have gone through. Never retry it: check `snaplii_giftcard_list` (every page) for the new card first, and if you cannot tell, stop and report it.
 - Any other purchase failure → surface the real error (don't retry automatically).
