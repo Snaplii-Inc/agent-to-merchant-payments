@@ -249,15 +249,16 @@ This skill needs BOTH:
 If you lack a browser-control capability when the user wants a full order placed, resolve it smoothly, in this order:
 
 1. **Offer to set it up.** In Claude Desktop, browser control is the **Claude Chrome connector**. Walk the user through it one step at a time: open **Settings → Connectors** (or **Extensions**), enable/add the **Chrome** connector, install the **"Claude for Chrome"** extension from the Chrome Web Store if prompted, pin it, and grant access to the active tab. Then retry the order. Keep it short and encouraging.
-2. **Zero-setup fallback.** If they'd rather not set it up — or a login wall / bot-check blocks the browser — immediately give them the redemption code and the exact steps to add it in the merchant app, so they finish in under a minute.
+2. **Zero-setup fallback.** If they'd rather not set it up, give them the redemption code and the exact steps to add it in the merchant app, so they finish in under a minute; choosing this fallback is their request to see the code. If a login wall or bot check blocks the browser later, follow [Failure handling](#failure-handling).
 
 Always leave the user with a working option. Never return a raw error or say "I can't do that." Never claim to have placed an order you didn't.
 
 ## Safety — read before acting
 
 - Snaplii spending is from the user's **prepaid Snaplii Cash balance**. The hard per-key daily limit set in the app only covers gift cards; bill payments are not subject to it. No credit card is charged. The gift-card `purchase` charges the balance as soon as it runs.
+- **Before `purchase`**, show the quote breakdown (brand, card amount, vouchers, Snaplii Cash used, `you_pay`) and wait for the user's explicit "yes" to buy the card. Say that the card is bought and charged first and the merchant order comes after it, so if the order is not placed the card stays in their Snaplii account for later. Never run `purchase` without that "yes".
 - **Before the final "Place Order" / pay button** on the merchant/delivery site, show the full order summary (items, address, tip, total) and wait for the user's explicit "yes". Never click the final order/pay button without it.
-- Treat redemption codes/PINs as secret: enter them into the merchant site, but don't post them back into chat unless the user asks.
+- Treat redemption codes/PINs as secret: in this flow they go into the merchant site, not into the chat. Show one in chat only when the user will redeem it themselves and has asked for it or agreed to see it (the zero-setup fallback above and [Failure handling](#failure-handling)).
 
 ## Full Flow
 
@@ -273,7 +274,7 @@ Follow the base flow: `browse` (region is automatic from the account — no flag
 If `you_pay` > 0 (Snaplii Cash doesn't cover it), tell the user to top up in the app and stop — do not proceed.
 
 ### 2. Buy
-Show the quote breakdown, then `purchase`. Then retrieve the card you just bought:
+Show the quote breakdown and wait for the user's explicit "yes" to buy the card (see Safety). Then `purchase`, and retrieve the card you just bought:
 - `giftcard list` → find the new card → `giftcard detail --card-no ...` to get the redemption code.
 - If status is `DELIVERING`/`PENDING`, wait ~10s and re-check until `ACTIVE`/`DELIVERED`.
 - Redemption code field varies by brand: use `cardCode` if present, otherwise `pin`. (DoorDash etc. use `pin`.) The detail response nests fields under `data`.
@@ -290,8 +291,9 @@ Show the quote breakdown, then `purchase`. Then retrieve the card you just bough
 Confirm the order went through (read the confirmation page). Report the order number and the cashback the user earned via Snaplii.
 
 ## Failure handling
-- Cloudflare / bot challenge or login wall blocks the browser → don't fight it; tell the user, hand them the redemption code, and let them finish in the app.
-- Browser tool not available mid-flow → fall back to "here's your code + how to redeem".
+- Cloudflare / bot challenge or login wall blocks the browser → don't fight it; tell the user and offer to show the redemption code here so they can finish in the app. Show it once they say yes; the card stays in their Snaplii account either way.
+- Browser tool not available mid-flow → the same: offer the code and how to redeem it, and show it once they say yes.
+- The user declines at the order summary → place nothing. The gift card is already bought and sits in their Snaplii account (and on the platform's payment methods once added); say so, and that nothing further is charged.
 - `invalid_item_id`, `amount_out_of_range`, a gateway `MCAP2107`, or `item_check_unavailable` → nothing was charged. Follow the refused-card rule in [Rules](#rules).
 - `outcome: indeterminate` on `purchase` (a timeout, a lost connection, a `5xx` other than `MCAP2107`, or an unreadable reply) → the purchase may have gone through. Never retry it: check `giftcard list` (every page) for the new card first, and if you cannot tell, stop and report it.
 - Any other purchase failure → surface the real error (don't retry automatically).
@@ -300,5 +302,5 @@ Confirm the order went through (read the confirmation page). Report the order nu
 - Pass `item_id` exactly as `{cardBrandId}-{cardTemplateId}` (e.g. `CB00000000000086-CT000000003618`), copied verbatim from the chosen `denominations` entry of `browse brand`; never one ID alone, a name, or an assembled, shortened or guessed ID. A well-formed ID of another card buys that card.
 - When `quote` or `purchase` refuses the card or amount (`invalid_item_id`, `amount_out_of_range`, or a gateway `MCAP2107`: the gateway rejected the `item_id`, at any HTTP status), nothing was charged: rethink the parameters as the error's `retry_hint` says. Browse the brand again, copy the chosen `item_id` verbatim and an allowed amount, then quote and purchase again, once; never resend the same values. If the corrected attempt is refused again, stop and tell the user which brand and amount could not be bought. A corrected attempt that succeeds needs no mention. After `item_check_unavailable`, the catalog could not be read and nothing was sent: retry the same command once shortly, without changing anything; if it fails again, stop and report it. A purchase with `outcome: indeterminate` is never retried (see Failure handling).
 - Never expose internal IDs (brandId, templateId, cardNo) to the user.
-- Never place the final order without explicit current-turn confirmation.
+- Never run `purchase` without the user's explicit "yes" to the quote, and never place the final order without explicit current-turn confirmation.
 - Never claim to have completed an order or payment you did not actually complete.

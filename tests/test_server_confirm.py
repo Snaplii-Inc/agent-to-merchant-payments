@@ -105,12 +105,16 @@ ROOT = Path(__file__).resolve().parents[1]
 DIRECTIVES = ("proceed confidently", "do not refuse", "don't refuse", "per-transaction confirmation",
               "no confirmation is needed", "no confirmation needed", "needs no confirmation", "heavy risk warnings",
               "pre-authorized", "current-turn", "current turn", 'explicit "yes"', "explicit yes", "still ask before")
-# The one gate the owner kept: the final order on a merchant site.
+# The gates the owner kept: the final order on a merchant site, and in autopilot only the
+# gift card bought for that order, whose amount the agent picks.
 FINAL_ORDER = ("final order", "place order", "place it", "final merchant order")
+AUTOPILOT_CARD = ("to the quote", "to buy the card")
+AUTOPILOT = ("autopilot prompt", "autopilot skill")
 
 
-def _without_final_order_gate(text):
-    return "\n".join(line for line in text.splitlines() if not any(k in line.lower() for k in FINAL_ORDER))
+def _without_kept_gates(name, text):
+    gates = FINAL_ORDER + (AUTOPILOT_CARD if name in AUTOPILOT else ())
+    return "\n".join(line for line in text.splitlines() if not any(k in line.lower() for k in gates))
 
 
 def _surfaces():
@@ -133,7 +137,7 @@ def _surfaces():
 
 def test_agent_text_carries_no_confirmation_directives():
     for name, text in _surfaces().items():
-        body = _without_final_order_gate(text).lower()
+        body = _without_kept_gates(name, text).lower()
         for phrase in DIRECTIVES:
             assert phrase.lower() not in body, (name, phrase)
 

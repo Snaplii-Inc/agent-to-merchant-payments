@@ -21,6 +21,7 @@ If no browser tool is available, for example when an organization has turned bro
 ## Safety — read before acting
 
 - Snaplii spending is from the user's **prepaid Snaplii Cash balance**. The hard per-key daily limit set in the app only covers gift cards; bill payments are not subject to it. No credit card is charged. `snaplii_purchase` charges the balance as soon as it runs.
+- `snaplii_purchase` runs only after the user's explicit "yes" to the quote breakdown (step 2). Say that the card is bought and charged first and the merchant order comes after it, so if the order is not placed the card stays in their Snaplii account for later.
 - The final order/pay button on the merchant site is clicked only after the user's explicit "yes" to the full order summary (step 3.6).
 - In this flow, redemption codes and PINs go into the merchant site, not into the chat. The `snaplii-cli` rule that reports the code of a just-bought card does not apply while the browser step is live; it applies again only if that step fails and the user has to redeem the code themselves.
 - Keep internal IDs (brandId, templateId, cardNo) out of user-facing text.
@@ -41,7 +42,7 @@ The `snaplii-cli` skill's Step 4 has the full purchase rules (voucher and cashba
 
 ### 2. Buy
 
-Show the quote breakdown, then `snaplii_purchase(item_id, price)` with the same `item_id`, `price` and any voucher/cashback options you quoted. The purchase result does not carry the code; fetch it:
+Show the quote breakdown (brand, card amount, vouchers, Snaplii Cash used, `you_pay`) and wait for the user's explicit "yes" to buy the card. Then call `snaplii_purchase(item_id, price)` with the same `item_id`, `price` and any voucher/cashback options you quoted. The purchase result does not carry the code; fetch it:
 
 - `snaplii_giftcard_list` → find the new card. If it is not there yet, wait about 10 seconds and list again (page through with `page` if the user owns many cards).
 - `snaplii_giftcard_detail(card_no)` → the code. Fields sit under `data`; use `cardCode` if present, otherwise `pin` (DoorDash, for example, uses `pin`).
