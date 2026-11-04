@@ -6,6 +6,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
+## [0.20.3] — 2026-11-04
+
+### Added
+- **The README covers the remote MCP server.** A new "Remote MCP server (no install)" section gives the URL `https://aipayment.snaplii.com/mcp` (the `/mcp` path is required) and how to add it in Claude on the web, Claude Code, ChatGPT and Relevance AI. The user pastes the API key on Snaplii's sign-in page, never in the client. A Purchasable key gets all 21 remote tools and a Gift Cards Only key the 8 gift-card tools; a key that only allows transfers cannot connect. The section also covers limits, disconnecting and what to check when it does not work.
+- **`scripts/export_remote_tools.py` writes the remote server's tool definitions.** It exports the 21 tools agent-gateway serves at `/mcp` from `mcp-server/server.py`, each with the key scope it needs, and drops the text that only applies to the local server. `--check` fails when the committed copy is out of date. A test builds the `snaplii-mcp` wheel and checks that it serves the same tools, prompts and resources over stdio as the source.
+- Two more gateway refusals carry a readable message: `MCA20107` (the order would go over the key's daily gift-card limit) and `MCA20108` (the key is not allowed to pay bills). Both say nothing was charged.
+
+### Changed
+- **The per-key daily limit covers gift cards only.** The MCP server instructions, the connect messages, the `snaplii_init` and `snaplii_billpay_pay` descriptions, the autopilot prompt, the secure card, the `billpay pay` help, the skills, the READMEs and the Claude plugin's marketplace description say that bill payments are not subject to it. The MCP server texts and the snaplii-cli skill add that transfers have a separate rolling 24-hour limit.
+- **A bill payment with an unclear outcome is not paid again.** `snaplii_billpay_pay` and `snaplii billpay pay` say: if a `paymentNo` came back, check it with `snaplii_billpay_result` (`snaplii billpay result`); if none did, check the bill in the Snaplii app. The tool description adds that `snaplii_billpay_history` cannot tell whether a payment went through.
+- The Copilot connector runs on Power Platform: the script names `Newtonsoft.Json.Formatting`, requests carry the `User-Agent` the gateway requires, and `listCardBrands` returns its categories under `categories` so every 200 response is an object.
+- **No text says a key's limit can be changed in the app.** A key's limit is fixed when it is created. The connect notice, the README's authorization and Security sections, the Claude and Cursor plugin READMEs and the skills' `TRANSFER_LIMIT_EXCEEDED` advice now say so, and that a different limit needs a new key.
+- **Gift cards are described as accepted at over 500,000 locations, with up to 15% cashback.** The texts used to say 500+ brands and up to 10%. The change covers the README (which also gives 5–15% additional discounts at supported merchants, up from 5–10%), the MCP server instructions, local and remote, the Claude, Cursor and ClawHub plugin descriptions and READMEs, the skill descriptions, the Claude Desktop instructions, the Copilot connector readme and the `snaplii-cli` README.
+- The ClawHub plugin's `openclaw.plugin.json` has an id, an empty config schema and the same MCP server as `.mcp.json`. The plugin is 1.14.2 and pins `snaplii-mcp` 0.20.3.
+
 ## [0.20.2] — 2026-10-18
 
 ### Added

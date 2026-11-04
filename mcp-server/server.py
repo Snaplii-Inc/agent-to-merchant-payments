@@ -33,9 +33,9 @@ from snaplii.exceptions import AmountValidationError, AuthError, ItemIdError, Co
 from snaplii.commands.transfer import decorate_transfer
 from snaplii.cards import APIKEY_CARD_HTML, APIKEY_RES_URI, MCP_APP_MIME
 
-_SERVER_INSTRUCTIONS = """Snaplii lets you browse and buy gift cards across 500+ brands and pay bills — saving the user money with vouchers + up to 10% cashback, all from their prepaid Snaplii Cash balance.
+_SERVER_INSTRUCTIONS = """Snaplii lets you browse and buy gift cards accepted at over 500,000 locations and pay bills — saving the user money with vouchers + up to 15% cashback, all from their prepaid Snaplii Cash balance.
 
-HOW PAYMENT WORKS: spending is only from the user's prepaid Snaplii Cash balance (no credit card charged); the API key is scoped, revocable, and capped by a hard daily limit the user set in the app. A gift-card purchase charges the balance as soon as it runs. A bill payment sent through snaplii_billpay_pay cannot be undone. A transfer stays cancellable for about 5 minutes, then sends itself.
+HOW PAYMENT WORKS: spending is only from the user's prepaid Snaplii Cash balance (no credit card charged); the API key is scoped and revocable. The hard daily limit the user set in the app only covers gift cards; bill payments are not subject to it. A gift-card purchase charges the balance as soon as it runs. A bill payment sent through snaplii_billpay_pay cannot be undone. Transfers have a separate rolling 24-hour per-key transfer limit; a transfer stays cancellable for about 5 minutes, then sends itself.
 
 WHEN THE USER MENTIONS SPENDING (dining, coffee, travel, shopping, transport, groceries, bills): the account's region (CA/US) is already known from the connection (cached at login, surfaced as `account_country` by browse/balance) — do NOT ask for it; browse relevant cards, show cashback %, and quote (snaplii_quote) the voucher/cashback breakdown.
 
@@ -157,9 +157,11 @@ def _authenticate(api_key: str, agent_id: str | None = None) -> dict:
         # One-time notice: the only moment we surface the spending limits.
         # Generic by design: the daily-limit number is not available here.
         "notice": (
-            "✅ Connected. Purchases come only from your prepaid Snaplii Cash, capped "
-            "by the daily limit you set in the app. You can change the limit or revoke "
-            "this key in the app anytime."
+            "✅ Connected. Purchases come only from your prepaid Snaplii Cash. The daily "
+            "limit you set in the app only covers gift cards; bill payments are not "
+            "subject to it, and transfers have a separate rolling 24-hour limit. You can "
+            "revoke this key in the app anytime. Its limit is fixed when the key is "
+            "created; for a different limit, create a new key."
         ),
     }
 
@@ -244,7 +246,9 @@ async def _instinct_connect(arguments: dict) -> dict:
         client.accept_connect_token(token_data)
         return {"status": "authenticated", **client.auth_status(),
                 "message": ("✅ Connected through the Instinct vault. Purchases come only from your "
-                            "prepaid Snaplii Cash, capped by your daily limit.")}
+                            "prepaid Snaplii Cash. Your daily limit only covers gift cards; bill "
+                            "payments are not subject to it, and transfers have a separate rolling "
+                            "24-hour limit.")}
     return {"status": "pending",
             "message": ("No connection for this eid yet. Check the connect page. If it shows "
                         "Connected and more than 2 minutes have passed, call snaplii_connect "
@@ -261,7 +265,9 @@ def _finish_elicit_connect(client, token_data: dict) -> dict:
         **client.auth_status(),
         "message": (
             "✅ Connected via the secure Snaplii page. Purchases come only "
-            "from your prepaid Snaplii Cash, capped by your daily limit."
+            "from your prepaid Snaplii Cash. Your daily limit only covers gift cards; "
+            "bill payments are not subject to it, and transfers have a separate rolling "
+            "24-hour limit."
         ),
     }
 
@@ -469,7 +475,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_init",
-            description="Authenticate with the user's Snaplii API key — FALLBACK path. PREFER snaplii_connect, which opens a secure card so the key never enters the chat/model context. Use snaplii_init when the client has neither a card nor a page and the user chooses to paste the key; the key then passes through the model context once. The key is scoped, revocable and spending-capped (hard per-key daily limit set in the app), spends only prepaid Snaplii Cash, and is exchanged for a session token, never stored on disk. Don't echo the raw key back in chat.",
+            description="Authenticate with the user's Snaplii API key — FALLBACK path. PREFER snaplii_connect, which opens a secure card so the key never enters the chat/model context. Use snaplii_init when the client has neither a card nor a page and the user chooses to paste the key; the key then passes through the model context once. The key is scoped and revocable (its hard per-key daily limit set in the app only covers gift cards; bill payments are not subject to it, and transfers have a separate rolling 24-hour limit), spends only prepaid Snaplii Cash, and is exchanged for a session token, never stored on disk. Don't echo the raw key back in chat.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -675,7 +681,7 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="snaplii_billpay_pay",
-            description="Pay the bill from Snaplii Cash balance (same as gift cards — no PayPal redirect needed). Completes directly when balance covers the bill, within the user's per-key daily limit set in the app. Once sent, a bill payment cannot be undone, and one sent to the wrong biller or account cannot be recovered. If a pay call fails or times out ambiguously, poll snaplii_billpay_result with the returned paymentNo before retrying — do NOT re-pay blindly.",
+            description="Pay the bill from Snaplii Cash balance. Completes directly, with no PayPal redirect, when the balance covers the bill. The per-key daily limit set in the app only covers gift cards; bill payments are not subject to it. Once sent, a bill payment cannot be undone, and one sent to the wrong biller or account cannot be recovered. If a pay call fails or times out ambiguously, do NOT pay again: if the answer carries a paymentNo, check it with snaplii_billpay_result; if it does not, ask the user to check the bill in the Snaplii app and stop. snaplii_billpay_history cannot tell whether a payment went through.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -1320,7 +1326,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
 _AUTOPILOT_WORKFLOW = f"""You are running the Snaplii end-to-end autopilot: buy a gift card with cashback, then (if you can control a browser) redeem it and place the order on the merchant/delivery site.
 
-SAFETY: Snaplii spends only from the user's prepaid Snaplii Cash balance — no credit card is charged; the API key is scoped, revocable, and capped by a daily limit set in the app. The gift-card purchase charges the balance as soon as it runs. Step 7 confirms the final delivery/merchant order with the user.
+SAFETY: Snaplii spends only from the user's prepaid Snaplii Cash balance — no credit card is charged; the API key is scoped and revocable, and the daily limit set in the app only covers gift cards (bill payments are not subject to it). The gift-card purchase charges the balance as soon as it runs. Step 7 confirms the final delivery/merchant order with the user.
 
 FLOW:
 1. Auth: before every Snaplii business operation, including read-only browsing and lookups, call snaplii_config_show for the task's gateway. Continue only when has_valid_token=true; reuse that session without connecting again. If the field is missing, stop and report an incompatible runtime. When a session is missing or expired, start authentication without waiting for the user to ask to log in.

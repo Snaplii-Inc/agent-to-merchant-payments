@@ -1,12 +1,12 @@
 # Snaplii AI Agent Cashback Payment — MCP Plugin
 
-> This is a skill of Agent-to-Merchant (A2M) payments — where AI agents complete transactions without checkout. Snaplii uses pre-funded gift cards as a payment rail, enabling instant, merchant-ready execution across 500+ brands.
+> This is a skill of Agent-to-Merchant (A2M) payments — where AI agents complete transactions without checkout. Snaplii uses pre-funded gift cards, accepted at over 500,000 locations, as a payment rail, enabling instant, merchant-ready execution.
 
 ---
 
 ## Safe by design
 
-Spending is **only** from the user's **prepaid Snaplii Cash balance** — no credit card is charged, and the API key is scoped, revocable, and capped by a hard daily limit set in the app. A gift-card purchase charges the balance as soon as it runs. A bill payment, once sent, cannot be undone. A transfer stays cancellable for a ~5-minute window, then sends itself.
+Spending is **only** from the user's **prepaid Snaplii Cash balance** — no credit card is charged, and the API key is scoped and revocable. The hard daily limit set in the app only covers gift cards; bill payments are not subject to it, and transfers have a separate rolling 24-hour per-key limit. A gift-card purchase charges the balance as soon as it runs. A bill payment, once sent, cannot be undone. A transfer stays cancellable for a ~5-minute window, then sends itself.
 
 ## Two ways to use it
 
@@ -21,7 +21,7 @@ Spending is **only** from the user's **prepaid Snaplii Cash balance** — no cre
 
 1. **Download the Snaplii App** ([iOS](https://apps.apple.com/app/snaplii/id1596924498) / [Android](https://play.google.com/store/apps/details?id=com.snaplii.app)) — register and load your Snaplii Cash balance.
 2. **Create an API Key** — in the app, go to **More → Payment Methods → AI Payment Management → + New API Key**. Set a name, scope (`PAY_READ` or `PAY_WRITE`), and spending limit. Copy the key — it is shown only once.
-3. **Have `uv` on your PATH.** The plugin starts the server with `uvx snaplii-mcp@0.20.2` (see `.mcp.json`), which fetches that release of the [`snaplii-mcp`](https://pypi.org/project/snaplii-mcp/) package on first run; there is nothing else to install. Each plugin release pins the server version it was tested with. [Install uv](https://docs.astral.sh/uv/getting-started/installation/).
+3. **Have `uv` on your PATH.** The plugin starts the server with `uvx snaplii-mcp@0.20.3` (see `.mcp.json`), which fetches that release of the [`snaplii-mcp`](https://pypi.org/project/snaplii-mcp/) package on first run; there is nothing else to install. Each plugin release pins the server version it was tested with. [Install uv](https://docs.astral.sh/uv/getting-started/installation/).
 
    **Not using this plugin?** Install the skill, CLI and MCP server from a release as the [project README](https://github.com/Snaplii-Inc/agent-to-merchant-payments#for-ai-agents-start-here) describes; its installer prints the exact registration for your client.
 

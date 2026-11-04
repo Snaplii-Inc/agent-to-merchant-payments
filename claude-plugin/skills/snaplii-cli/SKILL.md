@@ -1,13 +1,13 @@
 ---
 name: snaplii-cli
-description: "Snaplii for Claude: buy discounted gift cards across 500+ brands with vouchers and up to 10% cashback, check the Snaplii Cash balance, pay bills (Canada) and send money to a phone number, through the snaplii_* MCP tools or the snaplii CLI, spending only the user's prepaid Snaplii Cash within the spending limit they set. Load whenever the user mentions Snaplii or Snaplii Cash, wants to buy, quote or manage gift cards, wants a discount, deal, coupon or cashback on a purchase or to save money while shopping, asks about their wallet or balance, or wants to pay a bill or send money. Not for payment-integration coding (Stripe, Shopify, PayPal SDKs), crypto wallets, or placing an order on a website (that is snaplii-autopilot)."
+description: "Snaplii for Claude: buy discounted gift cards accepted at over 500,000 locations with vouchers and up to 15% cashback, check the Snaplii Cash balance, pay bills (Canada) and send money to a phone number, through the snaplii_* MCP tools or the snaplii CLI, spending only the user's prepaid Snaplii Cash (gift cards within the daily limit they set). Load whenever the user mentions Snaplii or Snaplii Cash, wants to buy, quote or manage gift cards, wants a discount, deal, coupon or cashback on a purchase or to save money while shopping, asks about their wallet or balance, or wants to pay a bill or send money. Not for payment-integration coding (Stripe, Shopify, PayPal SDKs), crypto wallets, or placing an order on a website (that is snaplii-autopilot)."
 ---
 
 # Snaplii: gift cards, balance, bill pay, transfers
 
 ## How payment works
 
-This skill spends **only** from the user's **prepaid Snaplii Cash balance**; no credit card is ever charged. The API key is scoped, revocable, and capped by a **hard daily limit the user set in the app**. A gift-card purchase charges the balance as soon as it runs. A bill payment, once sent, cannot be undone. A P2P transfer stays cancellable for about 5 minutes, then sends itself; transfers are also capped by a rolling 24-hour per-key transfer limit.
+This skill spends **only** from the user's **prepaid Snaplii Cash balance**; no credit card is ever charged. The API key is scoped and revocable. The **hard daily limit the user set in the app** only covers gift cards; bill payments are not subject to it. A gift-card purchase charges the balance as soon as it runs. A bill payment, once sent, cannot be undone. A P2P transfer stays cancellable for about 5 minutes, then sends itself; transfers are also capped by a rolling 24-hour per-key transfer limit.
 
 **Scope.** Snaplii buys a gift card and gives you its **redemption code**. On its own this skill does not place orders on merchant or delivery apps: after a purchase, hand the user the code and tell them how to add it in the merchant app (e.g. Uber Eats / DoorDash → Payment → Add Gift Card). When the user asks you to place the order itself, the `snaplii-autopilot` skill adds the browser step.
 
@@ -163,7 +163,7 @@ Every transfer error carries a meaningful `message` plus `code`, `retryable` and
 
 - `RECIPIENT_NOT_FOUND`: no Snaplii account at that number; re-check it with the user.
 - `INSUFFICIENT_BALANCE`: ask the user to top up in the app (Wallet → Add Cash).
-- `TRANSFER_LIMIT_EXCEEDED`: the key's rolling 24h cap; `details` carries `limit_cents`/`used_cents`, so tell the user the room left and that the window frees up over time (or raise the limit in the app).
+- `TRANSFER_LIMIT_EXCEEDED`: the key's rolling 24h cap; `details` carries `limit_cents`/`used_cents`, so tell the user the room left and that the window frees up over time; a key's limit is fixed when it is created, so a different limit needs a new key in the app.
 - `TRANSFER_SCOPE_DENIED`: this key can't transfer; the user needs a key with scope `P2P` or `ALL`.
 - `SELF_TRANSFER`: the number is the user's own account.
 - `status: CREATING` (not an error): the result is unknown yet. Wait `retry_after_seconds`, then retry the same `snaplii_transfer_create` with the `idempotency_key` echoed in the result, or check `snaplii_transfer_list`. A fresh key can double the transfer.
@@ -214,7 +214,7 @@ Use the CLI only when the Snaplii MCP server is disabled or failed to start (`/m
 **Install.** This plugin provides the MCP server and skills, not the CLI. If the CLI is not at `~/.snaplii-env/bin/snaplii` (Windows: `%USERPROFILE%\.snaplii-env\Scripts\snaplii.exe`), install it from the release this plugin belongs to:
 
 ```bash
-git clone --depth 1 --branch v0.20.2 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
+git clone --depth 1 --branch v0.20.3 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
 python3 snaplii-src/scripts/install.py --source ./snaplii-src --host claude-code --cli-only
 ```
 

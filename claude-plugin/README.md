@@ -1,12 +1,12 @@
 # Snaplii A2M Payment for Claude
 
-Agent-to-Merchant (A2M) payments by Snaplii Inc. A payment layer for AI agents: pay in the real world without handing the agent a credit card. Claude buys gift cards across 500+ brands with vouchers and up to 10% cashback, checks the Snaplii Cash balance, pays bills and sends P2P transfers. It spends only the prepaid Snaplii Cash the user set aside, within a per-key spending limit the user chose, and never sees the user's card or bank credentials.
+Agent-to-Merchant (A2M) payments by Snaplii Inc. A payment layer for AI agents: pay in the real world without handing the agent a credit card. Claude buys gift cards accepted at over 500,000 locations with vouchers and up to 15% cashback, checks the Snaplii Cash balance, pays bills and sends P2P transfers. It spends only the prepaid Snaplii Cash the user set aside and never sees the user's card or bank credentials. Gift-card purchases stay within a per-key daily limit the user chose; bill payments are not subject to it, and transfers have a separate rolling 24-hour per-key limit.
 
 ## What's included
 
 | Component | Description |
 |---|---|
-| MCP server `snaplii` | Tools for browsing gift cards, quotes, purchases, balance, bill pay and transfers, started with `uvx snaplii-mcp==0.20.2` |
+| MCP server `snaplii` | Tools for browsing gift cards, quotes, purchases, balance, bill pay and transfers, started with `uvx snaplii-mcp==0.20.3` |
 | Skill `snaplii-cli` | Gift cards, balance, bill pay and P2P transfers |
 | Skill `snaplii-autopilot` | Buy a gift card, redeem it on the merchant site and place the order, when a browser tool such as Claude in Chrome is available |
 
@@ -14,7 +14,7 @@ Agent-to-Merchant (A2M) payments by Snaplii Inc. A payment layer for AI agents: 
 
 | Capability | What happens | Canada (CAD) | United States (USD) | Key scope |
 |---|---|---|---|---|
-| Buy gift cards | Browse 500+ brands, quote the exact price with vouchers and up to 10% cashback, buy, then read the redemption code | Yes | Yes | `PAY_WRITE` |
+| Buy gift cards | Browse gift cards accepted at over 500,000 locations, quote the exact price with vouchers and up to 15% cashback, buy, then read the redemption code | Yes | Yes | `PAY_WRITE` |
 | Pay a merchant with the card | Redeem the code on the merchant or delivery site and place the order; needs a browser tool and the `snaplii-autopilot` skill | Yes | Yes | `PAY_WRITE` |
 | Check balance and cards | Spendable Snaplii Cash, owned cards, cashback estimates | Yes | Yes | `PAY_READ` |
 | Pay bills | Supported utility, telecom and other billers, paid from Snaplii Cash; once sent, a bill payment cannot be undone | Yes | No | `PAY_WRITE` |
@@ -26,7 +26,7 @@ The account country is fixed at login, so the catalog, currency and bill pay fol
 
 1. Download the Snaplii app for [iOS](https://apps.apple.com/app/snaplii/id1596924498) or [Android](https://play.google.com/store/apps/details?id=com.snaplii.app), register an account and load your Snaplii Cash balance.
 2. In the app, go to **More → Payment Methods → AI Payment Management → + New API Key**. Set a name, choose the scope (`PAY_READ`, `PAY_WRITE`, `P2P` or `ALL`) and set a hard spending limit. Copy the key: it is shown only once.
-3. Install the plugin in Claude Code. The MCP server starts with `uvx snaplii-mcp==0.20.2`, so [uv](https://docs.astral.sh/uv/getting-started/installation/) must be on your PATH.
+3. Install the plugin in Claude Code. The MCP server starts with `uvx snaplii-mcp==0.20.3`, so [uv](https://docs.astral.sh/uv/getting-started/installation/) must be on your PATH.
 
    ```
    /plugin install snaplii-a2m-payment --marketplace Snaplii-Inc/agent-to-merchant-payments
@@ -37,7 +37,7 @@ The account country is fixed at login, so the catalog, currency and bill pay fol
    - Or leave it empty and ask Claude to connect Snaplii. It calls `snaplii_connect`, and Claude Code asks you to open a secure Snaplii page where you enter the key, so the key never enters the chat.
    - If that page cannot be shown, run `snaplii init` in a terminal window of your own ([install the CLI](https://github.com/Snaplii-Inc/agent-to-merchant-payments#quick-start)) and type the key at its hidden prompt.
 
-The MCP server uses the API key once to obtain a session token and does not store the key; it keeps the session token in the OS keychain, or in an owner-only file only if you agree. A key set as a plugin option is kept by Claude Code in its secure credential storage. Change the spending limit or revoke the key in the app at any time.
+The MCP server uses the API key once to obtain a session token and does not store the key; it keeps the session token in the OS keychain, or in an owner-only file only if you agree. A key set as a plugin option is kept by Claude Code in its secure credential storage. Revoke the key in the app at any time. A key's spending limit is fixed when it is created; for a different limit, create a new key.
 
 ### Where it works
 
@@ -51,7 +51,7 @@ To let Claude place orders on merchant sites with the `snaplii-autopilot` skill,
 
 ## What this plugin runs, sends and fetches
 
-- **Runs** `uvx snaplii-mcp==0.20.2`, which downloads the open-source `snaplii-mcp` and `snaplii-cli` packages from PyPI and starts the MCP server on your machine.
+- **Runs** `uvx snaplii-mcp==0.20.3`, which downloads the open-source `snaplii-mcp` and `snaplii-cli` packages from PyPI and starts the MCP server on your machine.
 - **Sends** your requests (catalog, balance, quotes, purchases, bill payments, transfers) and the API key you enter only to the Snaplii API at `aipayment.snaplii.com` over HTTPS.
 - **Fetches** the latest release version from PyPI to tell you when an update is available; this request carries no account data.
 - **Stores** only the session token on your device, never the API key. A key you set as a plugin option stays in Claude Code's credential storage.

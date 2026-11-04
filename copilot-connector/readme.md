@@ -1,6 +1,6 @@
 # Snaplii
 
-Snaplii is a prepaid payment account for AI agents: people load Snaplii Cash in the Snaplii app and let agents buy discounted gift cards from 500+ brands with vouchers and up to 10% cashback. This connector lets Copilot Studio agents and flows browse the gift card catalog, read the user's Snaplii Cash balance and get an exact price quote before buying. It does not buy cards or move money.
+Snaplii is a prepaid payment account for AI agents: people load Snaplii Cash in the Snaplii app and let agents buy discounted gift cards accepted at over 500,000 locations with vouchers and up to 15% cashback. This connector lets Copilot Studio agents and flows browse the gift card catalog, read the user's Snaplii Cash balance and get an exact price quote before buying. It does not buy cards or move money.
 
 ## Publisher: Snaplii Inc.
 

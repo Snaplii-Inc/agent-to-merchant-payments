@@ -1,15 +1,15 @@
 ---
 name: snaplii-cli
-description: "Agent-to-Merchant (A2M) payments — AI agents complete transactions without checkout, using Snaplii's pre-funded gift cards as a payment rail across 500+ brands. Use when the user wants to browse, buy, or manage gift cards, check their Snaplii Cash balance, pay bills (utilities, telecom), or send money to another person's phone number (P2P transfer)."
+description: "Agent-to-Merchant (A2M) payments — AI agents complete transactions without checkout, using Snaplii's pre-funded gift cards, accepted at over 500,000 locations, as a payment rail. Use when the user wants to browse, buy, or manage gift cards, check their Snaplii Cash balance, pay bills (utilities, telecom), or send money to another person's phone number (P2P transfer)."
 ---
 
 # Snaplii AI Agent Cashback Payment
 
-> This is a skill of Agent-to-Merchant (A2M) payments — where AI agents complete transactions without checkout. Snaplii uses pre-funded gift cards as a payment rail, enabling instant, merchant-ready execution across 500+ brands.
+> This is a skill of Agent-to-Merchant (A2M) payments — where AI agents complete transactions without checkout. Snaplii uses pre-funded gift cards, accepted at over 500,000 locations, as a payment rail, enabling instant, merchant-ready execution.
 
 ## How payment works
 
-This skill spends **only** from the user's **prepaid Snaplii Cash balance** — no credit card is ever charged. The API key is scoped, revocable, and capped by a **hard daily limit the user set in the app**. A gift-card purchase charges the balance as soon as it runs. A bill payment, once sent, cannot be undone. A P2P transfer stays cancellable for about 5 minutes, then sends itself; transfers are also capped by a rolling 24-hour per-key transfer limit.
+This skill spends **only** from the user's **prepaid Snaplii Cash balance** — no credit card is ever charged. The API key is scoped and revocable. The **hard daily limit the user set in the app** only covers gift cards; bill payments are not subject to it. A gift-card purchase charges the balance as soon as it runs. A bill payment, once sent, cannot be undone. A P2P transfer stays cancellable for about 5 minutes, then sends itself; transfers are also capped by a rolling 24-hour per-key transfer limit.
 
 **What this skill does and doesn't do:** Snaplii buys a gift card and gives you its **redemption code**. It does **not** place orders on merchant or delivery apps and does **not** control a browser. After a purchase, hand the user the redemption code and tell them how to add it in the merchant app (e.g. Uber Eats / DoorDash → Payment → Add Gift Card). The user completes the order themselves.
 
@@ -242,7 +242,7 @@ this does not delete the API key in the host's secure credential store.
 3. **Install the CLI** — this skill folder does not contain the installer. If the CLI is not at `~/.snaplii-env/bin/snaplii` (Windows: `%USERPROFILE%\.snaplii-env\Scripts\snaplii.exe`), install it and the MCP server from the release this skill belongs to:
 
    ```bash
-   git clone --depth 1 --branch v0.20.2 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
+   git clone --depth 1 --branch v0.20.3 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
    python3 snaplii-src/scripts/install.py --source ./snaplii-src
    ```
 
@@ -445,7 +445,7 @@ Error handling — every transfer error carries a meaningful `message` plus `cod
 
 - `RECIPIENT_NOT_FOUND` → that phone number has no Snaplii account. Re-check the number with the user.
 - `INSUFFICIENT_BALANCE` → Snaplii Cash doesn't cover the amount — ask the user to top up in the app (Wallet → Add Cash).
-- `TRANSFER_LIMIT_EXCEEDED` → the key's rolling 24h transfer cap would be exceeded; `details` carries `limit_cents`/`used_cents` — tell the user how much room is left and that the window frees up over time (or raise the limit in the app).
+- `TRANSFER_LIMIT_EXCEEDED` → the key's rolling 24h transfer cap would be exceeded; `details` carries `limit_cents`/`used_cents` — tell the user how much room is left and that the window frees up over time; a key's limit is fixed when it is created, so a different limit needs a new key in the app.
 - `TRANSFER_SCOPE_DENIED` → this API key can't transfer; the user needs a key with scope `P2P` or `ALL` from the app.
 - `SELF_TRANSFER` → the number resolves to the user's own account.
 - `status: CREATING` in the output (not an error) → the result is unknown yet. Retry the SAME command with the `--idempotency-key` echoed in the output, or check `transfer list`. **Never retry with a fresh key — that can double the transfer.**

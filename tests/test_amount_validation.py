@@ -5,6 +5,7 @@ denomination rules (priceStart..priceEnd) before any request, as the app does.
 import asyncio
 import json
 
+import httpx
 import pytest
 from click.testing import CliRunner
 
@@ -428,6 +429,30 @@ def test_mcap2107_has_a_readable_message():
     body = {"rspMsgCd": "MCAP2107"}
     GatewayClient._attach_friendly_message(body, "MCAP2107")
     assert "rejected this item_id" in body["friendly_message"]
+
+
+@pytest.mark.parametrize("code, phrase", [
+    ("MCA20107", "daily gift-card limit"),
+    ("MCA20108", "not allowed to pay bills"),
+])
+def test_key_limit_and_scope_refusals_say_what_to_do(code, phrase):
+    # The gateway's own text is shorter; the table entry wins over it.
+    body = {"rspMsgCd": code, "rspMsgInf": "upstream text"}
+    GatewayClient._attach_friendly_message(body, code)
+    assert phrase in body["friendly_message"]
+    assert "nothing was charged" in body["friendly_message"]
+
+
+def test_purchase_over_the_key_limit_is_a_definite_refusal():
+    # The core's business rejection reaches the CLI as a 422 carrying its answer.
+    resp = httpx.Response(422, json={"rspMsgCd": "MCA20107",
+                                     "rspMsgInf": "Daily purchase limit exceeded for this API key."})
+    with pytest.raises(GatewayApiError) as exc:
+        GatewayClient._parse_response(resp, "/v2/purchase")
+    d = exc.value.to_dict()
+    assert d["error_code"] == "MCA20107"
+    assert "daily gift-card limit" in d["error"]
+    assert "outcome" not in d
 
 
 def test_cli_quote_leads_with_the_verified_card():

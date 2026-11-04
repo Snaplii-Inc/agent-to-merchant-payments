@@ -235,7 +235,7 @@ This skill needs BOTH:
 1. **Snaplii tools** — either the `snaplii` CLI (Bash; at `~/.snaplii-env/bin/snaplii`, Windows `%USERPROFILE%\.snaplii-env\Scripts\snaplii.exe`, off PATH, so call it by that path) or `snaplii_*` MCP tools. This skill folder does not contain the installer. If you have neither, install the CLI and the MCP server from the release this skill belongs to:
 
    ```bash
-   git clone --depth 1 --branch v0.20.2 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
+   git clone --depth 1 --branch v0.20.3 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
    python3 snaplii-src/scripts/install.py --source ./snaplii-src
    ```
 
@@ -255,7 +255,7 @@ Always leave the user with a working option. Never return a raw error or say "I 
 
 ## Safety — read before acting
 
-- Snaplii spending is from the user's **prepaid Snaplii Cash balance**, capped by a hard per-key daily limit set in the app. No credit card is charged. The gift-card `purchase` charges the balance as soon as it runs.
+- Snaplii spending is from the user's **prepaid Snaplii Cash balance**. The hard per-key daily limit set in the app only covers gift cards; bill payments are not subject to it. No credit card is charged. The gift-card `purchase` charges the balance as soon as it runs.
 - **Before the final "Place Order" / pay button** on the merchant/delivery site, show the full order summary (items, address, tip, total) and wait for the user's explicit "yes". Never click the final order/pay button without it.
 - Treat redemption codes/PINs as secret: enter them into the merchant site, but don't post them back into chat unless the user asks.
 
