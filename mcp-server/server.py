@@ -33,7 +33,7 @@ from snaplii.exceptions import AmountValidationError, AuthError, ItemIdError, Co
 from snaplii.commands.transfer import decorate_transfer
 from snaplii.cards import APIKEY_CARD_HTML, APIKEY_RES_URI, MCP_APP_MIME
 
-_SERVER_INSTRUCTIONS = """Snaplii lets you browse and buy gift cards across 500+ brands and pay bills — saving the user money with vouchers + up to 10% cashback, all from their prepaid Snaplii Cash balance.
+_SERVER_INSTRUCTIONS = """Snaplii lets you browse and buy gift cards accepted at over 500,000 locations and pay bills — saving the user money with vouchers + up to 15% cashback, all from their prepaid Snaplii Cash balance.
 
 HOW PAYMENT WORKS: spending is only from the user's prepaid Snaplii Cash balance (no credit card charged); the API key is scoped and revocable. The hard daily limit the user set in the app only covers gift cards; bill payments are not subject to it. A gift-card purchase charges the balance as soon as it runs. A bill payment sent through snaplii_billpay_pay cannot be undone. Transfers have a separate rolling 24-hour per-key transfer limit; a transfer stays cancellable for about 5 minutes, then sends itself.
 
