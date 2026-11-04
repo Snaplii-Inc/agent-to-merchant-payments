@@ -333,7 +333,7 @@ A key that only allows transfers cannot connect. The remote server has the payme
 
 **Limits.** A connection spends within its key's limits: gift cards count toward the key's daily limit and transfers toward its rolling 24-hour limit; bill payments are not capped by the key's limit. Every payment draws from Snaplii Cash.
 
-**Disconnecting.** Remove the server in the client to stop using it there. Deleting the API key in the app cuts off every connection made with it, in every client: a client may still look connected and list its tools, but the next tool call it makes is refused and the connection ends.
+**Disconnecting.** Remove the server in the client to stop using it there. Deleting the API key in the app cuts off every connection made with it, in every client: a client may still look connected and list its tools, but its next tool call that reaches Snaplii is refused and the connection ends.
 
 **If it does not work.**
 
