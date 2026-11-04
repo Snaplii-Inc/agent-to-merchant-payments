@@ -888,6 +888,8 @@ class GatewayClient:
         "MCA20104": "API key limit reached. Delete an existing key before creating a new one.",
         "MCA20105": "API key not found.",
         "MCA20106": "This API key does not belong to your account.",
+        "MCA20107": "This order would go over the API key's daily gift-card limit, so nothing was charged. A smaller amount may still fit; the limit resets at midnight Eastern Time, and the user can raise it in the app.",
+        "MCA20108": "This API key is not allowed to pay bills, so nothing was charged. Paying bills needs a key set to Purchasable in the app.",
         "APP_VERSION_NOT_SUPPORT": "App version too low. Minimum version 4.8.0 required.",
         "USR_NOT_EXIST": "User not found in session. Please re-authenticate.",
         "ORDER_STATUS_INCORRECT": "Order status error. The order may not exist or is not in a payable state.",
