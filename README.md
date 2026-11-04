@@ -2,7 +2,9 @@
 
 > A payment layer for AI agents: pay in the real world without handing the agent a credit card.
 
-Snaplii gives an AI agent a prepaid, scoped, revocable payment account. The agent spends only the **Snaplii Cash** the user set aside, keeps gift-card purchases within a per-key daily limit the user chose (bill payments are not subject to it), and never sees the user's card or bank credentials. It ships as an **Agent Skill**, an **MCP server**, and a **Python CLI**, so it works with any agent that can read a `SKILL.md`, call MCP tools, or run a command.
+Snaplii gives an AI agent a prepaid, scoped, revocable payment account. The agent spends only the **Snaplii Cash** the user set aside, keeps gift-card purchases within a per-key daily limit the user chose (bill payments are not subject to it), and never sees the user's card or bank credentials. It ships as an **Agent Skill**, an **MCP server** you can run locally or reach remotely, and a **Python CLI**, so it works with any agent that can read a `SKILL.md`, call MCP tools, or run a command.
+
+**Nothing to install:** clients that add MCP servers by URL, such as Claude, ChatGPT or Claude Code, can connect to `https://aipayment.snaplii.com/mcp`. See [Remote MCP server](#remote-mcp-server-no-install).
 
 ---
 
@@ -81,6 +83,7 @@ The third command builds the CLI and the MCP server into `~/.snaplii-env` and pr
 - [Quick Start](#quick-start)
 - [CLI Commands](#cli-commands)
 - [Integration Guides](#integration-guides)
+  - [Remote MCP server (no install)](#remote-mcp-server-no-install)
   - [MCP Server (Claude, OpenClaw, Cursor, Instinct)](#mcp-server-claude-openclaw-cursor-instinct)
 - [Components](#components)
 - [Updating](#updating)
@@ -299,6 +302,44 @@ In Instinct, only `help`, `update`, `--version`, and `config` run; every other c
 ---
 
 ## Integration Guides
+
+### Remote MCP server (no install)
+
+Clients that add MCP servers by URL can use Snaplii without installing anything. Add this server, including the `/mcp` path:
+
+```
+https://aipayment.snaplii.com/mcp
+```
+
+Connecting opens Snaplii's sign-in page in the browser, where the user pastes an API key from the Snaplii app (see [Get Your API Key](#1-get-your-api-key-via-snaplii-app)). The key goes to Snaplii only: the client never receives it, just its own access to this connection.
+
+| Client | How to add it |
+|---|---|
+| Claude (claude.ai) | **Settings → Connectors → Add custom connector**, paste the URL, then **Connect** |
+| Claude Code | `claude mcp add --transport http snaplii https://aipayment.snaplii.com/mcp`, then run `/mcp` in Claude Code and sign in to `snaplii` |
+| ChatGPT | Turn on developer mode, then create a connector with the URL and OAuth sign-in |
+| Relevance AI | Add an MCP server with the URL |
+
+Other clients that connect to remote MCP servers with OAuth sign-in may work too; if sign-in fails, use the [local MCP server](#mcp-server-claude-openclaw-cursor-instinct).
+
+**What the key allows.** The tools follow the scope of the key the user pastes, as the app names it:
+
+| Key scope in the app | Remote tools |
+|---|---|
+| **Purchasable** | All 21: gift cards, bill pay (Canadian accounts) and transfers |
+| **Gift Cards Only** | The 8 gift-card tools: balance, browsing, quote, purchase, owned cards and cashback |
+
+A key that only allows transfers cannot connect. The remote server has the payment tools only; the local setup tools (`snaplii_init`, `snaplii_connect`, `snaplii_config_show`), `snaplii_dashboard` and `snaplii_autopilot` are not part of it.
+
+**Limits.** A connection spends within its key's limits: gift cards count toward the key's daily limit and transfers toward its rolling 24-hour limit; bill payments are not capped by the key's limit. Every payment draws from Snaplii Cash.
+
+**Disconnecting.** Remove the server in the client to stop using it there. Deleting the API key in the app ends every connection made with it, in every client.
+
+**If it does not work.**
+
+- Sign-in succeeds but no tools appear, or every call fails: check that the URL ends with `/mcp`.
+- The sign-in page says the app cannot connect: that client is not supported yet; use the local MCP server.
+- Calls stop working after the key was deleted in the app: connect again with a current key.
 
 ### MCP Server (Claude, OpenClaw, Cursor, Instinct)
 
