@@ -37,7 +37,7 @@ The account country is fixed at login, so the catalog, currency and bill pay fol
    - Or leave it empty and ask Claude to connect Snaplii. It calls `snaplii_connect`, and Claude Code asks you to open a secure Snaplii page where you enter the key, so the key never enters the chat.
    - If that page cannot be shown, run `snaplii init` in a terminal window of your own ([install the CLI](https://github.com/Snaplii-Inc/agent-to-merchant-payments#quick-start)) and type the key at its hidden prompt.
 
-The MCP server uses the API key once to obtain a session token and does not store the key; it keeps the session token in the OS keychain, or in an owner-only file only if you agree. A key set as a plugin option is kept by Claude Code in its secure credential storage. Change the spending limit or revoke the key in the app at any time.
+The MCP server uses the API key once to obtain a session token and does not store the key; it keeps the session token in the OS keychain, or in an owner-only file only if you agree. A key set as a plugin option is kept by Claude Code in its secure credential storage. Revoke the key in the app at any time. A key's spending limit is fixed when it is created; for a different limit, create a new key.
 
 ### Where it works
 

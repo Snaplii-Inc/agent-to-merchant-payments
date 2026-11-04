@@ -113,7 +113,7 @@ The account country is fixed at login, so the catalog, currency and bill pay fol
 
 1. **Set aside funds.** Add the amount you want to make available as Snaplii Cash in the app.
 2. **Define access.** Create an API key with the scope and spending limit the agent's task needs. Scopes: `PAY_READ` (read-only), `PAY_WRITE` (read, purchase, bill pay), `P2P` (transfers), `ALL`.
-3. **Let the agent execute within that boundary.** Agent payments draw from Snaplii Cash, without exposing your bank or card credentials. You can change the limit or revoke the key in the app at any time.
+3. **Let the agent execute within that boundary.** Agent payments draw from Snaplii Cash, without exposing your bank or card credentials. You can revoke the key in the app at any time. Its limit is fixed when the key is created; for a different limit, create a new key.
 
 Gift-card purchases can help users save through eligible offers and cashback. Available brands and savings vary by country, brand, and current quote; merchant offers can be combined only where their terms allow.
 

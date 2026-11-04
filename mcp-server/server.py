@@ -160,7 +160,8 @@ def _authenticate(api_key: str, agent_id: str | None = None) -> dict:
             "✅ Connected. Purchases come only from your prepaid Snaplii Cash. The daily "
             "limit you set in the app only covers gift cards; bill payments are not "
             "subject to it, and transfers have a separate rolling 24-hour limit. You can "
-            "change the limit or revoke this key in the app anytime."
+            "revoke this key in the app anytime. Its limit is fixed when the key is "
+            "created; for a different limit, create a new key."
         ),
     }
 

@@ -445,7 +445,7 @@ Error handling — every transfer error carries a meaningful `message` plus `cod
 
 - `RECIPIENT_NOT_FOUND` → that phone number has no Snaplii account. Re-check the number with the user.
 - `INSUFFICIENT_BALANCE` → Snaplii Cash doesn't cover the amount — ask the user to top up in the app (Wallet → Add Cash).
-- `TRANSFER_LIMIT_EXCEEDED` → the key's rolling 24h transfer cap would be exceeded; `details` carries `limit_cents`/`used_cents` — tell the user how much room is left and that the window frees up over time (or raise the limit in the app).
+- `TRANSFER_LIMIT_EXCEEDED` → the key's rolling 24h transfer cap would be exceeded; `details` carries `limit_cents`/`used_cents` — tell the user how much room is left and that the window frees up over time; a key's limit is fixed when it is created, so a different limit needs a new key in the app.
 - `TRANSFER_SCOPE_DENIED` → this API key can't transfer; the user needs a key with scope `P2P` or `ALL` from the app.
 - `SELF_TRANSFER` → the number resolves to the user's own account.
 - `status: CREATING` in the output (not an error) → the result is unknown yet. Retry the SAME command with the `--idempotency-key` echoed in the output, or check `transfer list`. **Never retry with a fresh key — that can double the transfer.**

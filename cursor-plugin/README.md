@@ -29,7 +29,7 @@ The account country is fixed at login, so the catalog, currency and bill pay fol
 3. Install this plugin from the Cursor Marketplace. The MCP server starts with `uvx snaplii-mcp@0.20.3`, so [uv](https://docs.astral.sh/uv/getting-started/installation/) must be on your PATH.
 4. Connect in one of two ways. Either set the **Snaplii API key** in the plugin's variables (the Configure Plugin Variables form after install, or **Configure** on the plugin later); the agent then connects with it directly. Or leave it empty and ask the agent to connect Snaplii: it calls `snaplii_connect`, which returns a secure card that Cursor renders inside the chat (Cursor supports MCP Apps); you enter the key in that card, never in the chat. If no card appears, follow the `next_action` that `snaplii_config_show` reports: run `snaplii init` in your own terminal ([install the CLI](https://github.com/Snaplii-Inc/agent-to-merchant-payments#quick-start)), or paste the key for `snaplii_init`, which passes it through the model once.
 
-The MCP server uses the API key once to obtain a session token and does not store it; a key set as a plugin variable is kept by Cursor. Change the spending limit or revoke the key in the app at any time.
+The MCP server uses the API key once to obtain a session token and does not store it; a key set as a plugin variable is kept by Cursor. Revoke the key in the app at any time. A key's spending limit is fixed when it is created; for a different limit, create a new key.
 
 ## Example prompts
 

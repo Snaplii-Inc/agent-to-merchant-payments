@@ -161,7 +161,7 @@ Every transfer error carries a meaningful `message` plus `code`, `retryable` and
 
 - `RECIPIENT_NOT_FOUND`: no Snaplii account at that number; re-check it with the user.
 - `INSUFFICIENT_BALANCE`: ask the user to top up in the app (Wallet → Add Cash).
-- `TRANSFER_LIMIT_EXCEEDED`: the key's rolling 24h cap; `details` carries `limit_cents`/`used_cents`, so tell the user the room left and that the window frees up over time (or raise the limit in the app).
+- `TRANSFER_LIMIT_EXCEEDED`: the key's rolling 24h cap; `details` carries `limit_cents`/`used_cents`, so tell the user the room left and that the window frees up over time; a key's limit is fixed when it is created, so a different limit needs a new key in the app.
 - `TRANSFER_SCOPE_DENIED`: this key can't transfer; the user needs a key with scope `P2P` or `ALL`.
 - `SELF_TRANSFER`: the number is the user's own account.
 - `status: CREATING` (not an error): the result is unknown yet. Wait `retry_after_seconds`, then retry the same `snaplii_transfer_create` with the `idempotency_key` echoed in the result, or check `snaplii_transfer_list`. A fresh key can double the transfer.
