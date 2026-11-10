@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Export the remote MCP tool definitions that agent-gateway serves at /mcp, from mcp-server/server.py.
 
-The remote server exposes 21 of the local stdio tools: 8 gift-card tools (key scope ACQUIRY),
-8 bill-pay tools (PURCHASE) and the 5 transfer tools (ALL only). Scopes rank ACQUIRY < PURCHASE
-< ALL; a grant may use a tool when its key scope is at least the tool's required_key_scope.
-name, title, inputSchema and annotations are copied from server.py. The remote descriptions and
+Scopes rank ACQUIRY < PURCHASE < ALL; a grant may use a tool when its key scope is at least the
+tool's required_key_scope.
+name, inputSchema and annotations are copied from server.py. The remote titles, descriptions and
 instructions are the local ones with the edits below, which drop what only applies to the local
 server (snaplii_config_show, snaplii_connect, update notices, the autopilot prompt, the key-scope
-note) and set the remote polling cadence for transfers. Each edit must match server.py exactly
-once, so a local change to an edited sentence stops the export until the edit is updated.
+note), drop the promotional wording directory reviews reject, state the bill-pay facts only when
+those tools are listed, and set the remote polling cadence for transfers. Each edit must match
+server.py exactly once, so a local change to an edited sentence stops the export until the edit is
+updated.
 
 server.py does not read the output. When its tools change, rerun this and commit the output to
 agent-gateway src/main/resources/mcp/tools.json. --check fails when --out is out of date. Run from
@@ -47,7 +48,20 @@ LOCAL_ONLY = {"snaplii_config_show", "snaplii_init", "snaplii_connect", "snaplii
 
 _POLL_LIMIT = "stop after two minutes without a final status and tell the user to check again later"
 
+# (local, remote); the annotations carry the title too.
+TITLE_EDITS = {"snaplii_cashback_calc": ("Find the best cashback card", "Calculate gift card cashback")}
+
 DESCRIPTION_EDITS = {
+    "snaplii_browse_tags": [(
+        "When users describe a scenario (e.g. travel, dining), YOU should analyze the data, compare cashback rates, "
+        "and recommend the best options.",
+        "When the user describes a scenario (e.g. travel, dining), match the brands in the result to it and show "
+        "each brand's cashback rate.",
+    )],
+    "snaplii_cashback_calc": [(
+        "Calculate exact cashback savings for a brand and amount. Shows how much user saves and effective cost.",
+        "Calculate the cashback Snaplii gives and the effective cost for a brand and amount.",
+    )],
     "snaplii_transfer_create": [(
         "Only call snaplii_transfer_finish when the user explicitly asks to send now.",
         "Only call snaplii_transfer_finish when the user explicitly asks to send now. Do not poll a PENDING "
@@ -75,8 +89,25 @@ DESCRIPTION_EDITS = {
 }
 
 # Paragraphs of the local instructions that the remote server leaves out, by their heading.
-DROPPED_PARAGRAPHS = ("UPDATES:", "CONNECT:")
+DROPPED_PARAGRAPHS = ("UPDATES:", "CONNECT:", "WHEN THE USER MENTIONS SPENDING")
 INSTRUCTION_EDITS = [
+    ("Snaplii lets you browse and buy gift cards accepted at over 500,000 locations and pay bills — saving the user "
+     "money with vouchers + up to 15% cashback, all from their prepaid Snaplii Cash balance.",
+     "Snaplii lets the user check their prepaid Snaplii Cash balance, browse the gift cards available in their "
+     "region (Canada or the US) with the cashback Snaplii gives on each brand, and buy gift cards paid from Snaplii "
+     "Cash. Bill payments and transfers are available only when their tools are listed."),
+    # Every grant reads this paragraph; not every grant has the bill-pay tools.
+    ("The hard daily limit the user set in the app only covers gift cards; bill payments are not subject to it. A "
+     "gift-card purchase charges the balance as soon as it runs. A bill payment sent through snaplii_billpay_pay "
+     "cannot be undone.",
+     "The hard daily limit the user set in the app covers gift-card purchases. A gift-card purchase charges the "
+     "balance as soon as it runs. Only when the snaplii_billpay_* tools are listed: the hard daily limit the user "
+     "set in the app does not cover bill payments, and a bill payment sent through snaplii_billpay_pay cannot be "
+     "undone."),
+    # The region rule of the dropped WHEN THE USER MENTIONS SPENDING paragraph.
+    ("don't echo the raw API key back in chat.",
+     "don't echo the raw API key back in chat; the account's region (CA/US) is known from the connection and "
+     "returned as account_country by browse and balance; do not ask the user for it."),
     # Every grant reads this paragraph; only ALL grants have the transfer tools.
     ("Transfers have a separate rolling 24-hour per-key transfer limit;",
      "Only when the snaplii_transfer_* tools are listed (the key allows transfers): transfers have a separate "
@@ -122,12 +153,19 @@ def build() -> dict:
     for tool in local:
         if tool.name not in REQUIRED_KEY_SCOPE:
             continue
+        title = tool.title
+        annotations = tool.annotations.model_dump(by_alias=True, exclude_none=True)
+        if tool.name in TITLE_EDITS:
+            old, new = TITLE_EDITS[tool.name]
+            if title != old or annotations.get("title") != old:
+                raise SystemExit(f"{tool.name}: the title this export edits is no longer {old!r} in server.py")
+            title = annotations["title"] = new
         tools.append({
             "name": tool.name,
-            "title": tool.title,
+            "title": title,
             "description_remote": _edit(tool.description, DESCRIPTION_EDITS.get(tool.name, ()), tool.name),
             "inputSchema": tool.inputSchema,
-            "annotations": tool.annotations.model_dump(by_alias=True, exclude_none=True),
+            "annotations": annotations,
             "required_key_scope": REQUIRED_KEY_SCOPE[tool.name],
         })
     return {"instructions": remote_instructions(), "tools": tools}

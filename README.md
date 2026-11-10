@@ -322,12 +322,7 @@ Connecting opens Snaplii's sign-in page in the browser, where the user pastes an
 
 Other clients that connect to remote MCP servers with OAuth sign-in may work too; if sign-in fails, use the [local MCP server](#mcp-server-claude-openclaw-cursor-instinct).
 
-**What the key allows.** The tools follow the scope of the key the user pastes, as the app names it:
-
-| Key scope in the app | Remote tools |
-|---|---|
-| **Purchasable** | All 21: gift cards, bill pay (Canadian accounts) and transfers |
-| **Gift Cards Only** | The 8 gift-card tools: balance, browsing, quote, purchase, owned cards and cashback |
+**What a connection can do.** It depends on the client and on the key the user pastes: Snaplii's sign-in page lists what that client will be able to do before the user connects, and the key's scope and limits can narrow it further.
 
 A key that only allows transfers cannot connect. The remote server has the payment tools only; the local setup tools (`snaplii_init`, `snaplii_connect`, `snaplii_config_show`), `snaplii_dashboard` and `snaplii_autopilot` are not part of it.
 
