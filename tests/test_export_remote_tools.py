@@ -55,8 +55,18 @@ def test_names_schemas_and_annotations_match_server_py():
         assert set(tool) == {"name", "title", "description_remote", "inputSchema", "annotations",
                              "required_key_scope"}, tool["name"]
         assert tool["inputSchema"] == source.inputSchema, tool["name"]
-        assert tool["annotations"] == source.annotations.model_dump(by_alias=True, exclude_none=True), tool["name"]
-        assert tool["title"] == source.title, tool["name"]
+        annotations = source.annotations.model_dump(by_alias=True, exclude_none=True)
+        title = source.title
+        if tool["name"] in export.TITLE_EDITS:
+            title = annotations["title"] = export.TITLE_EDITS[tool["name"]][1]
+        assert tool["annotations"] == annotations, tool["name"]
+        assert tool["title"] == title, tool["name"]
+
+
+def test_cashback_calc_title_does_not_say_best_remotely():
+    tool = _remote_tools()["snaplii_cashback_calc"]
+    assert tool["title"] == tool["annotations"]["title"] == "Calculate gift card cashback"
+    assert _local()["snaplii_cashback_calc"].title == "Find the best cashback card"
 
 
 def test_every_tool_names_the_key_scope_it_needs():
@@ -82,7 +92,12 @@ def test_bill_pay_is_not_capped_by_the_key_daily_limit():
     assert "cannot be undone" in local
     assert _remote_tools()["snaplii_billpay_pay"]["description_remote"] == local
     payment = next(p for p in _remote()["instructions"].split("\n\n") if p.startswith("HOW PAYMENT WORKS:"))
-    assert "daily limit" in payment and BILL_NOT_CAPPED in payment
+    # Not every grant has the bill-pay tools, so the instructions state the bill-pay facts only when they are listed.
+    before, sep, after = payment.partition("Only when the snaplii_billpay_* tools are listed: ")
+    assert sep, payment
+    assert "daily limit the user set in the app covers gift-card purchases" in before
+    assert "bill" not in before.lower()
+    assert "does not cover bill payments" in after and "cannot be undone" in after
     # Gift cards stay capped.
     assert "daily limit" in _remote_tools()["snaplii_purchase"]["description_remote"]
 
@@ -90,7 +105,27 @@ def test_bill_pay_is_not_capped_by_the_key_daily_limit():
 def test_gift_card_and_bill_descriptions_are_the_local_ones():
     local = _local()
     for name in GIFT_CARD + BILL_PAY:
+        if name in export.DESCRIPTION_EDITS:
+            continue
         assert _remote_tools()[name]["description_remote"] == local[name].description, name
+
+
+def test_remote_text_has_no_promotional_wording():
+    # Directory reviews reject tool text and instructions that promote; the local server keeps its wording.
+    banned = ("saving the user money", "up to 15%", "500,000", "recommend the best", "Find the best",
+              "how much user saves", "WHEN THE USER MENTIONS SPENDING")
+    for where, text in _remote_texts().items():
+        for phrase in banned:
+            assert phrase not in text, (where, phrase)
+    for tool in _remote()["tools"]:
+        assert "best" not in tool["title"].lower(), tool["name"]
+    assert "WHEN THE USER MENTIONS SPENDING" in server._SERVER_INSTRUCTIONS
+    assert _remote()["instructions"].startswith("Snaplii lets the user check their prepaid Snaplii Cash balance")
+
+
+def test_remote_instructions_keep_the_region_rule():
+    rules = next(p for p in _remote()["instructions"].split("\n\n") if p.startswith("RULES:"))
+    assert "returned as account_country by browse and balance; do not ask the user for it" in rules
 
 
 def test_transfer_create_says_to_check_the_list_when_no_result_came_back():
