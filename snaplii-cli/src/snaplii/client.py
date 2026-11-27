@@ -14,6 +14,7 @@ from snaplii.exceptions import (
     AmountValidationError,
     AuthError,
     ConfigError,
+    ConnectError,
     GatewayApiError,
     GatewayConnectionError,
     SnapliiCliError,
@@ -781,6 +782,127 @@ class GatewayClient:
         if not isinstance(body, dict):
             body = {"raw": body}
         raise TransferApiError(resp.status_code, body, path)
+
+    # ── Phone connection (snaplii agent) ──────────────────────────
+    # These calls carry the phone connection's own tokens, never the API-key session's, and go to
+    # /api/agent/v1. A token is sent only to the gateway origin its sign-in started at.
+
+    def start_agent_connect(self, agent: str, phone: str, region: str | None = None,
+                            agent_token: str | None = None, replaces: str | None = None) -> dict:
+        """Starts a new sign-in request: the gateway texts `phone` a sign-in link, and answers a
+        temporary token, a match code and the masked phone.
+
+        `region` (CA or US) only says how to read a number given without +1. With the agent's current
+        long-term token, what that sign-in gave the agent is removed at once; `replaces` is the
+        temporary token of an earlier unfinished request, which is ended.
+        """
+        body = {"agent": agent, "phone": phone}
+        if region:
+            body["region"] = region.upper()
+        if replaces:
+            self._require_agent_origin()
+            body["replaces"] = replaces
+        return self._agent_request("POST", "/api/agent/v1/connect", json=body, bearer=agent_token)
+
+    def collect_agent_token(self, connect_token: str) -> dict:
+        """Swaps the temporary token for the long-term one. "pending" until the user has approved."""
+        self._require_agent_origin()
+        return self._agent_request("POST", "/api/agent/v1/connect/token", json={"connect_token": connect_token})
+
+    def get_agent_connection(self, agent_token: str) -> dict:
+        """Signs in with the long-term token: which agent this is and its daily limit."""
+        return self._agent_request("GET", "/api/agent/v1/connection", bearer=agent_token)
+
+    def disconnect_agent(self, agent_token: str) -> None:
+        """Ends this agent's connection: the long-term token and its access to Snaplii stop working at once."""
+        self._agent_request("DELETE", "/api/agent/v1/connection", bearer=agent_token)
+
+    def get_agent_catalog(self, agent_token: str) -> dict:
+        """The gift card brands Snaplii sells, by category, as Snaplii core lists them."""
+        return self._agent_request("GET", "/api/agent/v1/card-brands", bearer=agent_token)
+
+    def get_agent_brand(self, agent_token: str, brand_id: str) -> dict:
+        """One brand's cards, each with the item_id and price an order takes."""
+        return self._agent_request("GET", f"/api/agent/v1/card-brands/{brand_id}", bearer=agent_token)
+
+    def get_agent_balance(self, agent_token: str) -> dict:
+        """The user's Snaplii Cash and what is left of this agent's daily limit."""
+        return self._agent_request("GET", "/api/agent/v1/balance", bearer=agent_token)
+
+    def create_agent_order(self, agent_token: str, item_id: str, price: str, idempotency_key: str) -> dict:
+        """Starts an order. The same idempotency key returns the same order and never buys twice."""
+        body = {"item_id": item_id, "price": price, "idempotency_key": idempotency_key}
+        return self._agent_request("POST", "/api/agent/v1/orders", json=body, bearer=agent_token)
+
+    def get_agent_order(self, agent_token: str, order_id: str) -> dict:
+        return self._agent_request("GET", f"/api/agent/v1/orders/{order_id}", bearer=agent_token)
+
+    def continue_agent_order(self, agent_token: str, order_id: str) -> dict:
+        """Checks an order again after the user topped up their Snaplii Cash."""
+        return self._agent_request("POST", f"/api/agent/v1/orders/{order_id}/continue", bearer=agent_token)
+
+    def start_top_up(self, agent_token: str, amount: str, payment_method: str | None = None) -> dict:
+        """Asks the user to add ``amount`` dollars to Snaplii Cash.
+
+        ``payment_method`` is ``stripe`` (the gateway's default: its own pay page, Apple Pay or Google
+        Pay) or ``alipay`` (Alipay's page). The gateway texts the link to the user (``texted_to``);
+        where it may also show it, the answer has ``pay_url``, for the agent to give to the user too,
+        and always ``next_step``, what the agent does now. Answers the user's open top-up of the same
+        amount and payment method, if there is one, instead of a new one.
+        """
+        body = {"amount": amount}
+        if payment_method:
+            body["payment_method"] = payment_method.lower()
+        return self._agent_request("POST", "/api/agent/v1/top-ups", json=body, bearer=agent_token)
+
+    def get_top_up(self, agent_token: str, top_up_id: str) -> dict:
+        return self._agent_request("GET", f"/api/agent/v1/top-ups/{top_up_id}", bearer=agent_token)
+
+    def cancel_top_up(self, agent_token: str, top_up_id: str) -> dict:
+        """Takes back a top-up nobody paid yet, so another amount or payment method can be asked for."""
+        return self._agent_request("DELETE", f"/api/agent/v1/top-ups/{top_up_id}", bearer=agent_token)
+
+    def _require_agent_origin(self) -> None:
+        """Refuses to send a phone-connection token to any gateway but the one its sign-in started at."""
+        agent_origin = self._config.get("agent_origin")
+        if agent_origin != self._origin:
+            raise ConnectError(
+                "This agent was connected by phone at %s, not at this gateway (%s), so its token is not "
+                "sent here. Run 'snaplii agent connect --agent NAME --phone NUMBER' to connect it here."
+                % (agent_origin or "another gateway", self._origin))
+
+    def _agent_request(self, method: str, path: str, json: dict | None = None,
+                       bearer: str | None = None) -> dict:
+        headers = {}
+        if bearer:
+            self._require_agent_origin()
+            headers["Authorization"] = f"Bearer {bearer}"
+        url = self._base_url + path
+        try:
+            resp = self._http.request(method, url, json=json, headers=headers)
+        except httpx.RequestError as e:
+            # Connect and pool failures happen before anything is sent. Any other transport error
+            # may follow a request the gateway already processed (an order or a top-up).
+            sent = method != "GET" and not isinstance(
+                e, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout))
+            raise GatewayConnectionError(url, e, indeterminate=sent)
+        return self._parse_agent_response(resp, path)
+
+    @staticmethod
+    def _parse_agent_response(resp: httpx.Response, path: str) -> dict:
+        """The agent API answers JSON, and explains a refusal in "message" with its "code"."""
+        try:
+            body = resp.json()
+        except ValueError:
+            body = None
+        if resp.is_success:
+            # A disconnect answers 204 with no body.
+            return body if isinstance(body, dict) else {}
+        if not isinstance(body, dict):
+            body = {"raw": resp.text}
+        if isinstance(body.get("message"), str) and body["message"].strip():
+            body["friendly_message"] = body["message"]
+        raise GatewayApiError(resp.status_code, body, path)
 
     # ── Internal ──────────────────────────────────────────────────
 

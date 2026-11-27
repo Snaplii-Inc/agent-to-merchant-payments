@@ -16,6 +16,15 @@ _TOKEN_SAFETY_MARGIN = 90
 _KEYRING_SERVICE = "snaplii-cli"
 _SESSION_KEYS = {"access_token", "token_expires_at", "token_origin",
                  "_session_generation", "_token_digest", "_credential_storage"}
+# The phone connection (`snaplii agent connect`) keeps its own tokens, apart from the API-key
+# session: the long-term agent token, and the temporary token of a sign-in that still waits.
+AGENT_TOKEN = "agent_token"
+CONNECT_TOKEN = "connect_token"
+_AGENT_SECRET_NAMES = (AGENT_TOKEN, CONNECT_TOKEN)
+_AGENT_SECRET_DIGESTS = "_agent_secret_digests"
+_AGENT_CREDENTIAL_STORAGE = "_agent_credential_storage"
+# Any of these in config.json makes the file owner-only when it is written.
+_SECRETS_THAT_MAY_BE_IN_THE_FILE = ("access_token", *_AGENT_SECRET_NAMES)
 
 
 def _keyring_available() -> bool:
@@ -34,27 +43,27 @@ def _keyring_available() -> bool:
         return False
 
 
-def _keyring_get(service: str):
+def _keyring_get(service: str, entry: str = "access_token"):
     try:
         import keyring
-        return keyring.get_password(service, "access_token")
+        return keyring.get_password(service, entry)
     except Exception:
         return None
 
 
-def _keyring_set(service: str, token: str) -> bool:
+def _keyring_set(service: str, token: str, entry: str = "access_token") -> bool:
     try:
         import keyring
-        keyring.set_password(service, "access_token", token)
-        return keyring.get_password(service, "access_token") == token
+        keyring.set_password(service, entry, token)
+        return keyring.get_password(service, entry) == token
     except Exception:
         return False
 
 
-def _keyring_delete(service: str):
+def _keyring_delete(service: str, entry: str = "access_token"):
     try:
         import keyring
-        keyring.delete_password(service, "access_token")
+        keyring.delete_password(service, entry)
     except Exception:
         # The durable cleared-session marker makes any residue unusable.
         pass
@@ -62,6 +71,11 @@ def _keyring_delete(service: str):
 
 def _digest(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _holds_a_secret(data: dict) -> bool:
+    """True when config.json is about to hold a token, so it must be written owner-only."""
+    return any(isinstance(data.get(key), str) and data[key] for key in _SECRETS_THAT_MAY_BE_IN_THE_FILE)
 
 
 def _cache_error(message: str | None = None, reason_code: str = "session_cache_failed") -> AuthError:
@@ -183,7 +197,7 @@ class ConfigStore:
             self._store_session(data, token)
         else:
             # None or empty never stores or clears a secret (the legacy save() idiom).
-            write_config(self._path, data, private="access_token" in data)
+            write_config(self._path, data, private=_holds_a_secret(data))
 
     @staticmethod
     def _validate_token(token, expires_in) -> int:
@@ -214,7 +228,7 @@ class ConfigStore:
             data["access_token"] = token
         metadata_committed = False
         try:
-            write_config(self._path, data, private=storage == "config file")
+            write_config(self._path, data, private=storage == "config file" or _holds_a_secret(data))
             metadata_committed = True
             persisted = read_config(self._path)
             if persisted != data:
@@ -290,7 +304,8 @@ class ConfigStore:
             for key in _SESSION_KEYS | {"api_key"}:
                 data.pop(key, None)
             data["_credential_storage"] = "cleared"
-            write_config(self._path, data)
+            # Ending the API-key session leaves the phone connection's tokens where they are.
+            write_config(self._path, data, private=_holds_a_secret(data))
             self._MEM_SECRETS.pop(self._cache_key, None)
             _keyring_delete(self._keyring_service)
             # A pre-0.17 keychain item is removed whether or not this
@@ -308,8 +323,85 @@ class ConfigStore:
             self._MEM_SECRETS.pop(self._cache_key, None)
             _keyring_delete(self._keyring_service)
             _keyring_delete(_KEYRING_SERVICE)
+            for name in _AGENT_SECRET_NAMES:
+                _keyring_delete(self._keyring_service, name)
         # Keep the empty lock inode: a waiter may already have it open. Unlinking
         # it would let another writer create and acquire a different lock.
+
+    # ── The phone connection's tokens (snaplii agent) ─────────────
+    # They go where this configuration's API-key session would go: the system keychain, or
+    # config.json on Muse or with the insecure opt-in. Never only this process's memory: the
+    # token must outlive the command that got it. config.json keeps a digest of each one, so a
+    # keychain item left behind by a failed delete is never used.
+
+    def agent_token_storage(self) -> str:
+        """Where the phone connection's tokens would be kept. Raises before anything is sent to
+        the gateway when there is no such place, so a sign-in never starts that couldn't be kept."""
+        storage = self._selected_storage(read_config(self._path))
+        if storage == "process memory":
+            raise no_persistent_storage_error()
+        return storage
+
+    def get_agent_secret(self, name: str) -> str | None:
+        """The phone connection's token `name` (AGENT_TOKEN or CONNECT_TOKEN), or None."""
+        return self._read_agent_secret(read_config(self._path), name)
+
+    def update_agent_connection(self, *, tokens: dict | None = None, fields: dict | None = None,
+                                remove: tuple = ()) -> None:
+        """Changes what the phone connection keeps, under one lock: `tokens` to set, `fields`
+        (plain config.json values such as agent_name) to set, and `remove`, names of either kind."""
+        with config_lock(self._path):
+            data = read_config(self._path)
+            kept_tokens = {}
+            for name in _AGENT_SECRET_NAMES:
+                value = self._read_agent_secret(data, name)
+                if value and name not in remove:
+                    kept_tokens[name] = value
+            kept_tokens.update({name: value for name, value in (tokens or {}).items() if value})
+            for key in remove:
+                data.pop(key, None)
+            data.update(fields or {})
+            self._write_agent_tokens(data, kept_tokens)
+
+    def _read_agent_secret(self, data: dict, name: str) -> str | None:
+        expected = (data.get(_AGENT_SECRET_DIGESTS) or {}).get(name)
+        if not expected:
+            return None
+        storage = data.get(_AGENT_CREDENTIAL_STORAGE)
+        if storage == "config file":
+            value = data.get(name)
+        elif storage == "system keychain":
+            value = _keyring_get(self._keyring_service, name)
+        else:
+            return None
+        if not isinstance(value, str) or _digest(value) != expected:
+            return None
+        return value
+
+    def _write_agent_tokens(self, data: dict, tokens: dict) -> None:
+        """Writes config.json with exactly `tokens` as the phone connection's tokens. Caller holds config_lock."""
+        for name in _AGENT_SECRET_NAMES:
+            data.pop(name, None)
+        data.pop(_AGENT_SECRET_DIGESTS, None)
+        data.pop(_AGENT_CREDENTIAL_STORAGE, None)
+        storage = None
+        if tokens:
+            storage = self._selected_storage(data)
+            if storage == "system keychain" and not all(
+                    _keyring_set(self._keyring_service, value, name) for name, value in tokens.items()):
+                self._use_keyring = False
+                self._FAILED_KEYRINGS.add(self._cache_key)
+                storage = self._selected_storage(data)
+            if storage == "process memory":
+                raise no_persistent_storage_error()
+            data[_AGENT_CREDENTIAL_STORAGE] = storage
+            data[_AGENT_SECRET_DIGESTS] = {name: _digest(value) for name, value in tokens.items()}
+            if storage == "config file":
+                data.update(tokens)
+        write_config(self._path, data, private=_holds_a_secret(data))
+        for name in _AGENT_SECRET_NAMES:
+            if storage != "system keychain" or name not in tokens:
+                _keyring_delete(self._keyring_service, name)
 
     def auth_status(self, *, origin: str) -> dict:
         base_url = auth.normalize_base_url(origin)

@@ -109,3 +109,67 @@ def fake_run(installer, monkeypatch):
 
     monkeypatch.setattr(installer, "run", run)
     return {"calls": calls, "rules": rules}
+
+
+# ── The phone connection (snaplii agent) ─────────────────────────────────
+
+AGENT_GATEWAY = "http://localhost:8080"  # a gateway on this machine, as `make up` runs it
+
+
+class MemoryKeyring:
+    """A system keychain in memory, so no test reads or writes the developer's real one."""
+    priority = 1
+
+    def __init__(self):
+        self.values = {}
+
+    def get_password(self, service, entry):
+        return self.values.get((service, entry))
+
+    def set_password(self, service, entry, value):
+        self.values[service, entry] = value
+
+    def delete_password(self, service, entry):
+        self.values.pop((service, entry), None)
+
+
+@pytest.fixture
+def memory_keyring(monkeypatch):
+    import keyring
+    backend = MemoryKeyring()
+    monkeypatch.setattr(keyring, "get_keyring", lambda: backend)
+    for name in ("set_password", "get_password", "delete_password"):
+        monkeypatch.setattr(keyring, name, getattr(backend, name))
+    monkeypatch.delenv("SNAPLII_ALLOW_INSECURE", raising=False)
+    return backend
+
+
+@pytest.fixture
+def agent_config(tmp_path, monkeypatch, memory_keyring):
+    """The configuration the CLI under test reads (SNAPLII_CONFIG_PATH), with a keychain in memory."""
+    from snaplii.config_store import ConfigStore
+    path = tmp_path / "muse.json"
+    monkeypatch.setenv("SNAPLII_CONFIG_PATH", str(path))
+    monkeypatch.delenv("SNAPLII_BASE_URL", raising=False)
+    return ConfigStore(path)
+
+
+@pytest.fixture
+def run_agent_cli(agent_config, monkeypatch):
+    """Runs `snaplii --base-url AGENT_GATEWAY ...` against agent_config, without real waits between polls."""
+    from click.testing import CliRunner
+    from snaplii import cli
+    monkeypatch.setattr("snaplii.commands.agent_connection.time.sleep", lambda seconds: None)
+    monkeypatch.setattr(cli, "check_for_update", lambda *args: None)
+
+    def run(*args, base_url=AGENT_GATEWAY):
+        return CliRunner().invoke(cli.main, ["--base-url", base_url, *args], catch_exceptions=False)
+
+    return run
+
+
+def connect_by_phone(store, agent_token, agent_name="muse", origin=AGENT_GATEWAY):
+    """Puts `store` in the state a finished `snaplii agent connect` leaves it in."""
+    from snaplii.config_store import AGENT_TOKEN
+    store.update_agent_connection(tokens={AGENT_TOKEN: agent_token},
+                                  fields={"agent_name": agent_name, "agent_origin": origin})

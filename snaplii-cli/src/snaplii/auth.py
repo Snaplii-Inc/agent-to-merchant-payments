@@ -429,6 +429,22 @@ def require_login_origin(base_url: str) -> str:
     return origin
 
 
+# A gateway on this machine (`make up` in snaplii-agent-gateway) may also take a phone connection.
+LOCAL_GATEWAY_HOSTS = ("localhost", "127.0.0.1")
+
+
+def require_agent_connect_origin(base_url: str) -> str:
+    """The gateway origin a phone connection (`snaplii agent connect`) may start at: the Snaplii
+    gateways that take a sign-in, or a gateway on this machine. Refuses any other."""
+    origin = normalize_origin(base_url)
+    if origin not in LOGIN_ORIGINS and urlsplit(origin).hostname not in LOCAL_GATEWAY_HOSTS:
+        raise ConfigError(
+            "The phone connection works only with the Snaplii gateways: %s (production) and %s "
+            "(staging), or a gateway on this machine. The configured gateway is %s. Change it with "
+            "`snaplii config set --base-url`, or remove SNAPLII_BASE_URL." % (DEFAULT_ORIGIN, STAGING_ORIGIN, origin))
+    return origin
+
+
 def validate_vault_origin(base_url: str) -> str:
     origin = normalize_origin(base_url)
     if origin != DEFAULT_ORIGIN or urlsplit(base_url).path not in ("", "/"):
