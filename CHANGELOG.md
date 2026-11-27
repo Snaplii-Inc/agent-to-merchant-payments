@@ -6,7 +6,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
-## [Unreleased]
+## [0.21.0] — not tagged yet: waits until the gateway's `/api/agent/v1` is on in production
+
+### Added
+- **`snaplii agent`: the phone connection, side by side with the API key.** `snaplii agent connect --agent NAME --phone NUMBER` signs the agent in by a link Snaplii texts to the user, who approves it on their phone with a code the agent tells them; a phone with no Snaplii account signs up the same way. `--no-wait` returns at once with `texted_to` and `match_code`, and `--resume` goes on waiting. The connection then:
+  - asks the user to top up Snaplii Cash: `agent top-up AMOUNT` texts them a pay link (Apple Pay or Google Pay, or Alipay's page with `--payment-method alipay`), followed with `agent top-up-status` and taken back with `agent top-up-cancel`;
+  - buys gift cards under the agent's own daily limit, set by Snaplii: `agent balance`, `agent catalog [BRAND_ID]`, `agent buy --item-id ID --price P [--key KEY]`, and `agent order ORDER_ID [--continue]` for an order that waited for a top-up;
+  - is shown and ended with `agent connection` and `agent disconnect`.
+
+  The commands are CLI only (no MCP tools, refused in Instinct like every other non-local command), and use none of the API-key session. A refusal from the gateway carries its `code`, such as `phone-not-allowlisted` (the invite-only alpha) or `unknown-agent`, with the gateway's own message.
+- **The phone connection's token is kept like the session's.** It goes to the system keychain, or to the owner-only config file on Muse or with `SNAPLII_ALLOW_INSECURE`, with a digest in `config.json` so a keychain item left behind is never used. It is never printed and is sent only to the gateway its sign-in started at. A sign-in starts only at production, staging, or a gateway on `localhost` / `127.0.0.1`, and is refused before the user is texted when there is nowhere to keep the token. `config clear` removes it; `init` and a rejected API-key session leave it.
+- **The snaplii-cli skill has Step 8, "Top up Snaplii Cash (phone connection)"**, in both copies: when to use the phone connection (a top-up from the chat, or the user asks to connect by phone), how to connect, top up and buy with it, and what each order status means. While the agent is connected by phone, it buys gift cards with `snaplii agent buy`. The READMEs list the commands.
+- The ClawHub plugin is 1.15.0 and pins `snaplii-mcp` 0.21.0.
 
 ### Changed
 - **Autopilot asks before it buys the gift card.** The card is bought and charged before the merchant order is placed, and the agent picks its amount for the order, so autopilot is the one exception to letting the agent judge confirmations: every autopilot text (the four skill copies and the `snaplii_autopilot` prompt) now waits for the user's explicit "yes" to the quote before `purchase`, and tells the user that the card stays in their Snaplii account if the order is not placed. The user sees the card's brand and amount, and that it stays in the account, before being asked; a corrected retry after a refused card or amount asks again when the quote changed. The standalone and ClawHub autopilot skill and the `snaplii_autopilot` prompt no longer hand over a redemption code unasked: the code goes into the merchant site, and in chat only when the user chose the no-browser fallback or, after a login wall or bot check, said yes to seeing it.
@@ -446,6 +457,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.21.0 | not tagged yet | Phone connection (`snaplii agent`): texted sign-in, Snaplii Cash top-ups, gift cards under the agent's daily limit |
 | 0.19.0 | 2026-10-08 | Instinct support: MCP-only, vault-filled connect page |
 | 0.18.0 | 2026-10-01 | Muse app update notice in `snaplii config show` |
 | 0.17.0 | 2026-09-27 | Muse secure credential store and first-install connection; session caching and recovery |

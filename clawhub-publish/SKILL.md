@@ -1,6 +1,6 @@
 ---
 name: snaplii-cli
-description: "Agent-to-Merchant (A2M) payments — AI agents complete transactions without checkout, using Snaplii's pre-funded gift cards, accepted at over 500,000 locations, as a payment rail. Use when the user wants to browse, buy, or manage gift cards, check their Snaplii Cash balance, pay bills (utilities, telecom), or send money to another person's phone number (P2P transfer)."
+description: "Agent-to-Merchant (A2M) payments — AI agents complete transactions without checkout, using Snaplii's pre-funded gift cards, accepted at over 500,000 locations, as a payment rail. Use when the user wants to browse, buy, or manage gift cards, check their Snaplii Cash balance, top up their Snaplii Cash, pay bills (utilities, telecom), or send money to another person's phone number (P2P transfer)."
 ---
 
 # Snaplii AI Agent Cashback Payment
@@ -9,7 +9,7 @@ description: "Agent-to-Merchant (A2M) payments — AI agents complete transactio
 
 ## How payment works
 
-This skill spends **only** from the user's **prepaid Snaplii Cash balance** — no credit card is ever charged. The API key is scoped and revocable. The **hard daily limit the user set in the app** only covers gift cards; bill payments are not subject to it. A gift-card purchase charges the balance as soon as it runs. A bill payment, once sent, cannot be undone. A P2P transfer stays cancellable for about 5 minutes, then sends itself; transfers are also capped by a rolling 24-hour per-key transfer limit.
+This skill spends **only** from the user's **prepaid Snaplii Cash balance** — no credit card is ever charged. The API key is scoped and revocable. The **hard daily limit the user set in the app** only covers gift cards; bill payments are not subject to it. A gift-card purchase charges the balance as soon as it runs. A bill payment, once sent, cannot be undone. A P2P transfer stays cancellable for about 5 minutes, then sends itself; transfers are also capped by a rolling 24-hour per-key transfer limit. With the phone connection ([Step 8](#step-8-top-up-snaplii-cash-phone-connection)), the agent can also ask the user to top up Snaplii Cash: Snaplii texts them a pay link, and only the user pays on it. Gift cards bought over that connection count toward that agent's own daily limit, set by Snaplii.
 
 **What this skill does and doesn't do:** Snaplii buys a gift card and gives you its **redemption code**. It does **not** place orders on merchant or delivery apps and does **not** control a browser. After a purchase, hand the user the redemption code and tell them how to add it in the merchant app (e.g. Uber Eats / DoorDash → Payment → Add Gift Card). The user completes the order themselves.
 
@@ -242,7 +242,7 @@ this does not delete the API key in the host's secure credential store.
 3. **Install the CLI** — this skill folder does not contain the installer. If the CLI is not at `~/.snaplii-env/bin/snaplii` (Windows: `%USERPROFILE%\.snaplii-env\Scripts\snaplii.exe`), install it and the MCP server from the release this skill belongs to:
 
    ```bash
-   git clone --depth 1 --branch v0.20.3 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
+   git clone --depth 1 --branch v0.21.0 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
    python3 snaplii-src/scripts/install.py --source ./snaplii-src
    ```
 
@@ -453,6 +453,56 @@ Error handling — every transfer error carries a meaningful `message` plus `cod
 
 **MCP runtime:** the `snaplii_transfer_*` tools (`create` / `cancel` / `finish` / `status` / `list`) mirror these commands with the same fields and rules. `snaplii_transfer_status` has no `--wait` — poll it yourself every few seconds until a terminal state.
 
+### Step 8: Top up Snaplii Cash (phone connection)
+
+The phone connection is a second way to connect, next to the API key in [Auth](#auth), with its own commands under `snaplii agent`. Use it when the user wants to top up their Snaplii Cash from this chat (only this connection can) or asks to connect by phone. Card details, bill pay and transfers keep using the API key. While this agent is connected by phone, buy gift cards with `snaplii agent buy` instead of Step 4's `purchase`, so that this agent's own daily limit applies. The `snaplii agent` commands are CLI-only: there are no MCP tools for them.
+
+**Connect.** The user needs no API key, and a phone with no Snaplii account signs up the same way.
+
+```bash
+snaplii agent connect --agent muse --phone "416 555 0100" --no-wait   # texts the user a sign-in link
+snaplii agent connect --agent muse --resume                           # waits until the user approves
+snaplii agent connection                                              # this agent and its daily limit
+```
+
+1. `--agent` is your own name in lowercase, such as `muse` or `grok`. `--phone` is the user's mobile number; ask for it if you don't have it.
+2. The first command returns `"status": "pending"` with `texted_to` and `match_code`. Tell the user that a sign-in link was texted to `texted_to`, and that they open it and type the code `match_code` to approve. The text doesn't contain the code.
+3. Run the `--resume` command to wait for the approval. It prints `"status": "connected"` and this agent's `daily_limit`. If it returns `pending` again, run it again.
+4. A refusal carries a `code`. `phone-not-allowlisted`: the phone connection is in an invite-only alpha, and this phone isn't invited. `unknown-agent`: this agent's name can't connect. Tell the user, and offer the API key in [Auth](#auth) instead.
+
+The token is kept in the system keychain (or in the owner-only config file, on hosts where Snaplii keeps its session there) and is never printed. Each `connect` starts from scratch: this agent's earlier phone connection stops working at once.
+
+**Top up.**
+
+```bash
+snaplii agent top-up 50 [--payment-method alipay]   # texts the user a pay link for 50
+snaplii agent top-up-status TOP_UP_ID               # CREATED → PAID → CREDITED
+snaplii agent top-up-cancel TOP_UP_ID               # takes back a top-up nobody paid yet
+```
+
+A top-up moves no money by itself: Snaplii texts the user a link, and the user pays on it with Apple Pay or Google Pay (Alipay's page with `--payment-method alipay`). Tell the user where the link went, as the output's `next_step` says. Check `top-up-status` every few seconds until it is `CREDITED` (the money is in Snaplii Cash), `EXPIRED`, `FAILED` or `CANCELLED`, and tell the user how it ended. One unpaid top-up is open at a time: cancel it to ask for another amount or payment method, and tell the user not to use its link.
+
+**Buy a gift card.**
+
+```bash
+snaplii agent balance                              # Snaplii Cash and what is left of today's limit
+snaplii agent catalog [BRAND_ID]                   # brands, or one brand's cards with item_id and price
+snaplii agent buy --item-id ITEM_ID --price 25     # charges Snaplii Cash as soon as it runs
+snaplii agent order ORDER_ID [--continue]          # an order, or continue one that waited for a top-up
+```
+
+Take the `item_id` verbatim from `snaplii agent catalog BRAND_ID`. `buy` prints an `idempotency_key` first: if a run ends before its answer, run `buy` again with `--key KEY` to ask about that order instead of buying a second time. The order's `status` and `next_step` say what happened:
+
+- `PAID`: the card is in the user's Snaplii wallet.
+- `NEEDS_TOP_UP`: Snaplii Cash is short by `gap`. Start a top-up of at least that much, wait until it is `CREDITED`, then run `snaplii agent order ORDER_ID --continue`. Don't create another order.
+- `OVER_LIMIT`: over this agent's daily limit. The user buys it in the Snaplii app.
+- `REFUSED`: nothing was charged. Don't send the same order again.
+- `UNKNOWN`: Snaplii didn't confirm the payment, so it may have gone through. Never order again; the user checks their orders in the Snaplii app.
+
+**Disconnect.** `snaplii agent disconnect` ends the phone connection at once. The API-key session isn't touched.
+
+`"error": "Not connected"` means this agent isn't connected by phone, or isn't any more: connect again as above.
+
 ## Sensitive Data Handling
 
 This skill handles real financial operations. These safety rules always apply:
@@ -493,6 +543,16 @@ This skill handles real financial operations. These safety rules always apply:
 | `snaplii transfer finish --order-no NO` | Send NOW (only on the user's explicit ask) — then poll status |
 | `snaplii transfer status --order-no NO [--wait] [--timeout S]` | One transfer's state; `--wait` polls until FINISHED/CANCELLED/FAILED. `--timeout` defaults to 120s — raise it (e.g. `330`) to poll through the ~5-minute undo window |
 | `snaplii transfer list [--status S]` | List transfers, newest first |
+| `snaplii agent connect --agent NAME --phone NUMBER [--no-wait]` / `--agent NAME --resume` | Connect by phone: Snaplii texts the user a sign-in link to approve with a code |
+| `snaplii agent connection` | This agent's phone connection and its daily limit |
+| `snaplii agent disconnect` | End the phone connection |
+| `snaplii agent balance` | Snaplii Cash and what is left of this agent's daily limit |
+| `snaplii agent catalog [BRAND_ID]` | Brands, or one brand's cards with `item_id` and price |
+| `snaplii agent buy --item-id ID --price PRICE [--key KEY]` | Buy a gift card over the phone connection; charges Snaplii Cash as soon as it runs |
+| `snaplii agent order ORDER_ID [--continue]` | Show an order, or continue one that waited for a top-up |
+| `snaplii agent top-up AMOUNT [--payment-method stripe\|alipay] [--wait]` | Text the user a pay link to add AMOUNT to Snaplii Cash |
+| `snaplii agent top-up-status TOP_UP_ID` | A top-up's state: CREATED, PAID, CREDITED, EXPIRED, FAILED, REVIEW or CANCELLED |
+| `snaplii agent top-up-cancel TOP_UP_ID` | Take back a top-up nobody paid yet |
 | `snaplii help` / `snaplii <command> --help` | Top-level / command-specific help |
 
 ## Important Rules
@@ -506,6 +566,7 @@ This skill handles real financial operations. These safety rules always apply:
 - **NEVER retry a transfer create with a fresh idempotency key after a CREATING/indeterminate result** — reuse the key echoed in the output, or check `transfer list` first. A fresh key can double the transfer.
 - **If the user asks to send money but gave no phone number, ask for it** — never guess the recipient.
 - **To report the user's Snaplii Cash balance, run `snaplii balance`** — it returns the real, current spendable balance (the same pool that pays for gift cards and bills). Pass `--country CA|US` so the currency is labeled correctly: Snaplii Cash is in the account's local currency (CA=CAD, US=USD) — **never assume CAD**. Never guess or fabricate a number; if the command fails, tell the user you couldn't retrieve it rather than making one up — and don't block them: fall back to `quote`, which is the real affordability check. Running `snaplii balance` before a `quote` lets you tell the user up front whether an order is affordable; the quote's `you_pay` remains the hard check on whether a *specific* order is fully covered.
-- **A $0 balance is normal for a new account — never dead-end first-time users.** When the balance is $0 (or doesn't cover the order), warmly explain they just need to add funds in the Snaplii app (Wallet → Add Cash / Top Up), reassure them there's nothing else to set up, and offer to re-check the balance and continue once they've topped up. Keep it encouraging, not a hard stop.
+- **A $0 balance is normal for a new account — never dead-end first-time users.** When the balance is $0 (or doesn't cover the order), warmly explain they just need to add funds in the Snaplii app (Wallet → Add Cash / Top Up), reassure them there's nothing else to set up, and offer to re-check the balance and continue once they've topped up. If they'd rather top up from this chat, the phone connection can text them a pay link ([Step 8](#step-8-top-up-snaplii-cash-phone-connection)). Keep it encouraging, not a hard stop.
+- **NEVER ask the user for anything Snaplii texted them** (a sign-in link, its code, a pay link): they act on it on their phone.
 - **Token is NOT auto-refreshed.** Follow [Auth](#auth) on expiry or authentication rejection. Reuse the host's stored credential when available; never automatically switch to raw-key input or replay a payment.
 - Parse JSON output and present in human-friendly format. Do not surface internal IDs (brandId / templateId / cardNo / keyId) into user-facing text unless the user specifically asks.
