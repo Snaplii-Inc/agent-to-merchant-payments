@@ -91,6 +91,7 @@ snaplii transfer list
 | Smart | `smart cashback --brand-id ID --amount A`, `smart dashboard` |
 | Bill pay | `billpay payees`, `billpay detail`, `billpay save`, `billpay vouchers`, `billpay quote`, `billpay pay`, `billpay result`, `billpay history` |
 | Transfers | `transfer create`, `transfer cancel`, `transfer finish`, `transfer status [--wait] [--timeout S]`, `transfer list` |
+| Phone connection | `agent connect --agent NAME --phone NUMBER`, `agent connection`, `agent disconnect`, `agent balance`, `agent catalog`, `agent buy`, `agent order`, `agent top-up AMOUNT`, `agent top-up-status`, `agent top-up-cancel` |
 | Maintenance | `update`, `help` |
 
 ## Safety model

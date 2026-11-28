@@ -44,6 +44,20 @@ OPERATIONS = [
     ("transfer list", "transfer_list", {}),
 ]
 
+# CLI-only: the phone connection (`snaplii agent`) has no MCP tools. Each needs that connection's own
+# token, not the API-key session. Its sign-in, `agent connect`, is local setup like `init`.
+PHONE_CONNECTION_OPERATIONS = [
+    "agent connection",
+    "agent disconnect",
+    "agent balance",
+    "agent catalog",
+    "agent buy --item-id brand-template --price 10",
+    "agent order order-1",
+    "agent top-up 10",
+    "agent top-up-status top-up-1",
+    "agent top-up-cancel top-up-1",
+]
+
 
 @pytest.fixture
 def muse_runtime(tmp_path, monkeypatch, muse_filesystem):
@@ -71,8 +85,11 @@ def test_business_auth_matrix_covers_all_registered_entrypoints():
                     for path in leaves(child, prefix + (name,))}
         return {" ".join(prefix)}
 
-    local_cli = {"help", "update", "init", "config set", "config show", "config doctor", "config clear"}
-    assert leaves(cli.main) - local_cli == {command.split(" --", 1)[0] for command, _, _ in OPERATIONS}
+    local_cli = {"help", "update", "init", "agent connect",
+                 "config set", "config show", "config doctor", "config clear"}
+    phone_connection = {" ".join(command.split(" ")[:2]) for command in PHONE_CONNECTION_OPERATIONS}
+    assert leaves(cli.main) - local_cli == (
+        {command.split(" --", 1)[0] for command, _, _ in OPERATIONS} | phone_connection)
     local_mcp = {"snaplii_config_show", "snaplii_init", "snaplii_connect", "snaplii_submit_api_key"}
     assert {tool.name for tool in asyncio.run(server.list_tools())} - local_mcp == {
         "snaplii_" + name for _, name, _ in OPERATIONS
@@ -108,6 +125,31 @@ def test_every_business_operation_requires_session(
     assert result["next_action"] == auth.build_auth_action(state, host="muse")
     assert result["next_action"]["instruction"] == auth.MUSE_AUTH_INSTRUCTION
     # No business request or implicit API-key exchange may be sent first.
+    assert httpx_mock.get_requests() == []
+
+
+@pytest.mark.parametrize("api_key_session", [False, True], ids=["no-session", "valid-api-key-session"])
+@pytest.mark.parametrize("command", PHONE_CONNECTION_OPERATIONS)
+def test_every_phone_connection_operation_requires_that_connection(
+    muse_runtime, monkeypatch, capsys, httpx_mock, api_key_session, command,
+):
+    store = muse_runtime
+    store.runtime = "cli"
+    if api_key_session:
+        # The API-key session is no way in: these commands only use the phone connection's token.
+        store.commit_session("synthetic-token", 3600, agent_id="agent-1",
+                             auth_method="vault", token_origin=auth.DEFAULT_ORIGIN)
+
+    monkeypatch.setattr(sys, "argv", ["snaplii", *shlex.split(command)])
+    with pytest.raises(SystemExit) as exc:
+        cli._cli()
+
+    assert exc.value.code == 1
+    output = capsys.readouterr()
+    assert output.out == ""
+    result = json.loads(output.err)
+    assert result["error"] == "Not connected"
+    assert "isn't connected by phone" in result["message"]
     assert httpx_mock.get_requests() == []
 
 

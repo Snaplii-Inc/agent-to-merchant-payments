@@ -53,6 +53,11 @@ class GatewayApiError(SnapliiCliError):
             "status_code": self.status_code,
             **self.auth_fields,
         }
+        # The phone connection's API (/api/agent/v1) names each refusal in "code", such as
+        # phone-not-allowlisted or unknown-agent: what the skill decides the next step by.
+        agent_api_refusal_code = self.body.get("code")
+        if self.endpoint.startswith("/api/agent/") and isinstance(agent_api_refusal_code, str):
+            out["code"] = agent_api_refusal_code
         if payment_unknown:
             out["outcome"] = "indeterminate"
             out["retry_hint"] = (
@@ -179,6 +184,17 @@ class ConfigError(SnapliiCliError):
 
     def to_dict(self) -> dict:
         return {"error": "Configuration error", "message": self.message}
+
+
+class ConnectError(SnapliiCliError):
+    """The agent isn't connected by phone (`snaplii agent connect`), or can't be right now."""
+
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(message)
+
+    def to_dict(self) -> dict:
+        return {"error": "Not connected", "message": self.message}
 
 
 class AuthError(ConfigError):

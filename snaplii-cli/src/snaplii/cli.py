@@ -7,6 +7,7 @@ from packaging.version import Version
 
 from snaplii import auth
 from snaplii.client import GatewayClient
+from snaplii.commands.agent import agent_group
 from snaplii.commands.balance import balance_cmd
 from snaplii.commands.billpay import billpay_group
 from snaplii.commands.browse import browse_group
@@ -42,7 +43,8 @@ def main(ctx, base_url):
     """Snaplii Agent Gateway CLI.
 
     Browse gift card brands, purchase cards, pay bills, and preview
-    savings — all from your Snaplii Cash balance.
+    savings — all from your Snaplii Cash balance. 'snaplii agent' connects
+    by phone instead, to top up Snaplii Cash.
     """
     ctx.ensure_object(dict)
     store = ConfigStore()
@@ -89,6 +91,7 @@ main.add_command(quote_cmd)
 main.add_command(smart_group)
 main.add_command(billpay_group)
 main.add_command(transfer_group)
+main.add_command(agent_group)
 main.add_command(config_group)
 
 

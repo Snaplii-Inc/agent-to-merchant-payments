@@ -38,7 +38,7 @@ Install the skills, the CLI and the MCP server from one release tag, so all thre
 - Where the table says leave it out, drop both `--host` and its value. Add `--cli-only` to the third command if your agent will not use MCP. Muse gets the CLI only by itself; Instinct needs MCP and refuses `--cli-only`.
 
 ```bash
-git clone --depth 1 --branch v0.20.3 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
+git clone --depth 1 --branch v0.21.0 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
 npx --yes skills add ./snaplii-src -g -a claude-code -y
 python3 snaplii-src/scripts/install.py --host claude-code --source ./snaplii-src
 ```
@@ -171,7 +171,7 @@ Installing needs no key. To connect the CLI or your AI agent, generate a secure 
 Clone a release and run its installer (see [Install the execution layer](#install-the-execution-layer) for the Windows and no-Python variants):
 
 ```bash
-git clone --depth 1 --branch v0.20.3 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
+git clone --depth 1 --branch v0.21.0 https://github.com/Snaplii-Inc/agent-to-merchant-payments.git snaplii-src
 python3 snaplii-src/scripts/install.py --source ./snaplii-src
 ```
 
@@ -294,6 +294,7 @@ Every operation prints one JSON document on stdout, or one JSON error on stderr 
 | `snaplii transfer finish --order-no NO` | Send a PENDING transfer immediately |
 | `snaplii transfer status --order-no NO [--wait] [--timeout S]` | Get a transfer's state; polling defaults to a 120-second timeout |
 | `snaplii transfer list [--status S]` | List transfers, newest first |
+| `snaplii agent connect` / `connection` / `disconnect` / `balance` / `catalog` / `buy` / `order` / `top-up` / `top-up-status` / `top-up-cancel` | The phone connection, side by side with `init`: Snaplii texts the user a sign-in link, and the agent can then ask the user to top up Snaplii Cash (by a texted pay link) and buy gift cards under its own daily limit. Its token is kept like the session. CLI only, with no MCP tools; see the skill's Step 8 |
 | `snaplii update` | Check for and install a CLI update |
 | `snaplii help` | Show top-level help; use `snaplii <command> --help` for command flags |
 
