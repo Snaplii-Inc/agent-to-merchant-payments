@@ -6,7 +6,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
-## [0.21.0] — Unreleased
+## [0.21.0] — 2026-11-28
 
 ### Added
 - **`snaplii agent`: the phone connection, side by side with the API key.** `snaplii agent connect --agent NAME --phone NUMBER` signs the agent in by a link Snaplii texts to the user, who approves it on their phone with a code the agent tells them; a phone with no Snaplii account signs up the same way. `--no-wait` returns at once with `texted_to` and `match_code`, and `--resume` goes on waiting. The connection then:
@@ -457,7 +457,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 | Version | Date | Highlights |
 |---------|------|------------|
-| 0.21.0 | not tagged yet | Phone connection (`snaplii agent`): texted sign-in, Snaplii Cash top-ups, gift cards under the agent's daily limit |
+| 0.21.0 | 2026-11-28 | Phone connection (`snaplii agent`): texted sign-in, Snaplii Cash top-ups, gift cards under the agent's daily limit |
 | 0.19.0 | 2026-10-08 | Instinct support: MCP-only, vault-filled connect page |
 | 0.18.0 | 2026-10-01 | Muse app update notice in `snaplii config show` |
 | 0.17.0 | 2026-09-27 | Muse secure credential store and first-install connection; session caching and recovery |
