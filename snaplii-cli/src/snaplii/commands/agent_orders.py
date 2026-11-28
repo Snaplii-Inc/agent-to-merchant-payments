@@ -6,7 +6,7 @@ import uuid
 import click
 
 from snaplii.client import GatewayClient
-from snaplii.commands.agent_connection import CONNECT_HINT, format_money
+from snaplii.commands.agent_connection import CONNECT_HINT, format_money, raise_if_not_signed_in
 from snaplii.config_store import AGENT_TOKEN, ConfigStore
 from snaplii.exceptions import ConnectError, GatewayApiError
 from snaplii.output import print_json
@@ -23,13 +23,14 @@ from snaplii.output import print_json
 #        OVER_LIMIT    over this agent's daily limit: the user buys it in the Snaplii app. Final
 #        REFUSED       Snaplii refused it; nothing was charged. Final
 #        UNKNOWN       Snaplii didn't confirm the payment: never order again
+#        EXPIRED       waited for a top-up too long and was closed; nothing was charged. Final
 #
 # `snaplii agent top-up 50` asks the user to add 50 dollars to their Snaplii Cash. The gateway texts
 # the pay link to the phone that approved the agent (texted_to); where it may also show it (local
 # runs, staging) it answers it as pay_url, and this prints it for the agent to give to the user too.
 # The user pays there with Apple Pay or Google Pay; `--payment-method alipay` makes it Alipay's page
-# instead. It returns once the top-up is made, with its id. An agent at its daily limit can't ask,
-# nor one that asked too often in the last hour.
+# instead. It returns once the top-up is made, with its id. An agent that asked too often in the
+# last hour can't ask again yet.
 # `snaplii agent top-up-status ID` then shows where the top-up is:
 #        CREATED    waiting for the user to pay
 #        PAID       the user paid; Snaplii is adding the money to Snaplii Cash
@@ -43,8 +44,9 @@ from snaplii.output import print_json
 # a time, so this is how the agent asks for another amount or payment method without waiting.
 #
 # What the agent does next is the gateway's to say: each order and top-up comes with a next_step
-# sentence, which this prints as it is, followed only by what that sentence leaves out: the pay link
-# itself and this CLI's own commands.
+# sentence. For the statuses whose sentence names the gateway's own API calls, this words it with
+# this CLI's commands instead, as an agent uses the CLI and never the API; any other is printed as
+# it is.
 
 # The statuses a command keeps asking the gateway about, because they change within seconds or
 # minutes. Not every status that can still change: an order in NEEDS_TOP_UP waits for a top-up, and
@@ -160,8 +162,9 @@ def agent_top_up_cmd(ctx, amount, payment_method, wait, timeout):
     'snaplii agent top-up-cancel ID'.
     """
     client, agent_token = _client_and_agent_token(ctx)
-    top_up = _call_as_connected_agent(lambda: client.start_top_up(agent_token, amount, payment_method))
-    what_to_do_now = _next_step_and_cli_commands(top_up)
+    top_up = _top_up_in_cli_terms(
+        _call_as_connected_agent(lambda: client.start_top_up(agent_token, amount, payment_method)))
+    what_to_do_now = _next_step_and_pay_link(top_up)
     if what_to_do_now:
         click.echo(what_to_do_now, err=True)
     deadline = time.monotonic() + timeout
@@ -202,28 +205,99 @@ def agent_top_up_cancel_cmd(ctx, top_up_id):
     print_json(_with_amount_and_cash_balance(client, agent_token, cancelled_top_up))
 
 
-def _next_step_and_cli_commands(top_up: dict) -> str:
-    """What 'snaplii agent top-up' says about a top-up it just asked for: the gateway's own next_step
-    sentence, then what only the CLI knows, one per line. The gateway words what to do; nothing here
-    says it a second time."""
+def _next_step_and_pay_link(top_up: dict) -> str:
+    """What 'snaplii agent top-up' says about a top-up it just asked for: its next_step, then the pay
+    link itself where the gateway shows it, one per line."""
     lines = []
     if top_up.get("next_step"):
         lines.append(top_up["next_step"])
     if top_up.get("pay_url"):
         lines.append(f"The pay link (pay_url) to give to the user: {top_up['pay_url']}")
-    if top_up.get("status") == "CREATED":
-        lines.append(
-            f"With this CLI: check it with 'snaplii agent top-up-status {top_up['id']}', "
-            f"take it back with 'snaplii agent top-up-cancel {top_up['id']}'."
-        )
-    elif top_up.get("status") in _TOP_UP_STATUSES_TO_POLL:
-        lines.append(f"With this CLI: check it with 'snaplii agent top-up-status {top_up['id']}'.")
     return "\n".join(lines)
+
+
+def _order_in_cli_terms(order: dict) -> dict:
+    """The order with a next_step in this CLI's commands where the gateway's names its API calls:
+    NEEDS_TOP_UP, PAYING, PAID and EXPIRED."""
+    order_id, gap_cents = order.get("id"), order.get("gap_cents")
+    if isinstance(gap_cents, int) and gap_cents > 0:
+        gap = _dollars(gap_cents)
+        short = f"Snaplii Cash is short by {gap} {order.get('currency') or ''}".rstrip() + "."
+        top_up = f"'snaplii agent top-up {gap}'"
+    else:
+        short, top_up = "Snaplii Cash is short.", "'snaplii agent top-up AMOUNT'"
+    next_step = {
+        "NEEDS_TOP_UP": f"{short} Ask for a top-up of at least that much with {top_up} (the user pays on "
+        "the link texted to them), or ask the user to add at least that much to their Snaplii Cash. Once "
+        f"it is CREDITED, run 'snaplii agent order {order_id} --continue'. Do not buy this again with "
+        "another order.",
+        "PAYING": f"Snaplii is paying this order. Check it again in a few seconds with "
+        f"'snaplii agent order {order_id}'. Do not order again.",
+        "PAID": "Paid from Snaplii Cash; the card is in the user's Snaplii wallet, where they open it in the "
+        "Snaplii app. Never show the card's code or PIN in the chat.",
+        "EXPIRED": "This order waited for a top-up too long and was closed; nothing was charged. To buy it, "
+        "run 'snaplii agent buy' again without --key, so it is a new order.",
+    }.get(order.get("status"))
+    if not next_step and _names_the_api(order.get("next_step")):
+        next_step = (f"This order is {order.get('status')}. Check it with 'snaplii agent order {order_id}'; "
+                     "do not order again.")
+    if next_step:
+        order["next_step"] = next_step
+    return order
+
+
+def _top_up_in_cli_terms(top_up: dict) -> dict:
+    """The top-up with a next_step in this CLI's commands where the gateway's names its API calls:
+    CREATED, PAID and CREDITED."""
+    top_up_id, amount = top_up.get("id"), _money_of(top_up)
+    wallet = "Alipay" if top_up.get("payment_method") == "alipay" else "Apple Pay or Google Pay"
+    if top_up.get("texted_to"):
+        link = (f"The user got a text at {top_up['texted_to']} with the link to pay {amount} with {wallet}, "
+                "which adds it to their Snaplii Cash")
+        link += f". It works until {top_up['expires_at']}." if top_up.get("expires_at") else "."
+        if top_up.get("pay_url"):
+            link += " You can also give them the link in pay_url."
+    elif top_up.get("pay_url"):
+        link = f"Give the user the link in pay_url: they pay {amount} there with {wallet}, which adds it to their Snaplii Cash."
+    else:
+        link = f"The user already has the link of this top-up of {amount}: it was in the answer that started it."
+    next_step = {
+        "CREATED": f"{link} Wait for them to pay: check 'snaplii agent top-up-status {top_up_id}' every "
+        "few seconds until it is CREDITED, FAILED or EXPIRED. Do not start another top-up: to ask for "
+        f"another amount or payment method, take this one back first with "
+        f"'snaplii agent top-up-cancel {top_up_id}'.",
+        "PAID": "The user paid. Snaplii is adding it to Snaplii Cash: check "
+        f"'snaplii agent top-up-status {top_up_id}' again in a few seconds.",
+        "CREDITED": f"{amount} is in the user's Snaplii Cash. Buy with 'snaplii agent buy', or continue the "
+        "order that waited for this top-up with 'snaplii agent order ORDER_ID --continue'.",
+    }.get(top_up.get("status"))
+    if not next_step and _names_the_api(top_up.get("next_step")):
+        next_step = (f"This top-up is {top_up.get('status')}. Check it with "
+                     f"'snaplii agent top-up-status {top_up_id}' before starting another.")
+    if next_step:
+        top_up["next_step"] = next_step
+    return top_up
+
+
+def _names_the_api(next_step) -> bool:
+    """Whether a next_step of the gateway's tells the agent to call its API, which an agent never does."""
+    return isinstance(next_step, str) and "/api/" in next_step
+
+
+def _dollars(cents: int) -> str:
+    """Cents as the dollars 'snaplii agent top-up' takes, e.g. 1250 -> 12.50."""
+    return f"{cents / 100:.2f}"
+
+
+def _money_of(top_up: dict) -> str:
+    cents = top_up.get("amount_cents")
+    return format_money(cents, top_up.get("currency")) if isinstance(cents, int) else "the amount asked for"
 
 
 def _with_amount_and_cash_balance(client: GatewayClient, agent_token: str, top_up: dict) -> dict:
     """The top-up with its amount as money ("CA$50.00") and, once CREDITED, the user's Snaplii Cash,
     which is one more call to the gateway (GET balance)."""
+    _top_up_in_cli_terms(top_up)
     if isinstance(top_up.get("amount_cents"), int):
         top_up["amount"] = format_money(top_up["amount_cents"], top_up.get("currency"))
     if top_up.get("status") == "CREDITED":
@@ -245,11 +319,7 @@ def _call_as_connected_agent(request):
     try:
         return request()
     except GatewayApiError as e:
-        if e.status_code == 401:
-            raise ConnectError(
-                "This agent isn't connected any more: it was disconnected, "
-                "or it was connected again from somewhere else. " + CONNECT_HINT
-            )
+        raise_if_not_signed_in(e)
         if e.body.get("code") == "reconnect-needed":
             # The agent's token still signs the agent in, but its access to Snaplii is gone.
             raise ConnectError("This agent's access to Snaplii has ended or was never set up. " + CONNECT_HINT)
@@ -269,4 +339,4 @@ def _settled(client: GatewayClient, agent_token: str, order: dict, timeout: int)
         cents = order.get(name + "_cents")
         if isinstance(cents, int):
             order[name] = format_money(cents, order.get("currency"))
-    return order
+    return _order_in_cli_terms(order)

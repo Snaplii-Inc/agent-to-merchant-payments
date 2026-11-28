@@ -468,9 +468,9 @@ snaplii agent connection                                              # this age
 1. `--agent` is your own name in lowercase, such as `muse` or `grok`. `--phone` is the user's mobile number; ask for it if you don't have it.
 2. The first command returns `"status": "pending"` with `texted_to` and `match_code`. Tell the user that a sign-in link was texted to `texted_to`, and that they open it and type the code `match_code` to approve. The text doesn't contain the code.
 3. Run the `--resume` command to wait for the approval. It prints `"status": "connected"` and this agent's `daily_limit`. If it returns `pending` again, run it again.
-4. A refusal carries a `code`. `phone-not-allowlisted`: the phone connection is in an invite-only alpha, and this phone isn't invited. `unknown-agent`: this agent's name can't connect. Tell the user, and offer the API key in [Auth](#auth) instead.
+4. A refusal carries a `code`. `phone-not-allowlisted`: this phone number can't use the phone connection yet. `unknown-agent`: this agent's name can't connect. Tell the user, and offer the API key in [Auth](#auth) instead.
 
-The token is kept in the system keychain (or in the owner-only config file, on hosts where Snaplii keeps its session there) and is never printed. Each `connect` starts from scratch: this agent's earlier phone connection stops working at once.
+The token is kept in the system keychain (or in the owner-only config file, on hosts where Snaplii keeps its session there) and is never printed. Running `connect` again keeps this agent's current phone connection working until the user approves; the approval replaces it, with its daily limit. `snaplii agent connection` also shows `can_buy`: `false` means connect again before buying.
 
 **Top up.**
 
@@ -498,10 +498,11 @@ Take the `item_id` verbatim from `snaplii agent catalog BRAND_ID`. `buy` prints 
 - `OVER_LIMIT`: over this agent's daily limit. The user buys it in the Snaplii app.
 - `REFUSED`: nothing was charged. Don't send the same order again.
 - `UNKNOWN`: Snaplii didn't confirm the payment, so it may have gone through. Never order again; the user checks their orders in the Snaplii app.
+- `EXPIRED`: it waited for a top-up too long and was closed; nothing was charged. If the user still wants the card, run `buy` again without `--key`.
 
 **Disconnect.** `snaplii agent disconnect` ends the phone connection at once. The API-key session isn't touched.
 
-`"error": "Not connected"` means this agent isn't connected by phone, or isn't any more: connect again as above.
+`"error": "Not connected"` comes with a `message`: either this agent isn't connected by phone, or isn't any more (connect again as above), or the gateway doesn't take phone connections right now (use the API key in [Auth](#auth), or try again later).
 
 ## Sensitive Data Handling
 

@@ -114,6 +114,9 @@ def fake_run(installer, monkeypatch):
 # ── The phone connection (snaplii agent) ─────────────────────────────────
 
 AGENT_GATEWAY = "http://localhost:8080"  # a gateway on this machine, as `make up` runs it
+# The gateway's 401 for a long-term token that signs nobody in, and its 401 where it has no phone connections.
+TOKEN_REFUSED = {"status": "error", "message": "Missing or invalid agent token. Connect the agent again."}
+NO_AGENT_API = {"status": "error", "message": "Missing or invalid authentication token"}
 
 
 class MemoryKeyring:

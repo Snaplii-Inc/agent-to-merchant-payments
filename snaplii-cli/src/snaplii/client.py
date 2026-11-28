@@ -793,8 +793,9 @@ class GatewayClient:
         temporary token, a match code and the masked phone.
 
         `region` (CA or US) only says how to read a number given without +1. With the agent's current
-        long-term token, what that sign-in gave the agent is removed at once; `replaces` is the
-        temporary token of an earlier unfinished request, which is ended.
+        long-term token, the user's approval replaces that connection instead of adding another, and
+        the token works until then; `replaces` is the temporary token of an earlier unfinished
+        request, which is ended.
         """
         body = {"agent": agent, "phone": phone}
         if region:
@@ -890,7 +891,8 @@ class GatewayClient:
 
     @staticmethod
     def _parse_agent_response(resp: httpx.Response, path: str) -> dict:
-        """The agent API answers JSON, and explains a refusal in "message" with its "code"."""
+        """The agent API answers JSON, and explains a refusal in "message" with its "code", or, when
+        a field is invalid, in "errors" with no message."""
         try:
             body = resp.json()
         except ValueError:
@@ -902,6 +904,12 @@ class GatewayClient:
             body = {"raw": resp.text}
         if isinstance(body.get("message"), str) and body["message"].strip():
             body["friendly_message"] = body["message"]
+        elif isinstance(body.get("errors"), list):
+            # A field-validation 400: say which field and why, e.g. "idempotency_key: must match ...".
+            parts = [f"{e.get('field') or '?'}: {e.get('message') or 'invalid'}"
+                     for e in body["errors"] if isinstance(e, dict)]
+            if parts:
+                body["friendly_message"] = "; ".join(parts)
         raise GatewayApiError(resp.status_code, body, path)
 
     # ── Internal ──────────────────────────────────────────────────

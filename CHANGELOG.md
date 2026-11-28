@@ -6,7 +6,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 
 ---
 
-## [0.21.0] — not tagged yet: waits until the gateway's `/api/agent/v1` is on in production
+## [0.21.0] — Unreleased
 
 ### Added
 - **`snaplii agent`: the phone connection, side by side with the API key.** `snaplii agent connect --agent NAME --phone NUMBER` signs the agent in by a link Snaplii texts to the user, who approves it on their phone with a code the agent tells them; a phone with no Snaplii account signs up the same way. `--no-wait` returns at once with `texted_to` and `match_code`, and `--resume` goes on waiting. The connection then:
@@ -14,7 +14,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
   - buys gift cards under the agent's own daily limit, set by Snaplii: `agent balance`, `agent catalog [BRAND_ID]`, `agent buy --item-id ID --price P [--key KEY]`, and `agent order ORDER_ID [--continue]` for an order that waited for a top-up;
   - is shown and ended with `agent connection` and `agent disconnect`.
 
-  The commands are CLI only (no MCP tools, refused in Instinct like every other non-local command), and use none of the API-key session. A refusal from the gateway carries its `code`, such as `phone-not-allowlisted` (the invite-only alpha) or `unknown-agent`, with the gateway's own message.
+  The commands are CLI only (no MCP tools, refused in Instinct like every other non-local command), and use none of the API-key session. A refusal from the gateway carries its `code`, such as `phone-not-allowlisted` or `unknown-agent`, with the gateway's own message; a field the gateway refused is named with its reason. Each order and top-up carries a `next_step` worded with these commands. Connecting again keeps the current connection working until the user approves, and the approval replaces it with its daily limit. `agent connection` shows `can_buy`.
 - **The phone connection's token is kept like the session's.** It goes to the system keychain, or to the owner-only config file on Muse or with `SNAPLII_ALLOW_INSECURE`, with a digest in `config.json` so a keychain item left behind is never used. It is never printed and is sent only to the gateway its sign-in started at. A sign-in starts only at production, staging, or a gateway on `localhost` / `127.0.0.1`, and is refused before the user is texted when there is nowhere to keep the token. `config clear` removes it; `init` and a rejected API-key session leave it.
 - **The snaplii-cli skill has Step 8, "Top up Snaplii Cash (phone connection)"**, in both copies: when to use the phone connection (a top-up from the chat, or the user asks to connect by phone), how to connect, top up and buy with it, and what each order status means. While the agent is connected by phone, it buys gift cards with `snaplii agent buy`. The READMEs list the commands.
 - The ClawHub plugin is 1.15.0 and pins `snaplii-mcp` 0.21.0.
